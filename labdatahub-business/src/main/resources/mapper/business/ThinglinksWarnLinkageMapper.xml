@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubWarnLinkageMapper">
+    
+    <resultMap type="LabdatahubWarnLinkage" id="LabdatahubWarnLinkageResult">
+        <result property="id"    column="id"    />
+        <result property="ruleJson"    column="rule_json"    />
+        <result property="warnMessage"    column="warn_message"    />
+        <result property="warnLevel"    column="warn_level"    />
+        <result property="executeAction"    column="execute_action"    />
+        <result property="isEnable"    column="is_enable"    />
+        <result property="triggerSnList"    column="trigger_sn_list"    />
+        <result property="triggerNameList"    column="trigger_name_list"    />
+        <result property="executeSnList"    column="execute_sn_list"    />
+        <result property="executeNameList"    column="execute_name_list"    />
+        <result property="createTime"    column="create_time"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubWarnLinkageVo">
+        select * from labdatahub_warn_linkage
+    </sql>
+
+    <select id="selectLabdatahubWarnLinkageList" parameterType="LabdatahubWarnLinkage" resultMap="LabdatahubWarnLinkageResult">
+        <include refid="selectLabdatahubWarnLinkageVo"/>
+        <where>  
+            <if test="ruleJson != null  and ruleJson != ''"> and rule_json = #{ruleJson}</if>
+            <if test="warnMessage != null  and warnMessage != ''"> and warn_message = #{warnMessage}</if>
+            <if test="warnLevel != null  and warnLevel != ''"> and warn_level = #{warnLevel}</if>
+            <if test="executeAction != null  and executeAction != ''"> and execute_action = #{executeAction}</if>
+            <if test="isEnable != null  and isEnable != ''"> and is_enable = #{isEnable}</if>
+            <if test="triggerSnList != null  and triggerSnList != ''"> and trigger_sn_list = #{triggerSnList}</if>
+            <if test="triggerNameList != null  and triggerNameList != ''"> and trigger_name_list = #{triggerNameList}</if>
+            <if test="executeSnList != null  and executeSnList != ''"> and execute_sn_list = #{executeSnList}</if>
+            <if test="executeNameList != null  and executeNameList != ''"> and execute_name_list = #{executeNameList}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubWarnLinkageById" parameterType="String" resultMap="LabdatahubWarnLinkageResult">
+        <include refid="selectLabdatahubWarnLinkageVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubWarnLinkage" parameterType="LabdatahubWarnLinkage">
+        insert into labdatahub_warn_linkage
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="ruleJson != null">rule_json,</if>
+            <if test="warnMessage != null">warn_message,</if>
+            <if test="warnLevel != null">warn_level,</if>
+            <if test="executeAction != null">execute_action,</if>
+            <if test="isEnable != null">is_enable,</if>
+            <if test="triggerSnList != null">trigger_sn_list,</if>
+            <if test="triggerNameList != null">trigger_name_list,</if>
+            <if test="executeSnList != null">execute_sn_list,</if>
+            <if test="executeNameList != null">execute_name_list,</if>
+            <if test="createTime != null">create_time,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="ruleJson != null">#{ruleJson},</if>
+            <if test="warnMessage != null">#{warnMessage},</if>
+            <if test="warnLevel != null">#{warnLevel},</if>
+            <if test="executeAction != null">#{executeAction},</if>
+            <if test="isEnable != null">#{isEnable},</if>
+            <if test="triggerSnList != null">#{triggerSnList},</if>
+            <if test="triggerNameList != null">#{triggerNameList},</if>
+            <if test="executeSnList != null">#{executeSnList},</if>
+            <if test="executeNameList != null">#{executeNameList},</if>
+            <if test="createTime != null">#{createTime},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubWarnLinkage" parameterType="LabdatahubWarnLinkage">
+        update labdatahub_warn_linkage
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="ruleJson != null">rule_json = #{ruleJson},</if>
+            <if test="warnMessage != null">warn_message = #{warnMessage},</if>
+            <if test="warnLevel != null">warn_level = #{warnLevel},</if>
+            <if test="executeAction != null">execute_action = #{executeAction},</if>
+            <if test="isEnable != null">is_enable = #{isEnable},</if>
+            <if test="triggerSnList != null">trigger_sn_list = #{triggerSnList},</if>
+            <if test="triggerNameList != null">trigger_name_list = #{triggerNameList},</if>
+            <if test="executeSnList != null">execute_sn_list = #{executeSnList},</if>
+            <if test="executeNameList != null">execute_name_list = #{executeNameList},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubWarnLinkageById" parameterType="String">
+        delete from labdatahub_warn_linkage where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubWarnLinkageByIds" parameterType="String">
+        delete from labdatahub_warn_linkage where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

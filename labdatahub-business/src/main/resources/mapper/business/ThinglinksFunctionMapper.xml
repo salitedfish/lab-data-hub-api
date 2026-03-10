@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubFunctionMapper">
+    
+    <resultMap type="LabdatahubFunction" id="LabdatahubFunctionResult">
+        <result property="id"    column="id"    />
+        <result property="functionName"    column="function_name"    />
+        <result property="functionCode"    column="function_code"    />
+        <result property="functionParams"    column="function_params"    />
+        <result property="deviceSn"    column="device_sn"    />
+        <result property="protocolId"    column="protocol_id"    />
+        <result property="createTime"    column="create_time"    />
+        <result property="createBy"    column="create_by"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubFunctionVo">
+        select * from labdatahub_function
+    </sql>
+
+    <select id="selectLabdatahubFunctionList" parameterType="LabdatahubFunction" resultMap="LabdatahubFunctionResult">
+        <include refid="selectLabdatahubFunctionVo"/>
+        <where>  
+            <if test="functionName != null  and functionName != ''"> and function_name like concat('%', #{functionName}, '%')</if>
+            <if test="functionCode != null  and functionCode != ''"> and function_code = #{functionCode}</if>
+            <if test="functionParams != null  and functionParams != ''"> and function_params = #{functionParams}</if>
+            <if test="deviceSn != null  and deviceSn != ''"> and device_sn = #{deviceSn}</if>
+            <if test="protocolId != null  and protocolId != ''"> and protocol_id = #{protocolId}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubFunctionById" parameterType="String" resultMap="LabdatahubFunctionResult">
+        <include refid="selectLabdatahubFunctionVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubFunction" parameterType="LabdatahubFunction">
+        insert into labdatahub_function
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="functionName != null">function_name,</if>
+            <if test="functionCode != null">function_code,</if>
+            <if test="functionParams != null">function_params,</if>
+            <if test="deviceSn != null">device_sn,</if>
+            <if test="protocolId != null">protocol_id,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="createBy != null">create_by,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="functionName != null">#{functionName},</if>
+            <if test="functionCode != null">#{functionCode},</if>
+            <if test="functionParams != null">#{functionParams},</if>
+            <if test="deviceSn != null">#{deviceSn},</if>
+            <if test="protocolId != null">#{protocolId},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="createBy != null">#{createBy},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubFunction" parameterType="LabdatahubFunction">
+        update labdatahub_function
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="functionName != null">function_name = #{functionName},</if>
+            <if test="functionCode != null">function_code = #{functionCode},</if>
+            <if test="functionParams != null">function_params = #{functionParams},</if>
+            <if test="deviceSn != null">device_sn = #{deviceSn},</if>
+            <if test="protocolId != null">protocol_id = #{protocolId},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+            <if test="createBy != null">create_by = #{createBy},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubFunctionById" parameterType="String">
+        delete from labdatahub_function where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubFunctionByIds" parameterType="String">
+        delete from labdatahub_function where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

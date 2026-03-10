@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubModbusConfigMapper">
+    
+    <resultMap type="LabdatahubModbusConfig" id="LabdatahubModbusConfigResult">
+        <result property="id"    column="id"    />
+        <result property="belongSn"    column="belong_sn"    />
+        <result property="belongType"    column="belong_type"    />
+        <result property="code"    column="code"    />
+        <result property="createTime"    column="create_time"    />
+        <result property="registerRange"    column="register_range"    />
+        <result property="intervalTime"    column="interval_time"    />
+        <result property="delayTime"    column="delay_time"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubModbusConfigVo">
+        select * from labdatahub_modbus_config
+    </sql>
+
+    <select id="selectLabdatahubModbusConfigList" parameterType="LabdatahubModbusConfig" resultMap="LabdatahubModbusConfigResult">
+        <include refid="selectLabdatahubModbusConfigVo"/>
+        <where>  
+            <if test="belongSn != null  and belongSn != ''"> and belong_sn = #{belongSn}</if>
+            <if test="belongType != null  and belongType != ''"> and belong_type = #{belongType}</if>
+            <if test="code != null  and code != ''"> and code = #{code}</if>
+            <if test="registerRange != null  and registerRange != ''"> and register_range = #{registerRange}</if>
+            <if test="intervalTime != null "> and interval_time = #{intervalTime}</if>
+            <if test="delayTime != null "> and delay_time = #{delayTime}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubModbusConfigById" parameterType="String" resultMap="LabdatahubModbusConfigResult">
+        <include refid="selectLabdatahubModbusConfigVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubModbusConfig" parameterType="LabdatahubModbusConfig">
+        insert into labdatahub_modbus_config
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="belongSn != null">belong_sn,</if>
+            <if test="belongType != null">belong_type,</if>
+            <if test="code != null">code,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="registerRange != null">register_range,</if>
+            <if test="intervalTime != null">interval_time,</if>
+            <if test="delayTime != null">delay_time,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="belongSn != null">#{belongSn},</if>
+            <if test="belongType != null">#{belongType},</if>
+            <if test="code != null">#{code},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="registerRange != null">#{registerRange},</if>
+            <if test="intervalTime != null">#{intervalTime},</if>
+            <if test="delayTime != null">#{delayTime},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubModbusConfig" parameterType="LabdatahubModbusConfig">
+        update labdatahub_modbus_config
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="belongSn != null">belong_sn = #{belongSn},</if>
+            <if test="belongType != null">belong_type = #{belongType},</if>
+            <if test="code != null">code = #{code},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+            <if test="registerRange != null">register_range = #{registerRange},</if>
+            <if test="intervalTime != null">interval_time = #{intervalTime},</if>
+            <if test="delayTime != null">delay_time = #{delayTime},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubModbusConfigById" parameterType="String">
+        delete from labdatahub_modbus_config where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubModbusConfigByIds" parameterType="String">
+        delete from labdatahub_modbus_config where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

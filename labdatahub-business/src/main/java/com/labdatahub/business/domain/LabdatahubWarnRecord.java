@@ -1,0 +1,54 @@
+package com.labdatahub.business.domain;
+
+import com.fasterxml.jackson.annotation.JsonFormat;
+import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.apache.commons.lang3.builder.ToStringStyle;
+import com.labdatahub.common.annotation.Excel;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import com.baomidou.mybatisplus.annotation.TableName;
+
+import java.util.Date;
+
+/**
+ * 告警记录对象 labdatahub_warn_record
+ *
+ * @author labdatahub
+ * @date 2025-10-05
+ */
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+@TableName(value = "labdatahub_warn_record")
+public class LabdatahubWarnRecord
+{
+private static final long serialVersionUID = 1L;
+
+    /** id */
+    private String id;
+    /** 告警配置id */
+    @Excel(name = "告警配置id")
+    private String configId;
+    /** 告警配置名称 */
+    @Excel(name = "告警配置名称")
+    private String configName;
+    /** 告警内容 */
+    @Excel(name = "告警内容")
+    private String warnMessage;
+    /** 告警时全属性数据 */
+    @Excel(name = "告警时全属性数据")
+    private String warnData;
+    /** 设备/产品sn */
+    @Excel(name = "设备/产品sn")
+    private String belongSn;
+    /** 创建时间 */
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    private Date createTime;
+    /** 告警等级 1-紧急 2-严重 3-警告 4-正常 */
+    private String warnLevel;
+    /**处理状态 0-未处理 1-已处理*/
+    private String status;
+    /** 告警类型 0-属性告警 1-在线告警 2-离线告警 */
+    private String warnType;
+}

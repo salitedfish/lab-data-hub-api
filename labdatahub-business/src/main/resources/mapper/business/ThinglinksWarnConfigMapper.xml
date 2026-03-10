@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubWarnConfigMapper">
+    
+    <resultMap type="LabdatahubWarnConfig" id="LabdatahubWarnConfigResult">
+        <result property="id"    column="id"    />
+        <result property="name"    column="name"    />
+        <result property="belongSn"    column="belong_sn"    />
+        <result property="belongType"    column="belong_type"    />
+        <result property="ruleJson"    column="rule_json"    />
+        <result property="warnMessage"    column="warn_message"    />
+        <result property="createTime"    column="create_time"    />
+        <result property="createBy"    column="create_by"    />
+        <result property="updateTime"    column="update_time"    />
+        <result property="updateBy"    column="update_by"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubWarnConfigVo">
+        select id, name, belong_sn, belong_type, rule_json, warn_message, create_time, create_by, update_time, update_by from labdatahub_warn_config
+    </sql>
+
+    <select id="selectLabdatahubWarnConfigList" parameterType="LabdatahubWarnConfig" resultMap="LabdatahubWarnConfigResult">
+        <include refid="selectLabdatahubWarnConfigVo"/>
+        <where>  
+            <if test="name != null  and name != ''"> and name like concat('%', #{name}, '%')</if>
+            <if test="belongSn != null  and belongSn != ''"> and belong_sn = #{belongSn}</if>
+            <if test="belongType != null  and belongType != ''"> and belong_type = #{belongType}</if>
+            <if test="ruleJson != null  and ruleJson != ''"> and rule_json = #{ruleJson}</if>
+            <if test="warnMessage != null  and warnMessage != ''"> and warn_message = #{warnMessage}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubWarnConfigById" parameterType="String" resultMap="LabdatahubWarnConfigResult">
+        <include refid="selectLabdatahubWarnConfigVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubWarnConfig" parameterType="LabdatahubWarnConfig">
+        insert into labdatahub_warn_config
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="name != null">name,</if>
+            <if test="belongSn != null">belong_sn,</if>
+            <if test="belongType != null">belong_type,</if>
+            <if test="ruleJson != null">rule_json,</if>
+            <if test="warnMessage != null">warn_message,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="createBy != null">create_by,</if>
+            <if test="updateTime != null">update_time,</if>
+            <if test="updateBy != null">update_by,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="name != null">#{name},</if>
+            <if test="belongSn != null">#{belongSn},</if>
+            <if test="belongType != null">#{belongType},</if>
+            <if test="ruleJson != null">#{ruleJson},</if>
+            <if test="warnMessage != null">#{warnMessage},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="createBy != null">#{createBy},</if>
+            <if test="updateTime != null">#{updateTime},</if>
+            <if test="updateBy != null">#{updateBy},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubWarnConfig" parameterType="LabdatahubWarnConfig">
+        update labdatahub_warn_config
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="name != null">name = #{name},</if>
+            <if test="belongSn != null">belong_sn = #{belongSn},</if>
+            <if test="belongType != null">belong_type = #{belongType},</if>
+            <if test="ruleJson != null">rule_json = #{ruleJson},</if>
+            <if test="warnMessage != null">warn_message = #{warnMessage},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+            <if test="createBy != null">create_by = #{createBy},</if>
+            <if test="updateTime != null">update_time = #{updateTime},</if>
+            <if test="updateBy != null">update_by = #{updateBy},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubWarnConfigById" parameterType="String">
+        delete from labdatahub_warn_config where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubWarnConfigByIds" parameterType="String">
+        delete from labdatahub_warn_config where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

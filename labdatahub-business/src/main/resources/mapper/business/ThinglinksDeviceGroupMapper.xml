@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubDeviceGroupMapper">
+    
+    <resultMap type="LabdatahubDeviceGroup" id="LabdatahubDeviceGroupResult">
+        <result property="id"    column="id"    />
+        <result property="groupName"    column="group_name"    />
+        <result property="groupCode"    column="group_code"    />
+        <result property="type"    column="type"    />
+        <result property="sortNum"    column="sort_num"    />
+        <result property="remark"    column="remark"    />
+        <result property="createTime"    column="create_time"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubDeviceGroupVo">
+        select * from labdatahub_device_group
+    </sql>
+
+    <select id="selectLabdatahubDeviceGroupList" parameterType="LabdatahubDeviceGroup" resultMap="LabdatahubDeviceGroupResult">
+        <include refid="selectLabdatahubDeviceGroupVo"/>
+        <where>  
+            <if test="groupName != null  and groupName != ''"> and group_name like concat('%', #{groupName}, '%')</if>
+            <if test="groupCode != null  and groupCode != ''"> and group_code = #{groupCode}</if>
+            <if test="type != null  and type != ''"> and type = #{type}</if>
+            <if test="sortNum != null "> and sort_num = #{sortNum}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubDeviceGroupById" parameterType="String" resultMap="LabdatahubDeviceGroupResult">
+        <include refid="selectLabdatahubDeviceGroupVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubDeviceGroup" parameterType="LabdatahubDeviceGroup">
+        insert into labdatahub_device_group
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="groupName != null">group_name,</if>
+            <if test="groupCode != null">group_code,</if>
+            <if test="type != null">type,</if>
+            <if test="sortNum != null">sort_num,</if>
+            <if test="remark != null">remark,</if>
+            <if test="createTime != null">create_time,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="groupName != null">#{groupName},</if>
+            <if test="groupCode != null">#{groupCode},</if>
+            <if test="type != null">#{type},</if>
+            <if test="sortNum != null">#{sortNum},</if>
+            <if test="remark != null">#{remark},</if>
+            <if test="createTime != null">#{createTime},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubDeviceGroup" parameterType="LabdatahubDeviceGroup">
+        update labdatahub_device_group
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="groupName != null">group_name = #{groupName},</if>
+            <if test="groupCode != null">group_code = #{groupCode},</if>
+            <if test="type != null">type = #{type},</if>
+            <if test="sortNum != null">sort_num = #{sortNum},</if>
+            <if test="remark != null">remark = #{remark},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubDeviceGroupById" parameterType="String">
+        delete from labdatahub_device_group where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubDeviceGroupByIds" parameterType="String">
+        delete from labdatahub_device_group where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

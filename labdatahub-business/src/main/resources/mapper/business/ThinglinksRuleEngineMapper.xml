@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubRuleEngineMapper">
+    
+    <resultMap type="LabdatahubRuleEngine" id="LabdatahubRuleEngineResult">
+        <result property="id"    column="id"    />
+        <result property="engineName"    column="engine_name"    />
+        <result property="configJson"    column="config_json"    />
+        <result property="createTime"    column="create_time"    />
+        <result property="remark"    column="remark"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubRuleEngineVo">
+        select * from labdatahub_rule_engine
+    </sql>
+
+    <select id="selectLabdatahubRuleEngineList" parameterType="LabdatahubRuleEngine" resultMap="LabdatahubRuleEngineResult">
+        <include refid="selectLabdatahubRuleEngineVo"/>
+        <where>  
+            <if test="engineName != null  and engineName != ''"> and engine_name like concat('%', #{engineName}, '%')</if>
+            <if test="configJson != null  and configJson != ''"> and config_json = #{configJson}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubRuleEngineById" parameterType="String" resultMap="LabdatahubRuleEngineResult">
+        <include refid="selectLabdatahubRuleEngineVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubRuleEngine" parameterType="LabdatahubRuleEngine">
+        insert into labdatahub_rule_engine
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="engineName != null">engine_name,</if>
+            <if test="configJson != null">config_json,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="remark != null">remark,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="engineName != null">#{engineName},</if>
+            <if test="configJson != null">#{configJson},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="remark != null">#{remark},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubRuleEngine" parameterType="LabdatahubRuleEngine">
+        update labdatahub_rule_engine
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="engineName != null">engine_name = #{engineName},</if>
+            <if test="configJson != null">config_json = #{configJson},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+            <if test="remark != null">remark = #{remark},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubRuleEngineById" parameterType="String">
+        delete from labdatahub_rule_engine where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubRuleEngineByIds" parameterType="String">
+        delete from labdatahub_rule_engine where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

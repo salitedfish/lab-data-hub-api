@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubLinkageWarnRecordMapper">
+    
+    <resultMap type="LabdatahubLinkageWarnRecord" id="LabdatahubLinkageWarnRecordResult">
+        <result property="id"    column="id"    />
+        <result property="configId"    column="config_id"    />
+        <result property="configName"    column="config_name"    />
+        <result property="warnMessage"    column="warn_message"    />
+        <result property="warnData"    column="warn_data"    />
+        <result property="triggerSnList"    column="trigger_sn_list"    />
+        <result property="triggerNameList"    column="trigger_name_list"    />
+        <result property="createTime"    column="create_time"    />
+        <result property="warnLevel"    column="warn_level"    />
+        <result property="status"    column="status"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubLinkageWarnRecordVo">
+        select * from labdatahub_linkage_warn_record
+    </sql>
+
+    <select id="selectLabdatahubLinkageWarnRecordList" parameterType="LabdatahubLinkageWarnRecord" resultMap="LabdatahubLinkageWarnRecordResult">
+        <include refid="selectLabdatahubLinkageWarnRecordVo"/>
+        <where>  
+            <if test="configId != null  and configId != ''"> and config_id = #{configId}</if>
+            <if test="configName != null  and configName != ''"> and config_name like concat('%', #{configName}, '%')</if>
+            <if test="warnMessage != null  and warnMessage != ''"> and warn_message = #{warnMessage}</if>
+            <if test="warnData != null  and warnData != ''"> and warn_data = #{warnData}</if>
+            <if test="triggerSnList != null  and triggerSnList != ''"> and trigger_sn_list = #{triggerSnList}</if>
+            <if test="triggerNameList != null  and triggerNameList != ''"> and trigger_name_list = #{triggerNameList}</if>
+            <if test="warnLevel != null  and warnLevel != ''"> and warn_level = #{warnLevel}</if>
+            <if test="status != null  and status != ''"> and status = #{status}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubLinkageWarnRecordById" parameterType="String" resultMap="LabdatahubLinkageWarnRecordResult">
+        <include refid="selectLabdatahubLinkageWarnRecordVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubLinkageWarnRecord" parameterType="LabdatahubLinkageWarnRecord">
+        insert into labdatahub_linkage_warn_record
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="configId != null">config_id,</if>
+            <if test="configName != null">config_name,</if>
+            <if test="warnMessage != null">warn_message,</if>
+            <if test="warnData != null">warn_data,</if>
+            <if test="triggerSnList != null">trigger_sn_list,</if>
+            <if test="triggerNameList != null">trigger_name_list,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="warnLevel != null">warn_level,</if>
+            <if test="status != null">status,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="configId != null">#{configId},</if>
+            <if test="configName != null">#{configName},</if>
+            <if test="warnMessage != null">#{warnMessage},</if>
+            <if test="warnData != null">#{warnData},</if>
+            <if test="triggerSnList != null">#{triggerSnList},</if>
+            <if test="triggerNameList != null">#{triggerNameList},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="warnLevel != null">#{warnLevel},</if>
+            <if test="status != null">#{status},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubLinkageWarnRecord" parameterType="LabdatahubLinkageWarnRecord">
+        update labdatahub_linkage_warn_record
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="configId != null">config_id = #{configId},</if>
+            <if test="configName != null">config_name = #{configName},</if>
+            <if test="warnMessage != null">warn_message = #{warnMessage},</if>
+            <if test="warnData != null">warn_data = #{warnData},</if>
+            <if test="triggerSnList != null">trigger_sn_list = #{triggerSnList},</if>
+            <if test="triggerNameList != null">trigger_name_list = #{triggerNameList},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+            <if test="warnLevel != null">warn_level = #{warnLevel},</if>
+            <if test="status != null">status = #{status},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubLinkageWarnRecordById" parameterType="String">
+        delete from labdatahub_linkage_warn_record where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubLinkageWarnRecordByIds" parameterType="String">
+        delete from labdatahub_linkage_warn_record where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

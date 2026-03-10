@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubLinkageActionRecordMapper">
+    
+    <resultMap type="LabdatahubLinkageActionRecord" id="LabdatahubLinkageActionRecordResult">
+        <result property="id"    column="id"    />
+        <result property="configId"    column="config_id"    />
+        <result property="configName"    column="config_name"    />
+        <result property="executeSn"    column="execute_sn"    />
+        <result property="executeName"    column="execute_name"    />
+        <result property="functionCode"    column="function_code"    />
+        <result property="functionName"    column="function_name"    />
+        <result property="functionParam"    column="function_param"    />
+        <result property="createTime"    column="create_time"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubLinkageActionRecordVo">
+        select * from labdatahub_linkage_action_record
+    </sql>
+
+    <select id="selectLabdatahubLinkageActionRecordList" parameterType="LabdatahubLinkageActionRecord" resultMap="LabdatahubLinkageActionRecordResult">
+        <include refid="selectLabdatahubLinkageActionRecordVo"/>
+        <where>  
+            <if test="configId != null  and configId != ''"> and config_id = #{configId}</if>
+            <if test="configName != null  and configName != ''"> and config_name like concat('%', #{configName}, '%')</if>
+            <if test="executeSn != null  and executeSn != ''"> and execute_sn = #{executeSn}</if>
+            <if test="executeName != null  and executeName != ''"> and execute_name like concat('%', #{executeName}, '%')</if>
+            <if test="functionCode != null  and functionCode != ''"> and function_code = #{functionCode}</if>
+            <if test="functionName != null  and functionName != ''"> and function_name like concat('%', #{functionName}, '%')</if>
+            <if test="functionParam != null  and functionParam != ''"> and function_param = #{functionParam}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubLinkageActionRecordById" parameterType="String" resultMap="LabdatahubLinkageActionRecordResult">
+        <include refid="selectLabdatahubLinkageActionRecordVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubLinkageActionRecord" parameterType="LabdatahubLinkageActionRecord">
+        insert into labdatahub_linkage_action_record
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="configId != null">config_id,</if>
+            <if test="configName != null">config_name,</if>
+            <if test="executeSn != null">execute_sn,</if>
+            <if test="executeName != null">execute_name,</if>
+            <if test="functionCode != null">function_code,</if>
+            <if test="functionName != null">function_name,</if>
+            <if test="functionParam != null">function_param,</if>
+            <if test="createTime != null">create_time,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="configId != null">#{configId},</if>
+            <if test="configName != null">#{configName},</if>
+            <if test="executeSn != null">#{executeSn},</if>
+            <if test="executeName != null">#{executeName},</if>
+            <if test="functionCode != null">#{functionCode},</if>
+            <if test="functionName != null">#{functionName},</if>
+            <if test="functionParam != null">#{functionParam},</if>
+            <if test="createTime != null">#{createTime},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubLinkageActionRecord" parameterType="LabdatahubLinkageActionRecord">
+        update labdatahub_linkage_action_record
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="configId != null">config_id = #{configId},</if>
+            <if test="configName != null">config_name = #{configName},</if>
+            <if test="executeSn != null">execute_sn = #{executeSn},</if>
+            <if test="executeName != null">execute_name = #{executeName},</if>
+            <if test="functionCode != null">function_code = #{functionCode},</if>
+            <if test="functionName != null">function_name = #{functionName},</if>
+            <if test="functionParam != null">function_param = #{functionParam},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubLinkageActionRecordById" parameterType="String">
+        delete from labdatahub_linkage_action_record where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubLinkageActionRecordByIds" parameterType="String">
+        delete from labdatahub_linkage_action_record where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+"http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.labdatahub.business.mapper.LabdatahubScheduledTaskMapper">
+    
+    <resultMap type="LabdatahubScheduledTask" id="LabdatahubScheduledTaskResult">
+        <result property="id"    column="id"    />
+        <result property="name"    column="name"    />
+        <result property="ruleJson"    column="rule_json"    />
+        <result property="isEnable"    column="is_enable"    />
+        <result property="executeSnList"    column="execute_sn_list"    />
+        <result property="executeNameList"    column="execute_name_list"    />
+        <result property="createTime"    column="create_time"    />
+        <result property="remark"    column="remark"    />
+    </resultMap>
+
+    <sql id="selectLabdatahubScheduledTaskVo">
+        select * from labdatahub_scheduled_task
+    </sql>
+
+    <select id="selectLabdatahubScheduledTaskList" parameterType="LabdatahubScheduledTask" resultMap="LabdatahubScheduledTaskResult">
+        <include refid="selectLabdatahubScheduledTaskVo"/>
+        <where>  
+            <if test="name != null  and name != ''"> and name like concat('%', #{name}, '%')</if>
+            <if test="ruleJson != null  and ruleJson != ''"> and rule_json = #{ruleJson}</if>
+            <if test="isEnable != null  and isEnable != ''"> and is_enable = #{isEnable}</if>
+            <if test="executeSnList != null  and executeSnList != ''"> and execute_sn_list = #{executeSnList}</if>
+            <if test="executeNameList != null  and executeNameList != ''"> and execute_name_list = #{executeNameList}</if>
+        </where>
+    </select>
+    
+    <select id="selectLabdatahubScheduledTaskById" parameterType="String" resultMap="LabdatahubScheduledTaskResult">
+        <include refid="selectLabdatahubScheduledTaskVo"/>
+        where id = #{id}
+    </select>
+
+    <insert id="insertLabdatahubScheduledTask" parameterType="LabdatahubScheduledTask">
+        insert into labdatahub_scheduled_task
+        <trim prefix="(" suffix=")" suffixOverrides=",">
+            <if test="id != null">id,</if>
+            <if test="name != null">name,</if>
+            <if test="ruleJson != null">rule_json,</if>
+            <if test="isEnable != null">is_enable,</if>
+            <if test="executeSnList != null">execute_sn_list,</if>
+            <if test="executeNameList != null">execute_name_list,</if>
+            <if test="createTime != null">create_time,</if>
+            <if test="remark != null">remark,</if>
+         </trim>
+        <trim prefix="values (" suffix=")" suffixOverrides=",">
+            <if test="id != null">#{id},</if>
+            <if test="name != null">#{name},</if>
+            <if test="ruleJson != null">#{ruleJson},</if>
+            <if test="isEnable != null">#{isEnable},</if>
+            <if test="executeSnList != null">#{executeSnList},</if>
+            <if test="executeNameList != null">#{executeNameList},</if>
+            <if test="createTime != null">#{createTime},</if>
+            <if test="remark != null">#{remark},</if>
+         </trim>
+    </insert>
+
+    <update id="updateLabdatahubScheduledTask" parameterType="LabdatahubScheduledTask">
+        update labdatahub_scheduled_task
+        <trim prefix="SET" suffixOverrides=",">
+            <if test="name != null">name = #{name},</if>
+            <if test="ruleJson != null">rule_json = #{ruleJson},</if>
+            <if test="isEnable != null">is_enable = #{isEnable},</if>
+            <if test="executeSnList != null">execute_sn_list = #{executeSnList},</if>
+            <if test="executeNameList != null">execute_name_list = #{executeNameList},</if>
+            <if test="createTime != null">create_time = #{createTime},</if>
+            <if test="remark != null">remark = #{remark},</if>
+        </trim>
+        where id = #{id}
+    </update>
+
+    <delete id="deleteLabdatahubScheduledTaskById" parameterType="String">
+        delete from labdatahub_scheduled_task where id = #{id}
+    </delete>
+
+    <delete id="deleteLabdatahubScheduledTaskByIds" parameterType="String">
+        delete from labdatahub_scheduled_task where id in 
+        <foreach item="id" collection="array" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </delete>
+</mapper>
