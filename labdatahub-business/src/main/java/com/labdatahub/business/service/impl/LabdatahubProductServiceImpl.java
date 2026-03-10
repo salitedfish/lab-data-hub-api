@@ -106,7 +106,7 @@ public class LabdatahubProductServiceImpl extends ServiceImpl<LabdatahubProductM
         labdatahubProduct.setProductSn(productSn);
         labdatahubProduct.setDeviceCount(countDevice);
         labdatahubProductMapper.update(labdatahubProduct,new LambdaUpdateWrapper<LabdatahubProduct>()
-                .eq(LabdatahubProduct::getProductSn,labdatahubProduct.getProductSn())
-                .set(LabdatahubProduct::getDeviceCount,labdatahubProduct.getDeviceCount()));
+                .eq(LabdatahubProduct::getProductSn,labdatahubProduct.getProductSn()));
+                //.set(LabdatahubProduct::getDeviceCount,labdatahubProduct.getDeviceCount()));
     }
 }

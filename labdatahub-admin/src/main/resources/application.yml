@@ -65,7 +65,7 @@ spring:
   devtools:
     restart:
       # 热部署开关
-      enabled: true
+      enabled: false
   # redis 配置
   redis:
     # 地址
@@ -109,9 +109,10 @@ mybatis-plus:
 
 # PageHelper分页插件
 pagehelper:
-  helperDialect: mysql
+  # helperDialect: mysql
   supportMethodsArguments: true
   params: count=countSql
+  autoRuntimeDialect: true
 
 # Swagger配置
 swagger:

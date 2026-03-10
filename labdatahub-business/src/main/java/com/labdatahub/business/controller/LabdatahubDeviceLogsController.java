@@ -1,5 +1,7 @@
 package com.labdatahub.business.controller;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import javax.servlet.http.HttpServletResponse;
 
@@ -49,8 +51,18 @@ public class LabdatahubDeviceLogsController extends BaseController
         queryWrapper.orderByDesc("create_time");
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getLogType()),"log_type",labdatahubDeviceLogs.getLogType());
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getDeviceSn()),"device_sn",labdatahubDeviceLogs.getDeviceSn());
-        queryWrapper.ge(StringUtils.isNotEmpty(startTime),"create_time",startTime);
-        queryWrapper.le(StringUtils.isNotEmpty(endTime),"create_time",endTime);
+//        queryWrapper.ge(StringUtils.isNotEmpty(startTime),"create_time",startTime);
+//        queryWrapper.le(StringUtils.isNotEmpty(endTime),"create_time",endTime);
+     // 处理时间范围查询
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        if (StringUtils.isNotEmpty(startTime)) {
+            LocalDateTime start = LocalDateTime.parse(startTime, formatter);
+            queryWrapper.ge("create_time", start);
+        }
+        if (StringUtils.isNotEmpty(endTime)) {
+            LocalDateTime end = LocalDateTime.parse(endTime, formatter);
+            queryWrapper.le("create_time", end);
+        }
         Page<LabdatahubDeviceLogs> page = new Page<LabdatahubDeviceLogs>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubDeviceLogs> pageList = labdatahubDeviceLogsService.page(page,queryWrapper);
         return getDataTable(pageList);
