@@ -20,54 +20,76 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * HTTP 服务器管理器
+ * 支持动态启动、停止多个 HTTP 服务器实例
+ * 每个服务器实例可独立配置端口和请求处理器
+ */
 public class HttpServerManager {
 
+    // 存储所有运行的服务器实例，key 为组件 ID
     private static final Map<String, TomcatWebServer> servers = new ConcurrentHashMap<>();
+    // 存储所有服务器的配置信息
     private static final Map<String, HttpServerConfig> serverConfigs = new ConcurrentHashMap<>();
 
     // 私有构造器，防止实例化
     private HttpServerManager() {}
 
     /**
-     * 动态启动HTTP服务器
+     * 动态启动 HTTP 服务器（基础版本）
+     * @param componentId 组件唯一标识
+     * @param port 服务器端口号
+     * @param needReply 是否需要响应数据
+     * @return 启动成功返回 true，否则返回 false
      */
     public static boolean startServer(String componentId,int port,boolean needReply) {
         return startServer(componentId,port,needReply, null);
     }
 
     /**
-     * 动态启动HTTP服务器（带自定义处理器）
+     * 动态启动 HTTP 服务器（带自定义处理器）
+     * @param componentId 组件唯一标识
+     * @param port 服务器端口号 (1-65535)
+     * @param needReply 是否需要响应数据
+     * @param customHandler 自定义请求处理器，可为 null
+     * @return 启动成功返回 true，否则返回 false
      */
     public static boolean startServer(String componentId,int port,boolean needReply, HttpRequestHandler customHandler) {
         try {
+            // 检查组件是否已存在服务器
             if (servers.containsKey(componentId)) {
                 System.err.println("端口 " + port + " 已在运行");
                 return false;
             }
 
+            // 验证端口号范围
             if (port < 1 || port > 65535) {
-                System.err.println("端口号必须在1-65535之间");
+                System.err.println("端口号必须在 1-65535 之间");
                 return false;
             }
 
+            // 创建 Tomcat 服务器工厂
             TomcatServletWebServerFactory factory = new TomcatServletWebServerFactory();
             factory.setPort(port);
 
+            // 初始化 Servlet 上下文
             TomcatWebServer server = (TomcatWebServer) factory.getWebServer(new ServletContextInitializer() {
                 @Override
                 public void onStartup(ServletContext servletContext) {
+                    // 注册默认 Servlet 处理器
                     ServletRegistration.Dynamic dynamic = servletContext.addServlet("default", new HttpServlet() {
                         @Override
                         protected void service(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
                             String path = req.getRequestURI();
-                            // 过滤静态资源请求
+                            // 过滤静态资源请求（.ico、.css、.js）
                             if (path.endsWith(".ico") || path.endsWith(".css") || path.endsWith(".js")) {
                                 resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
                                 return;
                             }
-                            // 创建请求上下文
+                            // 创建请求上下文，封装请求和响应对象
                             RequestContext context = new RequestContext(req, resp, port);
 
+                            // 使用自定义处理器或默认处理器处理请求
                             if (customHandler != null) {
                                 customHandler.handle(componentId,context,needReply);
                             } else {
@@ -75,26 +97,29 @@ public class HttpServerManager {
                             }
                         }
                     });
-                    dynamic.addMapping("/*");
-                    dynamic.setLoadOnStartup(1);
+                    dynamic.addMapping("/*");  // 拦截所有请求路径
+                    dynamic.setLoadOnStartup(1);  // 容器启动时加载 Servlet
                 }
             });
 
+            // 启动服务器并保存引用
             server.start();
             servers.put(componentId, server);
             serverConfigs.put(componentId, new HttpServerConfig(port, "运行中", new Date(), customHandler != null));
 
-            System.out.println("HTTP服务器启动成功，端口: " + port);
+            System.out.println("HTTP 服务器启动成功，端口：" + port);
             return true;
 
         } catch (Exception e) {
-            System.err.println("启动HTTP服务器失败，端口: " + port + ", 错误: " + e.getMessage());
+            System.err.println("启动 HTTP 服务器失败，端口：" + port + ", 错误：" + e.getMessage());
             return false;
         }
     }
 
     /**
-     * 停止HTTP服务器
+     * 停止指定组件的 HTTP 服务器
+     * @param componentId 组件唯一标识
+     * @return 停止成功返回 true，否则返回 false
      */
     public static boolean stopServer(String componentId) {
         try {
@@ -112,7 +137,11 @@ public class HttpServerManager {
     }
 
     /**
-     * 重启HTTP服务器
+     * 重启 HTTP 服务器（使用新端口）
+     * @param componentId 组件唯一标识
+     * @param port 新端口号
+     * @param needReply 是否需要响应数据
+     * @return 重启成功返回 true，否则返回 false
      */
     public static boolean restartServer(String componentId,int port,boolean needReply) {
         HttpRequestHandler handler = getServerHandler(componentId,needReply);
@@ -121,7 +150,10 @@ public class HttpServerManager {
     }
 
     /**
-     * 获取服务器处理器
+     * 获取服务器的请求处理器
+     * @param componentId 组件唯一标识
+     * @param needReply 是否需要响应数据
+     * @return 返回处理器函数，无自定义处理器时返回 null
      */
     private static HttpRequestHandler getServerHandler(String componentId,boolean needReply) {
         HttpServerConfig config = serverConfigs.get(componentId);
@@ -130,32 +162,36 @@ public class HttpServerManager {
     }
 
     /**
-     * 停止所有服务器
+     * 停止所有正在运行的 HTTP 服务器
      */
     public static void stopAllServers() {
         List<String> ids = new ArrayList<>(servers.keySet());
         for (String id : ids) {
             stopServer(id);
         }
-        System.out.println("所有HTTP服务器已停止");
+        System.out.println("所有 HTTP 服务器已停止");
     }
 
     /**
-     * 获取所有运行的服务器
+     * 获取所有运行中的服务器配置列表
+     * @return 服务器配置列表
      */
     public static List<HttpServerConfig> getRunningServers() {
         return new ArrayList<>(serverConfigs.values());
     }
 
     /**
-     * 检查端口是否在运行
+     * 检查指定端口的服务器是否在运行
+     * @param port 端口号
+     * @return 运行中返回 true，否则返回 false
      */
     public static boolean isServerRunning(int port) {
         return servers.containsKey(port);
     }
 
     /**
-     * 获取服务器数量
+     * 获取当前运行的服务器数量
+     * @return 服务器数量
      */
     public static int getServerCount() {
         return servers.size();
@@ -163,32 +199,20 @@ public class HttpServerManager {
 
     /**
      * 默认请求处理器
+     * 处理 HTTP 请求并调用消费者服务
+     * @param componentId 组件唯一标识
+     * @param context 请求上下文
+     * @param needReply 是否需要响应数据
      */
     private static void handleDefaultRequest(String componentId,RequestContext context,boolean needReply){
         HttpServletResponse resp = context.getResponse();
         resp.setContentType("application/json;charset=utf-8");
         resp.setStatus(HttpServletResponse.SC_OK);
-//        Map<String, Object> response = new HashMap<>();
-//        response.put("status", "success");
-//        response.put("message", "HTTP服务器运行中");
-//        response.put("port", context.getPort());
-//        response.put("path", context.getRequest().getRequestURI());
-//        response.put("method", context.getRequest().getMethod());
-//        response.put("timestamp", new Date());
-//        response.put("server", "HttpServerManager");
-//
-//        // 添加各种数据到响应中
-//        response.put("query_parameters", context.getQueryParameters());
-//        response.put("form_parameters", context.getFormParameters());
-//        response.put("request_body", context.getRequestBody());
-//        response.put("headers", context.getHeaders());
-//        response.put("content_type", context.getContentType());
-//        response.put("is_form_submit", context.isFormSubmit());
-//        response.put("is_json_request", context.isJsonRequest());
-//        response.put("is_multipart", context.isMultipartContent());
-//        response.put("multipart_data",MultipartParser.parse(context.requestBody,context.getContentType()));
+        
+        // 根据是否需要响应，选择同步或异步处理方式
         if(needReply){
             try {
+                // 同步处理：获取消费者 Bean 处理消息并返回结果
                 HttpResData result = SpringUtils.getBean(HttpServerConsumer.class).handleMessage(
                         componentId,
                         context.getRequest().getMethod(),
@@ -205,6 +229,7 @@ public class HttpServerManager {
                 }
             }catch (Exception ignore){}
         }else {
+            // 异步处理：仅发送消息，不等待响应
             SpringUtils.getBean(HttpServerConsumer.class).message(
                     componentId,
                     context.getRequest().getMethod(),
@@ -220,7 +245,9 @@ public class HttpServerManager {
     }
 
     /**
-     * 从InputStream读取字符串（兼容Java 8）
+     * 从 InputStream 读取字符串（兼容 Java 8）
+     * @param inputStream 输入流
+     * @return 读取的字符串
      */
     private static String readInputStreamToString(InputStream inputStream) throws IOException {
         ByteArrayOutputStream result = new ByteArrayOutputStream();
@@ -234,14 +261,15 @@ public class HttpServerManager {
 
     /**
      * 请求上下文类（封装所有数据获取方法）
+     * 提供便捷的请求数据访问接口
      */
     public static class RequestContext {
         private final HttpServletRequest request;
         private final HttpServletResponse response;
         private final int port;
-        private String requestBody;
-        private Map<String, String> formParameters;
-        private boolean dataParsed = false;
+        private String requestBody;  // 缓存的请求体
+        private Map<String, String> formParameters;  // 缓存的表单参数
+        private boolean dataParsed = false;  // 数据是否已解析标记
 
         public RequestContext(HttpServletRequest request, HttpServletResponse response, int port) {
             this.request = request;
@@ -250,13 +278,15 @@ public class HttpServerManager {
         }
 
         /**
-         * 获取查询参数（URL中的参数）
+         * 获取查询参数（URL 中的参数）
+         * 自动处理字符编码转换（ISO_8859_1 -> UTF-8）
+         * @return 查询参数 Map
          */
         public Map<String, String> getQueryParameters() {
             Map<String, String> params = new HashMap<>();
             request.getParameterMap().forEach((key, values) -> {
                 if (values.length > 0) {
-                    // 手动解码参数值
+                    // 手动解码参数值，解决中文乱码问题
                     String recodedKey = new String(key.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
                     String recodedValue = new String(values[0].getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
                     params.put(recodedKey, recodedValue);
@@ -267,6 +297,8 @@ public class HttpServerManager {
 
         /**
          * 获取表单参数（application/x-www-form-urlencoded）
+         * 延迟加载：首次调用时解析请求数据
+         * @return 表单参数 Map
          */
         public Map<String, String> getFormParameters() {
             if (!dataParsed) {
@@ -277,6 +309,8 @@ public class HttpServerManager {
 
         /**
          * 获取请求体数据（raw body）
+         * 延迟加载：首次调用时解析请求数据
+         * @return 请求体字符串
          */
         public String getRequestBody() {
             if (!dataParsed) {
@@ -286,7 +320,9 @@ public class HttpServerManager {
         }
 
         /**
-         * 获取JSON格式的请求体
+         * 获取 JSON 格式的请求体
+         * @param clazz 目标类型
+         * @return 反序列化后的对象
          */
         public <T> T getJsonBody(Class<T> clazz) throws IOException {
             String body = getRequestBody();
@@ -297,7 +333,9 @@ public class HttpServerManager {
         }
 
         /**
-         * 获取多部分表单数据（multipart/form-data）- 兼容Java 8
+         * 获取多部分表单数据（multipart/form-data）- 兼容 Java 8
+         * 仅获取普通表单字段，不包含文件
+         * @return 表单字段 Map
          */
         public Map<String, String> getMultipartFormData() throws IOException, ServletException {
             if (!isMultipartContent()) {
@@ -306,7 +344,7 @@ public class HttpServerManager {
 
             Map<String, String> formData = new HashMap<>();
             for (Part part : request.getParts()) {
-                if (part.getContentType() == null) { // 表单字段
+                if (part.getContentType() == null) { // 表单字段（非文件）
                     String value = readInputStreamToString(part.getInputStream());
                     formData.put(part.getName(), value);
                 }
@@ -316,6 +354,7 @@ public class HttpServerManager {
 
         /**
          * 获取上传的文件
+         * @return 文件 Map，key 为字段名，value 为 Part 对象
          */
         public Map<String, Part> getUploadedFiles() throws IOException, ServletException {
             if (!isMultipartContent()) {
@@ -332,7 +371,8 @@ public class HttpServerManager {
         }
 
         /**
-         * 获取请求头
+         * 获取所有请求头
+         * @return 请求头 Map
          */
         public Map<String, String> getHeaders() {
             Map<String, String> headers = new HashMap<>();
@@ -345,7 +385,8 @@ public class HttpServerManager {
         }
 
         /**
-         * 获取Content-Type
+         * 获取 Content-Type 请求头
+         * @return Content-Type 字符串
          */
         public String getContentType() {
             return request.getContentType();
@@ -353,6 +394,8 @@ public class HttpServerManager {
 
         /**
          * 检查是否是表单提交
+         * 包括 application/x-www-form-urlencoded 和 multipart/form-data
+         * @return 是表单提交返回 true
          */
         public boolean isFormSubmit() {
             String contentType = getContentType();
@@ -362,7 +405,8 @@ public class HttpServerManager {
         }
 
         /**
-         * 检查是否是JSON请求
+         * 检查是否是 JSON 请求
+         * @return 是 JSON 请求返回 true
          */
         public boolean isJsonRequest() {
             String contentType = getContentType();
@@ -370,7 +414,8 @@ public class HttpServerManager {
         }
 
         /**
-         * 检查是否是多部分内容
+         * 检查是否是多部分内容（multipart/*）
+         * @return 是多部分内容返回 true
          */
         public boolean isMultipartContent() {
             String contentType = getContentType();
@@ -378,14 +423,15 @@ public class HttpServerManager {
         }
 
         /**
-         * 解析请求数据
+         * 解析请求数据（延迟加载）
+         * 根据 Content-Type 选择不同的解析方式
          */
         private void parseRequestData() {
             try {
-                // 设置请求编码为UTF-8，这必须在getReader()之前调用
+                // 设置请求编码为 UTF-8，这必须在 getReader() 之前调用
                 request.setCharacterEncoding("UTF-8");
                 if (isFormSubmit() && !isMultipartContent()) {
-                    // 对于普通表单，读取body
+                    // 对于普通表单，读取 body
                     StringBuilder bodyBuilder = new StringBuilder();
                     BufferedReader reader = request.getReader();
                     String line;
@@ -399,14 +445,14 @@ public class HttpServerManager {
                     request.setCharacterEncoding("UTF-8");
                     request.getParameterMap().forEach((key, values) -> {
                         if (values.length > 0) {
-                            // 手动解码参数值
+                            // 手动解码参数值，解决中文乱码
                             String recodedKey = new String(key.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
                             String recodedValue = new String(values[0].getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8);
                             formParameters.put(recodedKey, recodedValue);
                         }
                     });
                 } else {
-                    // 对于其他类型，直接读取body
+                    // 对于其他类型（JSON、XML 等），直接读取 body
                     StringBuilder bodyBuilder = new StringBuilder();
                     BufferedReader reader = request.getReader();
                     String line;
@@ -429,21 +475,29 @@ public class HttpServerManager {
     }
 
     /**
-     * 自定义请求处理器接口
+     * 自定义请求处理器接口（函数式接口）
+     * 允许用户自定义 HTTP 请求处理逻辑
      */
     @FunctionalInterface
     public interface HttpRequestHandler {
+        /**
+         * 处理 HTTP 请求
+         * @param componentId 组件 ID
+         * @param context 请求上下文
+         * @param needReply 是否需要响应
+         */
         void handle(String componentId,RequestContext context,boolean needReply) throws IOException, ServletException;
     }
 
     /**
-     * 服务器配置信息
+     * 服务器配置信息类
+     * 用于记录和展示服务器运行状态
      */
     public static class HttpServerConfig {
-        private int port;
-        private String status;
-        private Date startTime;
-        private boolean customHandler;
+        private int port;  // 服务器端口
+        private String status;  // 运行状态
+        private Date startTime;  // 启动时间
+        private boolean customHandler;  // 是否使用自定义处理器
 
         public HttpServerConfig(int port, String status, Date startTime, boolean customHandler) {
             this.port = port;
@@ -464,9 +518,15 @@ public class HttpServerManager {
     }
 
     /**
-     * 简单的JSON序列化工具（避免依赖）
+     * 简单的 JSON 序列化工具类（避免外部依赖）
+     * 支持基本的 JSON 序列化功能
      */
     private static class ObjectMapper {
+        /**
+         * 将 Java 对象序列化为 JSON 字符串
+         * @param value 要序列化的对象
+         * @return JSON 字符串
+         */
         public String writeValueAsString(Object value) throws IOException {
             if (value == null) {
                 return "null";
@@ -492,11 +552,20 @@ public class HttpServerManager {
             return "\"" + value.toString() + "\"";
         }
 
+        /**
+         * 将 JSON 字符串反序列化为 Java 对象
+         * @param content JSON 字符串
+         * @param clazz 目标类型
+         * @return 反序列化后的对象
+         */
         public <T> T readValue(String content, Class<T> clazz) throws IOException {
-            // 简化实现，实际使用时建议使用真实的Jackson ObjectMapper
-            throw new IOException("请使用真实的JSON库来实现此方法");
+            // 简化实现，实际使用时建议使用真实的 Jackson ObjectMapper
+            throw new IOException("请使用真实的 JSON 库来实现此方法");
         }
 
+        /**
+         * Map 转 JSON 对象
+         */
         private String mapToJson(Map<?, ?> map) {
             StringBuilder sb = new StringBuilder("{");
             boolean first = true;
@@ -516,6 +585,9 @@ public class HttpServerManager {
             return sb.toString();
         }
 
+        /**
+         * Collection 转 JSON 数组
+         */
         private String collectionToJson(Collection<?> collection) {
             StringBuilder sb = new StringBuilder("[");
             boolean first = true;
@@ -534,6 +606,9 @@ public class HttpServerManager {
             return sb.toString();
         }
 
+        /**
+         * 数组转 JSON 数组
+         */
         private String arrayToJson(Object[] array) {
             StringBuilder sb = new StringBuilder("[");
             for (int i = 0; i < array.length; i++) {
@@ -550,6 +625,9 @@ public class HttpServerManager {
             return sb.toString();
         }
 
+        /**
+         * 转义 JSON 字符串中的特殊字符
+         */
         private String escapeJsonString(String str) {
             if (str == null) {
                 return "";
@@ -564,6 +642,9 @@ public class HttpServerManager {
         }
     }
 
+    /**
+     * 主方法（用于测试）
+     */
     public static void main(String[] args) {
 //        startServer("123",9595);
     }
