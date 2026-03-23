@@ -57,6 +57,12 @@ public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
                 }
             }
         }
+        JSONObject objecotData = new JSONObject();
+    	objecotData.put("deviceSn", message.getDeviceSn());
+    	objecotData.put("slaveId", message.getSlaveId());
+    	objecotData.put("code", message.getCode());
+    	objecotData.put("registerRange", message.getRegisterRange());
+    	objecotData.put("jsonArray", JSONArray.from(list));
         threadPoolTaskExecutor.execute(() -> {
             WebSocketServer.broadcast("component", componentId, JSONObject.toJSONString(list));
         });
@@ -66,7 +72,8 @@ public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
             try {
-                Object data = method.invoke(object,message.getDeviceSn(),message.getSlaveId(),message.getCode(),message.getRegisterRange(), JSONArray.from(list));
+//                Object data = method.invoke(object,message.getDeviceSn(),message.getSlaveId(),message.getCode(),message.getRegisterRange(), JSONArray.from(list));
+            	Object data = method.invoke(object,objecotData);
                 DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                 if (decodeMessage == null) {
                     return;

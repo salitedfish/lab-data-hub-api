@@ -49,7 +49,11 @@ public class WebSocketServerConsumer {
      * @param message
      */
     public void handleMessage(String componentId, Integer wsPort, String wsPath, String message,String channelId) throws InvocationTargetException, IllegalAccessException {
-        threadPoolTaskExecutor.execute(() -> {
+    	JSONObject objecotData = new JSONObject();
+    	objecotData.put("wsPort", wsPort);
+    	objecotData.put("wsPath", wsPath);
+    	objecotData.put("message", message);
+    	threadPoolTaskExecutor.execute(() -> {
             WebSocketServer.broadcast("component", componentId, message);
         });
         String protocolId = ProtocolManager.PROTOCOL_MAP.getOrDefault(componentId, null);
@@ -57,7 +61,8 @@ public class WebSocketServerConsumer {
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
             try {
-                Object data = method.invoke(object,wsPort,wsPath, message);
+                //Object data = method.invoke(object,wsPort,wsPath, message);
+                Object data = method.invoke(object,objecotData);
                 DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                 if (decodeMessage == null) {
                     return;

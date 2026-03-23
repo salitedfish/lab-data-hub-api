@@ -1,6 +1,7 @@
 package com.labdatahub.component.protocol;
 
 import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.labdatahub.common.utils.spring.SpringUtils;
 import org.springframework.data.redis.core.RedisTemplate;
 
@@ -64,42 +65,44 @@ public class ProtocolManager {
             Object instance = implementationClass.getDeclaredConstructor().newInstance();
             Method decodeMethod = null;
             Method encodeMethod = null;
-            // 反射调用方法
-            switch (protocolType){
-                case "MQTT_BROKER":
-                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
-                    break;
-                case "MQTT_CLIENT":
-                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
-                    break;
-                case "TCP_SERVER":
-                    decodeMethod = implementationClass.getMethod("decode",String.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
-                    break;
-                case "UDP_SERVER":
-                    decodeMethod = implementationClass.getMethod("decode",String.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
-                    break;
-                case "COAP_SERVER":
-                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class,String.class,List.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
-                    break;
-                case "HTTP_SERVER":
-                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class,String.class,Map.class,Map.class,String.class,Map.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class,Integer.class,String.class);
-                    break;
-                case "WEBSOCKET_SERVER":
-                    decodeMethod = implementationClass.getMethod("decode",Integer.class,String.class,String.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
-                    break;
-                case "MODBUS_TCP":
-                    decodeMethod = implementationClass.getMethod("decode",String.class,Integer.class,String.class,String.class,JSONArray.class);
-                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
-                    break;
-                default:
-            }
+            decodeMethod = implementationClass.getMethod("decode",JSONObject.class);
+            encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class,Map.class);
+//            // 反射调用方法
+//            switch (protocolType){
+//                case "MQTT_BROKER":
+//                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
+//                    break;
+//                case "MQTT_CLIENT":
+//                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
+//                    break;
+//                case "TCP_SERVER":
+//                    decodeMethod = implementationClass.getMethod("decode",String.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
+//                    break;
+//                case "UDP_SERVER":
+//                    decodeMethod = implementationClass.getMethod("decode",String.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
+//                    break;
+//                case "COAP_SERVER":
+//                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class,String.class,List.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
+//                    break;
+//                case "HTTP_SERVER":
+//                    decodeMethod = implementationClass.getMethod("decode",String.class,String.class,String.class,Map.class,Map.class,String.class,Map.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class,Integer.class,String.class);
+//                    break;
+//                case "WEBSOCKET_SERVER":
+//                    decodeMethod = implementationClass.getMethod("decode",Integer.class,String.class,String.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
+//                    break;
+//                case "MODBUS_TCP":
+//                    decodeMethod = implementationClass.getMethod("decode",String.class,Integer.class,String.class,String.class,JSONArray.class);
+//                    encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class);
+//                    break;
+//                default:
+//            }
             CLASS_INSTANCE.put(id,instance);
             DECODE_METHOD.put(id,decodeMethod);
             ENCODE_METHOD.put(id,encodeMethod);

@@ -49,7 +49,9 @@ public class TCPServerConsumer {
      * @param message
      */
     public void handleMessage(String componentId,String clientId, String message) throws InvocationTargetException, IllegalAccessException {
-        threadPoolTaskExecutor.execute(() -> {
+    	JSONObject objecotData = new JSONObject();
+    	objecotData.put("rawData", message);
+    	threadPoolTaskExecutor.execute(() -> {
             WebSocketServer.broadcast("component", componentId, message);
         });
         String protocolId = ProtocolManager.PROTOCOL_MAP.getOrDefault(componentId, null);
@@ -57,7 +59,8 @@ public class TCPServerConsumer {
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
             try {
-                Object data = method.invoke(object, message);
+                //Object data = method.invoke(object, message);
+                Object data = method.invoke(object, objecotData);
                 DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                 if (decodeMessage == null) {
                     return;

@@ -67,16 +67,24 @@ public class HttpServerConsumer {
                                 Map<String, String> formData,
                                 String clientIp,
                                 Integer clientPort) throws InvocationTargetException, IllegalAccessException {
+    	JSONObject objecotData = new JSONObject();
+    	objecotData.put("requestMethod", requestMethod);
+    	objecotData.put("requestPath", requestPath);
+    	objecotData.put("contentType", contentType);
+    	objecotData.put("headers", headers);
+    	objecotData.put("queryParams", queryParams);
+    	objecotData.put("requestBody", requestBody);
+    	objecotData.put("formData", formData);
         threadPoolTaskExecutor.execute(() -> {
-            JSONObject data = new JSONObject();
-            data.put("requestMethod", requestMethod);
-            data.put("requestPath", requestPath);
-            data.put("contentType", contentType);
-            data.put("headers", headers);
-            data.put("queryParams", queryParams);
-            data.put("requestBody", requestBody);
-            data.put("formData", formData);
-            WebSocketServer.broadcast("component", componentId, data.toJSONString());
+//            JSONObject data = new JSONObject();
+//            data.put("requestMethod", requestMethod);
+//            data.put("requestPath", requestPath);
+//            data.put("contentType", contentType);
+//            data.put("headers", headers);
+//            data.put("queryParams", queryParams);
+//            data.put("requestBody", requestBody);
+//            data.put("formData", formData);
+            WebSocketServer.broadcast("component", componentId, objecotData.toJSONString());
         });
         HttpResData resData = new HttpResData();
         String protocolId = ProtocolManager.PROTOCOL_MAP.getOrDefault(componentId, null);
@@ -84,7 +92,8 @@ public class HttpServerConsumer {
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
             try {
-                Object data = method.invoke(object, requestMethod, requestPath, contentType, headers, queryParams, requestBody, formData);
+                //Object data = method.invoke(object, requestMethod, requestPath, contentType, headers, queryParams, requestBody, formData);
+                Object data = method.invoke(object, objecotData);
                 DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                 if (decodeMessage == null) {
                     resData.setHttNeedReply(false);

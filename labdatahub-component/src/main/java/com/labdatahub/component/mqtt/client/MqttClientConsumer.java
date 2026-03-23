@@ -1,5 +1,6 @@
 package com.labdatahub.component.mqtt.client;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.component.event.EventBus;
@@ -46,6 +47,9 @@ public class MqttClientConsumer {
      * @param topic
      */
     public void handleMessage(String clientId, String topic, String message) {
+    	JSONObject objecotData = new JSONObject();
+    	objecotData.put("topic", topic);
+    	objecotData.put("message", message);
         threadPoolTaskExecutor.execute(() -> {
             WebSocketServer.broadcast("component", clientId, message);
         });
@@ -54,7 +58,8 @@ public class MqttClientConsumer {
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
             try {
-                Object data = method.invoke(object, topic,message);
+//                Object data = method.invoke(object, topic,message);
+            	Object data = method.invoke(object, objecotData);
                 DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                 if (decodeMessage == null) {
                     return;

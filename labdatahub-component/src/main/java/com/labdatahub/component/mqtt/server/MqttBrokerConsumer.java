@@ -48,7 +48,10 @@ public class MqttBrokerConsumer {
      * @param message
      */
     public void handleMessage(String brokerId, String clientId, String topic, String message) throws InvocationTargetException, IllegalAccessException {
-        threadPoolTaskExecutor.execute(() -> {
+    	JSONObject objecotData = new JSONObject();
+    	objecotData.put("topic", topic);
+    	objecotData.put("message", message);
+    	threadPoolTaskExecutor.execute(() -> {
             WebSocketServer.broadcast("component", brokerId, message);
         });
         String protocolId = ProtocolManager.PROTOCOL_MAP.getOrDefault(brokerId, null);
@@ -56,7 +59,8 @@ public class MqttBrokerConsumer {
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
             try {
-                Object data = method.invoke(object,topic, message);
+//                Object data = method.invoke(object,topic, message);
+                Object data = method.invoke(object, objecotData);
                 DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                 if (decodeMessage == null) {
                     return;

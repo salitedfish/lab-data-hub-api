@@ -32,6 +32,7 @@ import org.eclipse.paho.client.mqttv3.MqttException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -210,7 +211,8 @@ public class DeviceDownUtils {
     public static boolean mqttBrokerDown(String deviceSn, String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
-        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+//        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
         EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
         if(!encodeMessage.getIsSend()){
             return true;
@@ -224,7 +226,8 @@ public class DeviceDownUtils {
     public static boolean mqttClientDown(String deviceSn, String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
-        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        //Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
         EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
         if(!encodeMessage.getIsSend()){
             return true;
@@ -238,7 +241,8 @@ public class DeviceDownUtils {
     public static boolean tcpServerDown(String deviceSn, String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
-        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        //Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
         EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
         if(!encodeMessage.getIsSend()){
             return true;
@@ -252,7 +256,8 @@ public class DeviceDownUtils {
     public static boolean udpServerDown(String deviceSn, String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
-        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        //Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
         EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
         if(!encodeMessage.getIsSend()){
             return true;
@@ -266,13 +271,20 @@ public class DeviceDownUtils {
     public static boolean httpServerDown(String deviceSn, String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
-        String clientInfo = HttpClientManager.DEVICE_CLIENT.get(deviceSn);
+        String clientInfo = HttpClientManager.DEVICE_CLIENT.get(deviceSn);      
+//        if(StringUtils.isNotEmpty(clientInfo)){
+//            String[] ipPort = clientInfo.split("_");
+//            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,ipPort[0],ipPort[1],customConfig);
+//        }else {
+//            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,null,null,customConfig);
+//        }
+        Map<String,Object> otherConfig = new HashMap<>();
         if(StringUtils.isNotEmpty(clientInfo)){
-            String[] ipPort = clientInfo.split("_");
-            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,ipPort[0],ipPort[1],customConfig);
-        }else {
-            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,null,null,customConfig);
+        	String[] ipPort = clientInfo.split("_");
+        	otherConfig.put("clientIp", ipPort[0]);
+        	otherConfig.put("clientPort", ipPort[1]);
         }
+        encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,otherConfig);
         return true;
     }
 
@@ -283,12 +295,19 @@ public class DeviceDownUtils {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
         String address = CoapCache.DEVICE_SERVER.get(deviceSn);
+//        if(StringUtils.isNotEmpty(address)){
+//            String[] ipPort = address.split("_");
+//            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,ipPort[0],ipPort[1],customConfig);
+//        }else {
+//            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,null,null,customConfig);
+//        }
+        Map<String,Object> otherConfig = new HashMap<>();
         if(StringUtils.isNotEmpty(address)){
-            String[] ipPort = address.split("_");
-            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,ipPort[0],ipPort[1],customConfig);
-        }else {
-            encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,null,null,customConfig);
+        	String[] ipPort = address.split("_");
+        	otherConfig.put("clientIp", ipPort[0]);
+        	otherConfig.put("clientPort", ipPort[1]);
         }
+        encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,otherConfig);
         return true;
     }
 
@@ -298,7 +317,8 @@ public class DeviceDownUtils {
     public static boolean webSocketServerDown(String deviceSn, String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
-        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        //Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
         EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
         if(!encodeMessage.getIsSend()){
             return true;
@@ -313,7 +333,8 @@ public class DeviceDownUtils {
     public static boolean modbusTcpDown(String deviceSn,Integer slaveId, String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
-        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        //Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
         EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
         if(!encodeMessage.getIsSend()){
             return true;

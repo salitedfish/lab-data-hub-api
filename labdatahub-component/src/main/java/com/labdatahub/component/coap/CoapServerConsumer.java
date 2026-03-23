@@ -48,13 +48,18 @@ public class CoapServerConsumer {
      * @param componentId
      */
     public DecodeMessage handleMessage(String componentId, String requestMethod,String requestPath, String payload, List<String> pathParams) throws InvocationTargetException, IllegalAccessException {
-        threadPoolTaskExecutor.execute(()->{
-            JSONObject data = new JSONObject();
-            data.put("requestMethod",requestMethod);
-            data.put("requestPath",requestPath);
-            data.put("payload",payload);
-            data.put("pathParams",pathParams);
-            WebSocketServer.broadcast("component",componentId,data.toJSONString());
+    	JSONObject objecotData = new JSONObject();
+    	objecotData.put("requestMethod",requestMethod);
+    	objecotData.put("requestPath",requestPath);
+    	objecotData.put("payload",payload);
+    	objecotData.put("pathParams",pathParams);
+    	threadPoolTaskExecutor.execute(()->{
+//            JSONObject data = new JSONObject();
+//            data.put("requestMethod",requestMethod);
+//            data.put("requestPath",requestPath);
+//            data.put("payload",payload);
+//            data.put("pathParams",pathParams);
+            WebSocketServer.broadcast("component",componentId,objecotData.toJSONString());
         });
         AtomicReference<DecodeMessage> returnMessage = new AtomicReference<>(null);
         String protocolId = ProtocolManager.PROTOCOL_MAP.getOrDefault(componentId,null);
@@ -62,7 +67,8 @@ public class CoapServerConsumer {
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
                 try {
-                    Object data = method.invoke(object, requestMethod, requestPath, payload, pathParams);
+//                    Object data = method.invoke(object, requestMethod, requestPath, payload, pathParams);
+                	Object data = method.invoke(object, objecotData);
                     DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                     if (decodeMessage == null) {
                         return returnMessage.get();
