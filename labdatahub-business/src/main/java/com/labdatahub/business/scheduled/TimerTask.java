@@ -1,10 +1,37 @@
 package com.labdatahub.business.scheduled;
 
-import cn.hutool.cron.CronUtil;
+import static com.labdatahub.business.service.impl.LabdatahubProtocolServiceImpl.PROTOCOL_PATH;
+import static com.labdatahub.business.utils.CacheUtils.updateAllDeviceCache;
+
+import java.io.File;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+import javax.annotation.PostConstruct;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.stereotype.Component;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.labdatahub.business.domain.*;
+import com.labdatahub.business.domain.LabdatahubComponent;
+import com.labdatahub.business.domain.LabdatahubDevice;
+import com.labdatahub.business.domain.LabdatahubDeviceLogs;
+import com.labdatahub.business.domain.LabdatahubFunction;
+import com.labdatahub.business.domain.LabdatahubModbusConfig;
+import com.labdatahub.business.domain.LabdatahubProduct;
+import com.labdatahub.business.domain.LabdatahubProtocol;
+import com.labdatahub.business.domain.LabdatahubRuleEngine;
+import com.labdatahub.business.domain.LabdatahubS71200Config;
+import com.labdatahub.business.domain.LabdatahubScheduledTask;
+import com.labdatahub.business.domain.LabdatahubWarnLinkage;
 import com.labdatahub.business.event.DeviceHeartbeatManager;
 import com.labdatahub.business.process.function.DatabaseFunctionConsumer;
 import com.labdatahub.business.process.function.FunctionConsumer;
@@ -18,7 +45,20 @@ import com.labdatahub.business.process.log.LogProcessor;
 import com.labdatahub.business.process.warn.DatabaseWarnConsumer;
 import com.labdatahub.business.process.warn.WarnConsumer;
 import com.labdatahub.business.process.warn.WarnProcessor;
-import com.labdatahub.business.service.*;
+import com.labdatahub.business.service.ILabdatahubComponentService;
+import com.labdatahub.business.service.ILabdatahubDeviceLogsService;
+import com.labdatahub.business.service.ILabdatahubDeviceService;
+import com.labdatahub.business.service.ILabdatahubFunctionRecordService;
+import com.labdatahub.business.service.ILabdatahubFunctionService;
+import com.labdatahub.business.service.ILabdatahubLinkageWarnRecordService;
+import com.labdatahub.business.service.ILabdatahubModbusConfigService;
+import com.labdatahub.business.service.ILabdatahubProductService;
+import com.labdatahub.business.service.ILabdatahubProtocolService;
+import com.labdatahub.business.service.ILabdatahubRuleEngineService;
+import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
+import com.labdatahub.business.service.ILabdatahubScheduledTaskService;
+import com.labdatahub.business.service.ILabdatahubWarnLinkageService;
+import com.labdatahub.business.service.ILabdatahubWarnRecordService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.common.core.redis.RedisCache;
 import com.labdatahub.common.utils.StringUtils;
@@ -27,21 +67,11 @@ import com.labdatahub.component.message.MessageCache;
 import com.labdatahub.component.modbus_tcp.ModbusMessageScheduler;
 import com.labdatahub.component.modbus_tcp.ModbusReadConfig;
 import com.labdatahub.component.protocol.ProtocolManager;
+import com.labdatahub.component.s7_tcp.S7MessageScheduler;
+import com.labdatahub.component.s7_tcp.S7ReadConfig;
+
+import cn.hutool.cron.CronUtil;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.stereotype.Component;
-
-import javax.annotation.PostConstruct;
-import java.io.File;
-import java.time.LocalDateTime;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
-
-import static com.labdatahub.business.service.impl.LabdatahubProtocolServiceImpl.PROTOCOL_PATH;
-import static com.labdatahub.business.utils.CacheUtils.updateAllDeviceCache;
 
 /**
  * @Description: 定时任务和初始化数据
@@ -81,6 +111,8 @@ public class TimerTask {
     private ILabdatahubLinkageWarnRecordService labdatahubLinkageWarnRecordService;
     @Autowired
     private RedisCache redisCache;
+    @Autowired
+    private ILabdatahubS71200ConfigService labdatahubS71200ConfigService;
     /**
      * 初始化组件和协议
      */
@@ -295,6 +327,35 @@ public class TimerTask {
                         config.setSlaveId(device.getSlaveId());
                         config.setRegisterRange(o.getRegisterRange());
                         ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
+                    });
+                }
+            });
+        });
+    }
+    
+    /**
+     * 初始化s71200定时读取
+     */
+    @PostConstruct
+    public void initS71200TcpRead(){
+        threadPoolTaskExecutor.execute(()->{
+            List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getModbusRead,"1"));
+            deviceList.forEach(device->{
+                List<LabdatahubS71200Config> list = labdatahubS71200ConfigService.list(new LambdaQueryWrapper<LabdatahubS71200Config>()
+                        .eq(LabdatahubS71200Config::getBelongSn,device.getDeviceSn()));
+                if("1".equals(device.getModbusRead())){
+                    list.forEach(o->{
+                    	S7MessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    	S7ReadConfig config = new S7ReadConfig();
+                        config.setDeviceSn(o.getBelongSn());
+                        config.setCode(o.getCode());
+                        config.setDelayTime(o.getDelayTime().intValue());
+                        config.setIntervalTime(o.getIntervalTime().intValue());
+                        config.setDbNumber(o.getDbNumber());
+                        config.setStartAddress(o.getStartAddress());
+                        config.setLength(o.getLength());
+                        S7MessageScheduler.addReadConfig(device.getComponentId(),config);
                     });
                 }
             });

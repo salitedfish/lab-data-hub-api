@@ -84,6 +84,12 @@
             <artifactId>rocketmq-client</artifactId>
             <version>4.9.4</version>
         </dependency>
+        
+        <dependency>
+    		<groupId>com.github.s7connector</groupId>
+    		<artifactId>s7connector</artifactId>
+    		<version>2.1</version>
+		</dependency>
     </dependencies>
 
 </project>

@@ -24,6 +24,8 @@ import com.labdatahub.component.mqtt.client.MqttClientManager;
 import com.labdatahub.component.mqtt.server.MqttBrokerConfig;
 import com.labdatahub.component.mqtt.server.MqttBrokerManager;
 import com.labdatahub.component.protocol.ProtocolManager;
+import com.labdatahub.component.s7_tcp.S7ConnectionManager;
+import com.labdatahub.component.s7_tcp.S7TcpConfig;
 import com.labdatahub.component.tcp.TCPServerConfig;
 import com.labdatahub.component.tcp.TCPServerHandlerInstance;
 import com.labdatahub.component.tcp.TCPServerManager;
@@ -327,6 +329,27 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                     return false;
                 }
             }
+            case "S71200_TCP" : {
+                if(StringUtils.isNotEmpty(component.getOtherConfig())){
+                	S7TcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(S7TcpConfig.class);
+                    boolean isOk = S7ConnectionManager.addConnection(component.getId(), config);
+                    if(!isOk){
+                        throw new CommonWarnException("开启失败，请检查配置信息是否正确");
+                    }
+                    component.setStatus("1");
+                    if(StringUtils.isNotEmpty(component.getProtocolId())){
+                        initProtocol(component.getProtocolId());
+                        ProtocolManager.PROTOCOL_MAP.put(component.getId(),component.getProtocolId());
+                    }
+                    component.setIpAddr(config.getIpAddr());
+                    component.setPort(String.valueOf(config.getPort()));
+                    labdatahubComponentMapper.updateById(component);
+                    CacheUtils.setComponentCache(component.getId(),component);
+                    return true;
+                }else {
+                    return false;
+                }
+            }
             default: return false;
         }
     }
@@ -399,6 +422,13 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             //MODBUS连接
             case "MODBUS_TCP" : {
                 ModbusConnectionManager.closeConnection(component.getId());
+                component.setStatus("0");
+                labdatahubComponentMapper.updateById(component);
+                CacheUtils.setComponentCache(component.getId(),component);
+                return true;
+            }
+            case "S71200_TCP" : {
+            	S7ConnectionManager.closeConnection(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);

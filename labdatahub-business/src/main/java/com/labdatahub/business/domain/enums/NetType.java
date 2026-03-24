@@ -39,5 +39,9 @@ public enum NetType {
     /**
      * MODBUS_TCP
      */
-    MODBUS_TCP;
+    MODBUS_TCP,
+    /**
+     * S71200_TCP
+     */
+    S71200_TCP;
 }

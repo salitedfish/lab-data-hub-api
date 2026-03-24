@@ -53,11 +53,18 @@ public class LabdatahubModbusConfigController extends BaseController
     @GetMapping("/list")
     public TableDataInfo list(LabdatahubModbusConfig labdatahubModbusConfig)
     {
-        QueryWrapper<LabdatahubModbusConfig> queryWrapper = new QueryWrapper<>();
-        queryWrapper.orderByDesc("create_time");
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubModbusConfig.getBelongSn()),"belong_sn",labdatahubModbusConfig.getBelongSn());
-        Page<LabdatahubModbusConfig> page = new Page<LabdatahubModbusConfig>(PageUtils.getPageNum(),PageUtils.getPageSize());
-        Page<LabdatahubModbusConfig> pageList = labdatahubModbusConfigService.page(page,queryWrapper);
+//        QueryWrapper<LabdatahubModbusConfig> queryWrapper = new QueryWrapper<>();
+//        queryWrapper.orderByAsc("create_time");
+//        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubModbusConfig.getBelongSn()),"belong_sn",labdatahubModbusConfig.getBelongSn());
+//        Page<LabdatahubModbusConfig> page = new Page<LabdatahubModbusConfig>(PageUtils.getPageNum(),PageUtils.getPageSize());
+//        Page<LabdatahubModbusConfig> pageList = labdatahubModbusConfigService.page(page,queryWrapper);
+        LambdaQueryWrapper<LabdatahubModbusConfig> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.orderByAsc(LabdatahubModbusConfig::getCreateTime);
+        if (StringUtils.isNotEmpty(labdatahubModbusConfig.getBelongSn())) {
+            queryWrapper.eq(LabdatahubModbusConfig::getBelongSn, labdatahubModbusConfig.getBelongSn());
+        }
+        Page<LabdatahubModbusConfig> page = new Page<>(PageUtils.getPageNum(), PageUtils.getPageSize());
+        Page<LabdatahubModbusConfig> pageList = labdatahubModbusConfigService.page(page, queryWrapper);
         return getDataTable(pageList);
     }
 
