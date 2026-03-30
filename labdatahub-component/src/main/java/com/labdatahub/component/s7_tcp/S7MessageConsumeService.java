@@ -35,10 +35,8 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
         }
 
         // 读取 DB 数据
-        byte[] rawData = S7DataReader.readDB(connector, message.getDbNumber(), message.getStartAddress(), message.getLength());
-        
-        //String rawData2 = S7DataReader.readDB(connector, message.getDbNumber(), message.getStartAddress(), message.getLength(),String.class);
-
+        //byte[] rawData = S7DataReader.readDB(connector, message.getDbNumber(), message.getStartAddress(), message.getLength());
+        Object rawData = S7DataReader.readDB(connector, message.getDbNumber(),message.getBlockType(), message.getStartAddress(), message.getLength(),message.getBitOffset());
         // 构建结果 JSON
         JSONObject result = new JSONObject();
         result.put("deviceSn", message.getDeviceSn());

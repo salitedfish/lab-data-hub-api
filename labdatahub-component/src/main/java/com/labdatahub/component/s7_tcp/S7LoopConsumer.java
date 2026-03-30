@@ -41,6 +41,7 @@ public class S7LoopConsumer {
                     break;
                 } catch (Exception e) {
                     log.error("componentId={} 消费消息异常", componentId, e);
+                    e.printStackTrace();
                 }
             }
             CONSUME_THREAD_MAP.remove(componentId);
@@ -111,6 +112,7 @@ public class S7LoopConsumer {
     public static void stopAllConsume() {
         CONSUME_THREAD_MAP.keySet().forEach(S7LoopConsumer::stopConsume);
         CONSUME_THREAD_MAP.clear();
-        System.out.println("所有S7消费线程已停止");
+        //System.out.println("所有S7消费线程已停止");
+        log.info("所有S7消费线程已停止");
     }
 }

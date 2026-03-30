@@ -1,5 +1,14 @@
 package com.labdatahub.component.modbus_tcp;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.stereotype.Component;
+
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.labdatahub.common.utils.StringUtils;
@@ -10,24 +19,14 @@ import com.labdatahub.component.message.MessageCache;
 import com.labdatahub.component.message.MessageUtils;
 import com.labdatahub.component.protocol.ProtocolManager;
 import com.labdatahub.component.sysws.WebSocketServer;
-import lombok.extern.slf4j.Slf4j;
-import net.wimpi.modbus.net.TCPMasterConnection;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.stereotype.Component;
 
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.BlockingQueue;
+import net.wimpi.modbus.net.TCPMasterConnection;
 
 /**
  * @Description:
  * @Author: labdatahub
  * @CreateTime: 2025-12-25
  */
-@Slf4j
 @Component
 public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
     @Autowired

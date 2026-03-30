@@ -3,6 +3,7 @@ package com.labdatahub.business.service.impl;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,6 +85,7 @@ public class LabdatahubProtocolServiceImpl extends ServiceImpl<LabdatahubProtoco
                 String fileNewName = UUID.randomUUID().toString()+".jar";
                 String filePath = PROTOCOL_PATH + File.separator + fileNewName;
                 protocolFile.transferTo(new File(filePath));
+                labdatahubProtocol.setCreateTime(new Date());
                 labdatahubProtocol.setLocalUrl(filePath);
                 labdatahubProtocol.setNewName(fileNewName);
                 labdatahubProtocol.setType("jar");

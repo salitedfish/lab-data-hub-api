@@ -1,8 +1,12 @@
 package com.labdatahub.component.s7_tcp;
 
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@AllArgsConstructor
+@NoArgsConstructor
 public class S7DeviceConfig {
     private String deviceId;    // 设备唯一标识
     private String ipAddress;   // PLC IP

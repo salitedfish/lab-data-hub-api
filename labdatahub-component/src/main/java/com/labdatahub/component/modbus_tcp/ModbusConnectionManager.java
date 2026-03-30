@@ -1,165 +1,190 @@
 package com.labdatahub.component.modbus_tcp;
 
-import com.labdatahub.common.utils.spring.SpringUtils;
-import net.wimpi.modbus.net.TCPMasterConnection;
 import java.net.InetAddress;
-import java.net.Socket;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import com.labdatahub.common.utils.spring.SpringUtils;
+
+import lombok.extern.slf4j.Slf4j;
+import net.wimpi.modbus.net.TCPMasterConnection;
 
 /**
- * 连接管理器，维护多个设备的连接（新增自动检查+定时重连）
+ * 连接管理器，维护多个设备的连接（支持自动重连+健康检查）
  */
+@Slf4j
 public class ModbusConnectionManager {
-    // 存储串口服务器连接：key为componentId（线程安全）
-    public static Map<String, TCPMasterConnection> connections = new ConcurrentHashMap<>();
-    // 存储每个componentId对应的连接配置（用于重连）
+    // 存储串口服务器连接：key 为 componentId（线程安全）
+	public static Map<String, TCPMasterConnection> connections = new ConcurrentHashMap<>();
+    // 存储每个 componentId 对应的连接配置（用于重连）
     private static final Map<String, ModbusTcpConfig> configMap = new ConcurrentHashMap<>();
-    // 连接健康检查调度器（全局单例，定时检查连接状态）
+    // 存储每个 componentId 的重连失败次数
+    private static final Map<String, AtomicInteger> reconnectFailCountMap = new ConcurrentHashMap<>();
+    
+    // 连接健康检查调度器（全局单例）
     private static final ScheduledExecutorService healthCheckScheduler = Executors.newScheduledThreadPool(
             1,
             r -> {
                 Thread t = new Thread(r, "modbus-connection-health-check");
-                t.setDaemon(true); // 守护线程，应用退出时自动销毁
+                t.setDaemon(true);
                 return t;
             }
     );
+    
+    // 重连调度器（独立线程池，避免阻塞健康检查）
+    private static final ScheduledExecutorService reconnectScheduler =  Executors.newScheduledThreadPool(
+    		1,
+            r -> {
+                Thread t = new Thread(r, "modbus-reconnect-worker");
+                t.setDaemon(true);
+                return t;
+            }
+    );
+    
+    // ========== 可配置参数（可根据业务调整） ==========
+    // 健康检查间隔（秒）
+    private static final int HEALTH_CHECK_INTERVAL = 10;
+    // 最大重连次数（超过后放弃，需手动重启）
+    private static final int MAX_RECONNECT_ATTEMPTS = 3;
+    // 重连基础延迟（毫秒），采用指数退避
+    private static final int RECONNECT_BASE_DELAY_MS = 1000;
+    // 重连最大延迟（毫秒）
+    private static final int RECONNECT_MAX_DELAY_MS = 60000;
 
+   
     // 静态初始化：启动全局连接健康检查（每10秒检查一次，可根据业务调整）
+    // 首次延迟0秒执行，之后每10秒执行一次健康检查
     static {
-        // 首次延迟0秒执行，之后每10秒执行一次健康检查
         healthCheckScheduler.scheduleAtFixedRate(
                 ModbusConnectionManager::checkAllConnections,
                 0,
-                10,
+                HEALTH_CHECK_INTERVAL,
                 TimeUnit.SECONDS
         );
+        log.info("Modbus 连接健康检查任务已启动，检查间隔={}秒", HEALTH_CHECK_INTERVAL);
     }
 
     /**
-     * 创建连接（兼容原有逻辑，新增配置存储）
+     * 创建连接
      * @param componentId 组件唯一标识
      * @param config 连接配置
      * @return 首次连接是否成功
      */
     public static boolean addConnection(String componentId, ModbusTcpConfig config) {
         try {
-            // 1. 校验参数
             if (componentId == null || config == null || config.getIpAddr() == null) {
+                log.error("[Modbus 连接] componentId={} 参数非法", componentId);
                 return false;
             }
 
-            // 2. 存储配置（用于后续重连）
             configMap.put(componentId, config);
+            reconnectFailCountMap.put(componentId, new AtomicInteger(0));
 
-            // 3. 执行连接逻辑
             InetAddress address = InetAddress.getByName(config.getIpAddr());
             TCPMasterConnection connection = new TCPMasterConnection(address);
             connection.setPort(config.getPort());
             connection.setTimeout(config.getTimeout());
 
-            // 先关闭旧连接（避免资源泄漏）
             TCPMasterConnection oldConn = connections.get(componentId);
             if (oldConn != null && oldConn.isConnected()) {
-                oldConn.close();
+                try {
+                    oldConn.close();
+                    log.debug("[Modbus 连接] componentId={} 旧连接已关闭", componentId);
+                } catch (Exception e) {
+                    log.warn("[Modbus 连接] componentId={} 关闭旧连接失败：{}", componentId, e.getMessage());
+                }
             }
 
-            // 建立新连接
             if (!connection.isConnected()) {
                 connection.connect();
             }
 
-            // 4. 更新连接映射
             connections.put(componentId, connection);
-            System.out.printf("[Modbus连接] componentId=%s 首次连接成功（%s:%d）%n",
+            log.info("[Modbus 连接] componentId={} 首次连接成功（{}:{}）", 
                     componentId, config.getIpAddr(), config.getPort());
+            
             ModbusLoopConsumer.startConsume(componentId, SpringUtils.getBean(ModbusMessageConsumeService.class));
             return true;
         } catch (Exception e) {
-            System.err.printf("[Modbus连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
-            // 连接失败时移除无效配置/连接，避免空转
+            log.error("[Modbus 连接] componentId={} 首次连接失败：{}", componentId, e.getMessage(), e);
             connections.remove(componentId);
             configMap.remove(componentId);
+            reconnectFailCountMap.remove(componentId);
             return false;
         }
     }
 
     /**
-     * 关闭单个设备连接（兼容原有逻辑，新增配置清理）
+     * 关闭单个设备连接
      */
     public static void closeConnection(String componentId) {
-        // 1. 关闭连接
+    	// 1. 关闭连接
         TCPMasterConnection connection = connections.remove(componentId);
         if (connection != null) {
             try {
                 if (connection.isConnected()) {
                     connection.close();
                 }
+                log.debug("[Modbus 连接] componentId={} 连接已关闭", componentId);
             } catch (Exception e) {
-                System.err.printf("[Modbus连接] componentId=%s 关闭失败：%s%n", componentId, e.getMessage());
+                log.warn("[Modbus 连接] componentId={} 关闭连接失败：{}", componentId, e.getMessage());
             }
         }
-
         // 2. 清理配置（停止该组件的重连检查）
         configMap.remove(componentId);
-
+        reconnectFailCountMap.remove(componentId);
+        
         // 3. 清理消息队列和消费线程（原有逻辑保留）
         ModbusMessageScheduler.removeMessageQueue(componentId);
         ModbusLoopConsumer.stopConsume(componentId);
 
-        System.out.printf("[Modbus连接] componentId=%s 连接已关闭，配置已清理%n", componentId);
+        log.info("[Modbus 连接] componentId={} 连接已关闭，配置已清理", componentId);
     }
 
     /**
-     * 关闭所有连接（兼容原有逻辑，新增调度器停止+配置清理）
+     * 关闭所有连接（应用关闭时调用）
      */
     public static void closeAllConnections() {
-        // 1. 关闭所有连接
         connections.forEach((id, conn) -> {
             try {
                 if (conn.isConnected()) {
                     conn.close();
                 }
             } catch (Exception e) {
-                System.err.printf("[Modbus连接] componentId=%s 关闭失败：%s%n", id, e.getMessage());
+                log.warn("[Modbus 连接] componentId={} 关闭失败：{}", id, e.getMessage());
             }
         });
 
-        // 2. 清理所有映射
         connections.clear();
         configMap.clear();
+        reconnectFailCountMap.clear();
 
-        // 3. 停止健康检查调度器（避免资源泄漏）
-        healthCheckScheduler.shutdown();
-        try {
-            if (!healthCheckScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                healthCheckScheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            healthCheckScheduler.shutdownNow();
-        }
+        shutdownExecutor(healthCheckScheduler, "健康检查调度器");
+        shutdownExecutor(reconnectScheduler, "重连调度器");
 
-        System.out.println("[Modbus连接] 所有连接已关闭，健康检查调度器已停止");
+        log.info("[Modbus 连接] 所有连接已关闭，调度器已停止");
     }
-
-    // ========== 核心新增：连接健康检查与重连逻辑 ==========
 
     /**
      * 检查所有连接状态，失效则自动重连
      */
     private static void checkAllConnections() {
-        // 遍历所有已配置的componentId（避免遗漏待重连的组件）
         for (String componentId : configMap.keySet()) {
-            checkAndReconnect(componentId);
+            try {
+                checkAndReconnect(componentId);
+            } catch (Exception e) {
+                log.error("[Modbus 健康检查] componentId={} 检查失败：{}", componentId, e.getMessage(), e);
+            }
         }
     }
 
     /**
-     * 检查单个componentId的连接状态，失效则重连
-     * @param componentId 组件唯一标识
+     * 检查单个 componentId 的连接状态，失效则重连
      */
     private static void checkAndReconnect(String componentId) {
         ModbusTcpConfig config = configMap.get(componentId);
@@ -168,21 +193,27 @@ public class ModbusConnectionManager {
         }
 
         TCPMasterConnection connection = connections.get(componentId);
-        // 校验连接是否有效（结合底层Socket状态，避免本地标记误判）
-        boolean isConnectionValid = isConnectionValid(connection);
+        if (!isConnectionValid(connection)) {
+            AtomicInteger failCount = reconnectFailCountMap.computeIfAbsent(componentId, k -> new AtomicInteger(0));
+            int currentFailCount = failCount.get();
+            
+            if (currentFailCount >= MAX_RECONNECT_ATTEMPTS) {
+                log.error("[Modbus 重连] componentId={} 重连失败次数已达上限（{}次），停止重连", 
+                        componentId, MAX_RECONNECT_ATTEMPTS);
+                connections.remove(componentId);
+                return;
+            }
 
-        if (!isConnectionValid) {
-            System.out.printf("[Modbus重连] componentId=%s 连接失效，开始重连（%s:%d）%n",
-                    componentId, config.getIpAddr(), config.getPort());
-            // 执行重连逻辑
-            reconnect(componentId, config);
+            log.warn("[Modbus 重连] componentId={} 连接失效（失败{}/{}次），开始重连（{}:{}）", 
+                    componentId, currentFailCount + 1, MAX_RECONNECT_ATTEMPTS, 
+                    config.getIpAddr(), config.getPort());
+            
+            reconnectScheduler.submit(() -> reconnect(componentId, config, failCount));
         }
     }
 
     /**
-     * 精准校验连接是否有效（核心：避免本地isConnected()误判）
-     * @param connection Modbus TCP连接
-     * @return true=有效，false=失效
+     * 精准校验连接是否有效
      */
     private static boolean isConnectionValid(TCPMasterConnection connection) {
         if (connection == null||!connection.isConnected()) {
@@ -193,42 +224,97 @@ public class ModbusConnectionManager {
     }
 
     /**
-     * 执行重连逻辑
-     * @param componentId 组件唯一标识
-     * @param config 连接配置
-     * @return 重连是否成功
+     * 执行重连逻辑（带指数退避）
      */
-    private static boolean reconnect(String componentId, ModbusTcpConfig config) {
+    private static boolean reconnect(String componentId, ModbusTcpConfig config, AtomicInteger failCount) {
         try {
-            // 1. 创建新连接
+            int retryCount = failCount.incrementAndGet();
+            
             InetAddress address = InetAddress.getByName(config.getIpAddr());
             TCPMasterConnection newConn = new TCPMasterConnection(address);
             newConn.setPort(config.getPort());
             newConn.setTimeout(config.getTimeout());
 
-            // 2. 关闭旧连接（释放资源）
             TCPMasterConnection oldConn = connections.get(componentId);
             if (oldConn != null) {
                 try {
                     oldConn.close();
                 } catch (Exception e) {
-                    // 旧连接关闭失败不影响新连接创建
-                    System.err.printf("[Modbus重连] componentId=%s 旧连接关闭失败：%s%n", componentId, e.getMessage());
+                    log.warn("[Modbus 重连] componentId={} 旧连接关闭失败：{}", componentId, e.getMessage());
                 }
             }
 
-            // 3. 建立新连接
             newConn.connect();
-            // 4. 更新连接映射
             connections.put(componentId, newConn);
-            System.out.printf("[Modbus重连] componentId=%s 重连成功（%s:%d）%n",
-                    componentId, config.getIpAddr(), config.getPort());
+            
+            failCount.set(0);
+            log.info("[Modbus 重连] componentId={} 重连成功（第{}次尝试，{}:{}）", 
+                    componentId, retryCount, config.getIpAddr(), config.getPort());
             return true;
+            
         } catch (Exception e) {
-            System.err.printf("[Modbus重连] componentId=%s 重连失败：%s%n", componentId, e.getMessage());
-            // 重连失败时移除无效连接（避免下次检查重复处理）
+            int currentFailCount = failCount.get();
+            long delayMs = calculateReconnectDelay(currentFailCount);
+            
+            log.error("[Modbus 重连] componentId={} 重连失败（第{}次），{}ms 后重试：{}", 
+                    componentId, currentFailCount, delayMs, e.getMessage());
+            
             connections.remove(componentId);
+            
+            if (currentFailCount < MAX_RECONNECT_ATTEMPTS) {
+                reconnectScheduler.schedule(
+                        () -> reconnect(componentId, config, failCount),
+                        delayMs,
+                        TimeUnit.MILLISECONDS
+                );
+            } else {
+                log.error("[Modbus 重连] componentId={} 重连失败次数已达上限，停止重连", componentId);
+            }
+            
             return false;
         }
+    }
+
+    /**
+     * 计算重连延迟（指数退避算法）
+     */
+    private static long calculateReconnectDelay(int attemptCount) {
+        long delay = (long) (RECONNECT_BASE_DELAY_MS * Math.pow(2, attemptCount - 1));
+        delay = Math.min(delay, RECONNECT_MAX_DELAY_MS);
+        delay = delay + (long) (Math.random() * 1000);
+        return delay;
+    }
+
+    /**
+     * 优雅关闭线程池
+     */
+    private static void shutdownExecutor(ExecutorService executor, String name) {
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+                log.warn("[{}] 强制关闭", name);
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+            Thread.currentThread().interrupt();
+            log.warn("[{}] 关闭被中断", name, e);
+        }
+    }
+
+    /**
+     * 获取连接状态（供外部查询）
+     */
+    public static boolean isConnected(String componentId) {
+        TCPMasterConnection connection = connections.get(componentId);
+        return isConnectionValid(connection);
+    }
+
+    /**
+     * 获取重连失败次数（供监控使用）
+     */
+    public static int getReconnectFailCount(String componentId) {
+        AtomicInteger count = reconnectFailCountMap.get(componentId);
+        return count != null ? count.get() : 0;
     }
 }

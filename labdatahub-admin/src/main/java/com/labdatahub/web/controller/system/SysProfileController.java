@@ -92,30 +92,30 @@ public class SysProfileController extends BaseController
     @PutMapping("/updatePwd")
     public AjaxResult updatePwd(@RequestBody Map<String, String> params)
     {
-//        String oldPassword = params.get("oldPassword");
-//        String newPassword = params.get("newPassword");
-//        LoginUser loginUser = getLoginUser();
-//        Long userId = loginUser.getUserId();
-//        String password = loginUser.getPassword();
-//        if (!SecurityUtils.matchesPassword(oldPassword, password))
-//        {
-//            return error("修改密码失败，旧密码错误");
-//        }
-//        if (SecurityUtils.matchesPassword(newPassword, password))
-//        {
-//            return error("新密码不能与旧密码相同");
-//        }
-//        newPassword = SecurityUtils.encryptPassword(newPassword);
-//        if (userService.resetUserPwd(userId, newPassword) > 0)
-//        {
-//            // 更新缓存用户密码&密码最后更新时间
-//            loginUser.getUser().setPwdUpdateDate(DateUtils.getNowDate());
-//            loginUser.getUser().setPassword(newPassword);
-//            tokenService.setLoginUser(loginUser);
-//            return success();
-//        }
-//        return error("修改密码异常，请联系管理员");
-        return error("演示模式，不可修改密码");
+        String oldPassword = params.get("oldPassword");
+        String newPassword = params.get("newPassword");
+        LoginUser loginUser = getLoginUser();
+        Long userId = loginUser.getUserId();
+        String password = loginUser.getPassword();
+        if (!SecurityUtils.matchesPassword(oldPassword, password))
+        {
+            return error("修改密码失败，旧密码错误");
+        }
+        if (SecurityUtils.matchesPassword(newPassword, password))
+        {
+            return error("新密码不能与旧密码相同");
+        }
+        newPassword = SecurityUtils.encryptPassword(newPassword);
+        if (userService.resetUserPwd(userId, newPassword) > 0)
+        {
+            // 更新缓存用户密码&密码最后更新时间
+            loginUser.getUser().setPwdUpdateDate(DateUtils.getNowDate());
+            loginUser.getUser().setPassword(newPassword);
+            tokenService.setLoginUser(loginUser);
+            return success();
+        }
+        return error("修改密码异常，请联系管理员");
+//        return error("演示模式，不可修改密码");
     }
 
     /**

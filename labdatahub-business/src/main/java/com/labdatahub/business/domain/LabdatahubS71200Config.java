@@ -50,11 +50,19 @@ private static final long serialVersionUID = 1L;
     /** 同一网络组件读取属性延迟时间 */
     @Excel(name = "同一网络组件读取属性延迟时间")
     private Long delayTime;
-    /** 范围,逗号分隔如（1,2-5,7） */
+
     @Excel(name = "DB块号")
     private Integer dbNumber;     // DB块号
-    @Excel(name = "起始字节偏移")
-    private Integer startAddress; // 起始字节偏移
+    
+    @Excel(name = "块类型（DBW，DBX，DBD，DBB）")
+    private String blockType;    
+    
+    @Excel(name = "起始地址")
+    private Integer startAddress; 
+    
+    @Excel(name = "偏移量（0-7）")
+    private Integer bitOffset;   		// 偏移量
+    
     @Excel(name = "读取长度（字节）")
     private Integer length;       // 读取长度（字节）
 }

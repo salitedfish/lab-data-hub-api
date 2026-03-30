@@ -1,34 +1,41 @@
 package com.labdatahub.business.controller;
 
-import java.io.IOException;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
+
 import javax.servlet.http.HttpServletResponse;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.labdatahub.business.domain.LabdatahubComponent;
 import com.labdatahub.business.domain.LabdatahubProduct;
 import com.labdatahub.business.domain.LabdatahubProtocol;
+import com.labdatahub.business.service.ILabdatahubComponentService;
 import com.labdatahub.business.service.ILabdatahubProductService;
 import com.labdatahub.business.service.ILabdatahubProtocolService;
 import com.labdatahub.business.utils.CacheUtils;
-import com.labdatahub.common.annotation.Anonymous;
-import com.labdatahub.common.exception.CommonWarnException;
-import com.labdatahub.common.utils.PageUtils;
-import com.labdatahub.common.utils.StringUtils;
-import com.labdatahub.component.utils.PortChecker;
-import org.eclipse.paho.client.mqttv3.MqttException;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.bind.annotation.*;
 import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
-import com.labdatahub.business.domain.LabdatahubComponent;
-import com.labdatahub.business.service.ILabdatahubComponentService;
-import com.labdatahub.common.utils.poi.ExcelUtil;
 import com.labdatahub.common.core.page.TableDataInfo;
+import com.labdatahub.common.utils.PageUtils;
+import com.labdatahub.common.utils.StringUtils;
+import com.labdatahub.common.utils.poi.ExcelUtil;
+import com.labdatahub.component.utils.PortChecker;
 
 /**
  * 网络组件Controller
@@ -50,10 +57,11 @@ public class LabdatahubComponentController extends BaseController
      * 查询网络组件列表
      */
     @GetMapping("/list")
+    @PreAuthorize("@ss.hasPermi('business:component:list')")
     public TableDataInfo list(LabdatahubComponent labdatahubComponent)
     {
-        QueryWrapper<LabdatahubComponent> queryWrapper = new QueryWrapper<>();
-        queryWrapper.orderByAsc("create_time");
+    	LambdaQueryWrapper<LabdatahubComponent> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.orderByAsc(LabdatahubComponent::getCreateTime);
         Page<LabdatahubComponent> page = new Page<LabdatahubComponent>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubComponent> pageList = labdatahubComponentService.page(page,queryWrapper);
         return getDataTable(pageList);
@@ -85,6 +93,7 @@ public class LabdatahubComponentController extends BaseController
     @PostMapping
     @Transactional(rollbackFor = Exception.class)
     public AjaxResult add(@RequestBody LabdatahubComponent labdatahubComponent) throws Exception {
+    	labdatahubComponent.setCreateTime(new Date());
         labdatahubComponentService.save(labdatahubComponent);
         CacheUtils.setComponentCache(labdatahubComponent.getId(),labdatahubComponent);
         if("1".equals(labdatahubComponent.getStatus())) {

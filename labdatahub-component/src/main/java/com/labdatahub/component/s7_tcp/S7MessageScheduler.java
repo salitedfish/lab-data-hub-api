@@ -2,6 +2,8 @@ package com.labdatahub.component.s7_tcp;
 
 import org.apache.commons.lang3.StringUtils;
 
+import com.labdatahub.component.modbus_tcp.ModbusMessage;
+
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
@@ -39,7 +41,9 @@ public class S7MessageScheduler {
                 message.setDeviceSn(readConfig.getDeviceSn());
                 message.setCode(readConfig.getCode());
                 message.setDbNumber(readConfig.getDbNumber());
+                message.setBlockType(readConfig.getBlockType());
                 message.setStartAddress(readConfig.getStartAddress());
+                message.setBitOffset(readConfig.getBitOffset());
                 message.setLength(readConfig.getLength());
                 message.setDelayTime(readConfig.getDelayTime());
 
@@ -109,8 +113,14 @@ public class S7MessageScheduler {
     }
 
     public static void removeMessageQueue(String componentId) {
-        BlockingQueue<S7Message> queue = messageQueueMap.remove(componentId);
-        if (queue != null) queue.clear();
+        if (StringUtils.isBlank(componentId)) {
+            return;
+        }
+        BlockingQueue<S7Message> targetQueue = messageQueueMap.remove(componentId);
+        if (targetQueue != null) {
+            System.out.printf("已移除componentId=%s 的消息队列，清空消息数：%d%n", componentId, targetQueue.size());
+            targetQueue.clear();
+        }
     }
 
     public static void shutdown() {

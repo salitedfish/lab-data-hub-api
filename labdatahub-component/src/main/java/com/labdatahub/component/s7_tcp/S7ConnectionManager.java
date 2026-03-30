@@ -1,14 +1,17 @@
 package com.labdatahub.component.s7_tcp;
 
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
 import com.github.s7connector.api.S7Connector;
 import com.github.s7connector.api.factory.S7ConnectorFactory;
 import com.labdatahub.common.utils.spring.SpringUtils;
 
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.Map;
-import java.util.concurrent.*;
 
 @Slf4j
 public class S7ConnectionManager {
@@ -93,7 +96,7 @@ public class S7ConnectionManager {
     public static void closeAllConnections() {
         connections.forEach((id, conn) -> {
             try {
-            	conn.close();;
+            	conn.close();
             } catch (Exception e) {
             	log.error("[S7连接] componentId={} 关闭连接异常", id, e);
             }
@@ -181,8 +184,21 @@ public class S7ConnectionManager {
         return S7ConnectorFactory.buildTCPConnector()
             	.withHost(config.getIpAddr())
             	.withPort(config.getPort())
-            	.withRack(0)       // rack 机架号，通常为 0,根据实际调整
-            	.withSlot(1)       // slot 插槽号，S7-1200 通常为 1,根据实际调整
+            	.withRack(config.getRack())       // rack 机架号，通常为 0,根据实际调整
+            	.withSlot(config.getSlot())       // slot 插槽号，S7-1200 通常为 1,根据实际调整
             	.build();
     }
+    public static void main(String[] args) throws Exception {
+    	S7TcpConfig config = new S7TcpConfig();
+    	config.setIpAddr("192.168.0.6");
+    	config.setPort(102);
+    	S7Connector connector = buildConnector(config);
+//    	byte[] data = connector.read(DaveArea.DB, 1, 2, 0);
+//    	int value = new IntegerConverter().extract(Integer.class, data, 0, 0);
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBW", 0, null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBX", 2, null,0));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBD", 260, null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBD", 264, null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBB", 6, 8,null));
+	}
 }

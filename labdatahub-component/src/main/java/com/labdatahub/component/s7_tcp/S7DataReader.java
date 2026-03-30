@@ -1,5 +1,7 @@
 package com.labdatahub.component.s7_tcp;
 
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -58,6 +60,47 @@ public class S7DataReader {
             }
             return data;
         }, "readDB", dbNumber, numberOfBytes, startByteOffset);
+    }
+    
+    public static Object readDB(S7Connector connector, Integer dbNumber, String blockType,Integer startAddress, Integer length, Integer bitOffset) throws Exception {
+    	if (connector == null) {
+            throw new IllegalStateException("S7连接未建立或已断开");
+        }
+    	switch (blockType){
+    		case "DBW":{//2字节
+    			byte[] data = connector.read(DaveArea.DB, dbNumber, 2, startAddress);
+    	    	int value = new IntegerConverter().extract(Integer.class, data, 0, 0);
+    	    	return value;
+    		}
+    		case "DBX":{//1字节
+    			byte[] data = connector.read(DaveArea.DB, dbNumber, 1, startAddress);
+    	    	boolean value = new BitConverter().extract(Boolean.class, data, 0, bitOffset);
+    	    	return value;
+    		}
+    		case "DBD":{//4字节
+    			byte[] data = connector.read(DaveArea.DB, dbNumber, 4, startAddress);
+    			float value = new RealConverter().extract(Float.class, data, 0, 0);
+    	    	return value;
+    		}
+    		case "DBB":{//length字节
+    			byte[] data = connector.read(DaveArea.DB, dbNumber, length, startAddress);
+//    			String value = new StringConverter().extract(String.class, data, 0, 0);
+//    			// 读取前两个字节（最大长度和实际长度）
+//    	        byte[] header = connector.read(DaveArea.DB, dbNumber, 2, startAddress);
+//    	        int maxLength = header[0] & 0xFF;
+//    	        int actualLength = header[1] & 0xFF;
+//    	        // 实际读取字符内容（跳过头部2字节）
+//    	        byte[] charData = connector.read(DaveArea.DB, dbNumber, actualLength, startAddress + 2);
+    	        // 西门子 String 类型的中文使用 GBK 编码
+    	        try {
+    	            return new String(data, "GBK").trim();
+    	        } catch (UnsupportedEncodingException e) {
+    	            return new String(data, StandardCharsets.ISO_8859_1).trim();
+    	        }
+    		}
+    		default:
+    	}
+    	return null;
     }
     
     public static  <T> T readDB(S7Connector connector, int dbNumber, int startByteOffset, int numberOfBytes, Class<T> targetClass) throws Exception {

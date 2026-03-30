@@ -353,6 +353,8 @@ public class TimerTask {
                         config.setDelayTime(o.getDelayTime().intValue());
                         config.setIntervalTime(o.getIntervalTime().intValue());
                         config.setDbNumber(o.getDbNumber());
+                        config.setBlockType(o.getBlockType());
+                        config.setBitOffset(o.getBitOffset());
                         config.setStartAddress(o.getStartAddress());
                         config.setLength(o.getLength());
                         S7MessageScheduler.addReadConfig(device.getComponentId(),config);
