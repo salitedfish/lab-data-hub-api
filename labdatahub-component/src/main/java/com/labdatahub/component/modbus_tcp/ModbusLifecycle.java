@@ -13,6 +13,9 @@ public class ModbusLifecycle {
     
     @PreDestroy
     public void destroy() {
+    	log.info("=== 应用关闭，停止 Modbus 循环消费线程 ===");
+        ModbusLoopConsumer.stopAllConsume();
+        
         log.info("=== 应用关闭，停止 Modbus 消息调度器 ===");
         ModbusMessageScheduler.shutdown();
         

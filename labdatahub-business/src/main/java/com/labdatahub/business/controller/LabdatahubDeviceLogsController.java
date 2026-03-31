@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.annotation.Log;
@@ -24,6 +25,7 @@ import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
 import com.labdatahub.common.enums.BusinessType;
 import com.labdatahub.business.domain.LabdatahubDeviceLogs;
+import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.service.ILabdatahubDeviceLogsService;
 import com.labdatahub.common.utils.poi.ExcelUtil;
 import com.labdatahub.common.core.page.TableDataInfo;
@@ -47,22 +49,14 @@ public class LabdatahubDeviceLogsController extends BaseController
     @GetMapping("/list")
     public TableDataInfo list(LabdatahubDeviceLogs labdatahubDeviceLogs,String startTime,String endTime)
     {
-        QueryWrapper<LabdatahubDeviceLogs> queryWrapper = new QueryWrapper<>();
-        queryWrapper.orderByDesc("create_time");
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getLogType()),"log_type",labdatahubDeviceLogs.getLogType());
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getDeviceSn()),"device_sn",labdatahubDeviceLogs.getDeviceSn());
-//        queryWrapper.ge(StringUtils.isNotEmpty(startTime),"create_time",startTime);
-//        queryWrapper.le(StringUtils.isNotEmpty(endTime),"create_time",endTime);
+    	LambdaQueryWrapper<LabdatahubDeviceLogs> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.orderByDesc(LabdatahubDeviceLogs::getCreateTime);
+        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getLogType()),LabdatahubDeviceLogs::getLogType,labdatahubDeviceLogs.getLogType());
+        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getDeviceSn()),LabdatahubDeviceLogs::getDeviceSn,labdatahubDeviceLogs.getDeviceSn());
      // 处理时间范围查询
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        if (StringUtils.isNotEmpty(startTime)) {
-            LocalDateTime start = LocalDateTime.parse(startTime, formatter);
-            queryWrapper.ge("create_time", start);
-        }
-        if (StringUtils.isNotEmpty(endTime)) {
-            LocalDateTime end = LocalDateTime.parse(endTime, formatter);
-            queryWrapper.le("create_time", end);
-        }
+        queryWrapper.ge(StringUtils.isNotEmpty(startTime),LabdatahubDeviceLogs::getCreateTime, LocalDateTime.parse(startTime, formatter));
+        queryWrapper.le(StringUtils.isNotEmpty(endTime),LabdatahubDeviceLogs::getCreateTime, LocalDateTime.parse(endTime, formatter));
         Page<LabdatahubDeviceLogs> page = new Page<LabdatahubDeviceLogs>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubDeviceLogs> pageList = labdatahubDeviceLogsService.page(page,queryWrapper);
         return getDataTable(pageList);

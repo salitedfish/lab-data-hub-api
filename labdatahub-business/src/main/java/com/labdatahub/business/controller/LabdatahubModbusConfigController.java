@@ -67,6 +67,9 @@ public class LabdatahubModbusConfigController extends BaseController
         if (StringUtils.isNotEmpty(labdatahubModbusConfig.getBelongSn())) {
             queryWrapper.eq(LabdatahubModbusConfig::getBelongSn, labdatahubModbusConfig.getBelongSn());
         }
+        if (StringUtils.isNotEmpty(labdatahubModbusConfig.getCode())) {
+            queryWrapper.like(LabdatahubModbusConfig::getCode, labdatahubModbusConfig.getCode());
+        }
         Page<LabdatahubModbusConfig> page = new Page<>(PageUtils.getPageNum(), PageUtils.getPageSize());
         Page<LabdatahubModbusConfig> pageList = labdatahubModbusConfigService.page(page, queryWrapper);
         return getDataTable(pageList);

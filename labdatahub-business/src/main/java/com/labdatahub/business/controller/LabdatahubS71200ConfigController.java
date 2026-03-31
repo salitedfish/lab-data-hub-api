@@ -60,6 +60,9 @@ public class LabdatahubS71200ConfigController extends BaseController
         if (StringUtils.isNotEmpty(labdatahubS71200Config.getBelongSn())) {
             queryWrapper.eq(LabdatahubS71200Config::getBelongSn, labdatahubS71200Config.getBelongSn());
         }
+        if (StringUtils.isNotEmpty(labdatahubS71200Config.getCode())) {
+            queryWrapper.like(LabdatahubS71200Config::getCode, labdatahubS71200Config.getCode());
+        }
         Page<LabdatahubS71200Config> page = new Page<>(PageUtils.getPageNum(), PageUtils.getPageSize());
         Page<LabdatahubS71200Config> pageList = labdatahubS71200ConfigService.page(page, queryWrapper);
         return getDataTable(pageList);

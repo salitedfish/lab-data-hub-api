@@ -1,13 +1,17 @@
 package com.labdatahub.component.s7_tcp;
 
+import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.commons.lang3.StringUtils;
 
-import com.labdatahub.component.modbus_tcp.ModbusMessage;
-
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.Map;
-import java.util.concurrent.*;
 
 @Slf4j
 public class S7MessageScheduler {
@@ -17,7 +21,9 @@ public class S7MessageScheduler {
     private static final String CONFIG_KEY_FORMAT = "%s_%s_%s";
     private static final Integer MAX_QUEUE_SIZE = 1000;
 
-    private S7MessageScheduler() {}
+    private S7MessageScheduler() {
+    	throw new UnsupportedOperationException("该类为静态工具类，禁止实例化");
+    }
 
     public static void addReadConfig(String componentId, S7ReadConfig readConfig) {
         if (StringUtils.isBlank(componentId) || readConfig == null) {
@@ -124,18 +130,31 @@ public class S7MessageScheduler {
     }
 
     public static void shutdown() {
+    	log.info("=== 开始关闭 S7 消息调度器 ===");
+
+        int taskCount = configTaskMap.size();
+        log.info("正在取消 {} 个定时任务", taskCount);
         configTaskMap.values().forEach(f -> f.cancel(true));
         configTaskMap.clear();
+        // 2. 清空所有队列
+        int queueCount = messageQueueMap.size();
+        log.info("正在清空 {} 个消息队列", queueCount);
         messageQueueMap.clear();
+        // 3. 关闭调度器
+        log.info("正在关闭调度器线程池");
         scheduler.shutdown();
         try {
             if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+            	log.warn("调度器未能在 5 秒内正常关闭，强制关闭");
                 scheduler.shutdownNow();
+            } else {
+                log.info("调度器线程池已正常关闭");
             }
         } catch (InterruptedException e) {
+        	log.error("等待调度器关闭时被中断，强制关闭", e);
             scheduler.shutdownNow();
+            Thread.currentThread().interrupt();
         }
-        log.info("S7消息调度器已关闭");
-        //System.out.println("S7消息调度器已关闭");
+        log.info("=== S7 消息调度器已关闭，共取消{}个任务，清空{}个队列 ===", taskCount, queueCount);
     }
 }

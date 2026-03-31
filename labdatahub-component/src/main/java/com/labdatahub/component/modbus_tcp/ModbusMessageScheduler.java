@@ -1,14 +1,25 @@
 package com.labdatahub.component.modbus_tcp;
 
-import org.apache.commons.lang3.StringUtils;
+
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.commons.lang3.StringUtils;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Modbus消息定时生产-消费工具类（静态版+多组件隔离队列）
  * 功能：根据ModbusReadConfig的intervalTime定时生成ModbusMessage，按componentId存入不同队列供消费
  * 特性：全静态方法/变量，支持多componentId隔离队列，全局跨类调用
  */
+@Slf4j
 public class ModbusMessageScheduler {
     // ========== 静态变量（全局唯一） ==========
     // 多组件隔离的消息队列：key=componentId，value=对应组件的阻塞队列
@@ -75,7 +86,7 @@ public class ModbusMessageScheduler {
                     } catch (InterruptedException e) {
                         // 中断时恢复线程中断状态，不影响任务
                         Thread.currentThread().interrupt();
-                        System.err.printf("componentId=%s 消息入队被中断：%s%n", componentId, e.getMessage());
+                        log.error("componentId={} 消息入队被中断", componentId, e.getMessage());
                     }
                 },
                 0, // 初始延迟：立即执行第一次
@@ -85,7 +96,7 @@ public class ModbusMessageScheduler {
 
         // 4. 记录配置与任务的映射
         configTaskMap.put(configKey, future);
-        System.out.printf("已添加Modbus定时配置：componentId=%s, deviceSn=%s, code=%s, 间隔=%d秒%n",
+        log.info("已添加 Modbus 定时配置：componentId={}, deviceSn={}, code={}, 间隔={}秒",
                 componentId, readConfig.getDeviceSn(), readConfig.getCode(), readConfig.getIntervalTime());
     }
 
@@ -107,7 +118,7 @@ public class ModbusMessageScheduler {
         if (future != null) {
             future.cancel(true); // 取消定时任务
             configTaskMap.remove(configKey);
-            System.out.printf("已移除Modbus定时配置：componentId=%s, deviceSn=%s, code=%s%n",
+            log.info("已移除 Modbus 定时配置：componentId={}, deviceSn={}, code={}",
                     componentId, deviceSn, code);
         }
     }
@@ -158,20 +169,32 @@ public class ModbusMessageScheduler {
      */
     public static void shutdown() {
         // 1. 取消所有定时任务
+        log.info("=== 开始关闭 Modbus 消息调度器 ===");
+
+        int taskCount = configTaskMap.size();
+        log.info("正在取消 {} 个定时任务", taskCount);
         configTaskMap.values().forEach(future -> future.cancel(true));
         configTaskMap.clear();
         // 2. 清空所有队列
+        int queueCount = messageQueueMap.size();
+        log.info("正在清空 {} 个消息队列", queueCount);
         messageQueueMap.clear();
         // 3. 关闭调度器
+        log.info("正在关闭调度器线程池");
         scheduler.shutdown();
         try {
             if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                log.warn("调度器未能在 5 秒内正常关闭，强制关闭");
                 scheduler.shutdownNow(); // 强制关闭
+            } else {
+                log.info("调度器线程池已正常关闭");
             }
         } catch (InterruptedException e) {
+            log.error("等待调度器关闭时被中断，强制关闭", e);
             scheduler.shutdownNow();
+            Thread.currentThread().interrupt();
         }
-        System.out.println("Modbus消息调度器已关闭，所有组件队列已清空");
+        log.info("=== Modbus 消息调度器已关闭，共取消{}个任务，清空{}个队列 ===", taskCount, queueCount);
     }
 
     /**
@@ -210,7 +233,7 @@ public class ModbusMessageScheduler {
         }
         BlockingQueue<ModbusMessage> targetQueue = messageQueueMap.remove(componentId);
         if (targetQueue != null) {
-            System.out.printf("已移除componentId=%s 的消息队列，清空消息数：%d%n", componentId, targetQueue.size());
+            log.info("已移除 componentId={} 的消息队列，清空消息数：{}", componentId, targetQueue.size());
             targetQueue.clear();
         }
     }

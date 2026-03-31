@@ -1,17 +1,16 @@
 package com.labdatahub.component.s7_tcp;
 
 
+import com.github.s7connector.api.S7Connector;
+import com.github.s7connector.api.factory.S7ConnectorFactory;
+import com.labdatahub.common.utils.spring.SpringUtils;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-
-import com.github.s7connector.api.S7Connector;
-import com.github.s7connector.api.factory.S7ConnectorFactory;
-import com.labdatahub.common.utils.spring.SpringUtils;
-
-import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class S7ConnectionManager {
@@ -27,6 +26,8 @@ public class S7ConnectionManager {
                 return t;
             });
     // 重连配置
+    // 健康检查间隔（秒）
+    private static final int HEALTH_CHECK_INTERVAL = 10;
     private static final int MAX_RECONNECT_ATTEMPTS = 3;
     private static final long INITIAL_RETRY_DELAY_MS = 1000;  // 1秒
     private static final long MAX_RETRY_DELAY_MS = 30000;     // 30秒
@@ -37,9 +38,10 @@ public class S7ConnectionManager {
         healthCheckScheduler.scheduleAtFixedRate(
                 S7ConnectionManager::checkAllConnections,
                 0,
-                10,
+                HEALTH_CHECK_INTERVAL,
                 TimeUnit.SECONDS
         );
+        log.info("S7 连接健康检查任务已启动，检查间隔={}秒", HEALTH_CHECK_INTERVAL);
     }
 
     /**
@@ -52,9 +54,9 @@ public class S7ConnectionManager {
         if (componentId == null || config == null || config.getIpAddr() == null) {
         	log.warn("[S7连接] componentId={} 参数非法", componentId);
             return false;
-        }
-        configMap.put(componentId, config);
+        }       
         try {
+        	configMap.put(componentId, config);
             // 关闭旧连接
         	closeOldConnection(componentId);
             // 创建新连接（使用 s7connector）
@@ -94,6 +96,7 @@ public class S7ConnectionManager {
      * 关闭所有连接
      */
     public static void closeAllConnections() {
+    	log.info("[S7 连接] 开始关闭所有连接，当前连接数={}", connections.size());
         connections.forEach((id, conn) -> {
             try {
             	conn.close();
@@ -106,10 +109,13 @@ public class S7ConnectionManager {
         healthCheckScheduler.shutdown();
         try {
             if (!healthCheckScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+            	log.warn("[S7 连接] 健康检查调度器未能在 5 秒内终止，强制关闭");
                 healthCheckScheduler.shutdownNow();
             }
         } catch (InterruptedException e) {
+        	log.error("[S7 连接] 等待健康检查调度器终止时被中断", e);
             healthCheckScheduler.shutdownNow();
+            Thread.currentThread().interrupt();
         }
         log.info("[S7连接] 所有连接已关闭，健康检查调度器已停止");
     }
@@ -163,6 +169,7 @@ public class S7ConnectionManager {
             closeOldConnection(componentId);
             S7Connector newConn = buildConnector(config);
             connections.put(componentId, newConn);
+            log.info("[S7 重连] componentId={} 重建连接成功", componentId);
             return true;
         } catch (Exception e) {
             log.error("[S7重连] componentId={} 重连尝试失败: {}", componentId, e.getMessage());
@@ -171,12 +178,15 @@ public class S7ConnectionManager {
     }
     
     private static void closeOldConnection(String componentId) {
-        S7Connector oldConn = connections.get(componentId);
+    	S7Connector oldConn = connections.get(componentId);
         if (oldConn != null) {
             try {
-            	oldConn.close();
+                oldConn.close();
+                log.debug("[S7 连接] componentId={} 旧连接已关闭", componentId);
             } catch (Exception e) {
-                log.warn("[S7连接] componentId={} 关闭旧连接异常", componentId, e);
+                log.warn("[S7 连接] componentId={} 关闭旧连接异常：{}", componentId, e.getMessage());
+            } finally {
+                connections.remove(componentId);
             }
         }
     }

@@ -1,7 +1,5 @@
 package com.labdatahub.component.modbus_tcp;
 
-import java.util.concurrent.TimeUnit;
-
 /**
  * MODBUS-TCP设备配置信息
  */

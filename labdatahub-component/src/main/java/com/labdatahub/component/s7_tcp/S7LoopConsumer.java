@@ -1,12 +1,14 @@
 package com.labdatahub.component.s7_tcp;
 
-import org.apache.commons.lang3.StringUtils;
-
-import lombok.extern.slf4j.Slf4j;
-
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.apache.commons.lang3.StringUtils;
+
+import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class S7LoopConsumer {
@@ -14,6 +16,7 @@ public class S7LoopConsumer {
     private static final Map<String, ConsumeThread> CONSUME_THREAD_MAP = new ConcurrentHashMap<>();
     // 消费线程前缀（便于日志排查）
     private static final String CONSUME_THREAD_NAME_PREFIX = "s7-loop-consumer-";
+    private static final long STOP_TIMEOUT_MS = 5000L;
 
     private static class ConsumeThread extends Thread {
         private final String componentId;
@@ -38,10 +41,10 @@ public class S7LoopConsumer {
                     handler.handle(componentId, message);
                 } catch (InterruptedException e) {
                     log.info("componentId={} 消费线程被中断，准备停止", componentId);
+                    Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
                     log.error("componentId={} 消费消息异常", componentId, e);
-                    e.printStackTrace();
                 }
             }
             CONSUME_THREAD_MAP.remove(componentId);
@@ -89,10 +92,18 @@ public class S7LoopConsumer {
      * @param componentId 目标组件ID（不能为空）
      */
     public static void stopConsume(String componentId) {
-        if (StringUtils.isBlank(componentId)) return;
-        ConsumeThread thread = CONSUME_THREAD_MAP.get(componentId);
-        if (thread != null && thread.isConsuming()) {
-            thread.stopConsume();
+        if (StringUtils.isBlank(componentId)) {
+            return;
+        }
+        ConsumeThread consumeThread = CONSUME_THREAD_MAP.get(componentId);
+        if (consumeThread != null && consumeThread.isConsuming()) {
+            consumeThread.stopConsume();
+            try {
+                consumeThread.join(STOP_TIMEOUT_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("等待 componentId={} 消费线程停止时被中断", componentId, e);
+            }
         }
     }
     
@@ -110,9 +121,11 @@ public class S7LoopConsumer {
     }
 
     public static void stopAllConsume() {
-        CONSUME_THREAD_MAP.keySet().forEach(S7LoopConsumer::stopConsume);
+    	List<String> componentIds = new ArrayList<>(CONSUME_THREAD_MAP.keySet());
+        for (String componentId : componentIds) {
+            stopConsume(componentId);
+        }
         CONSUME_THREAD_MAP.clear();
-        //System.out.println("所有S7消费线程已停止");
         log.info("所有S7消费线程已停止");
     }
 }

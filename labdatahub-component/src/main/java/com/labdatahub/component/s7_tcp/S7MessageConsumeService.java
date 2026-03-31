@@ -1,5 +1,6 @@
 package com.labdatahub.component.s7_tcp;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.github.s7connector.api.S7Connector;
 import com.labdatahub.common.utils.StringUtils;
@@ -15,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
 @Slf4j
@@ -31,6 +33,7 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
     public void handle(String componentId, S7Message message) throws Exception {
         S7Connector connector = S7ConnectionManager.connections.get(componentId);
         if (connector == null) {
+        	log.warn("componentId={} 连接不存在或未连接", componentId);
             return;
         }
 
@@ -48,27 +51,53 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
 
         // 广播到 WebSocket
         threadPoolTaskExecutor.execute(() -> {
-            WebSocketServer.broadcast("component", componentId, result.toJSONString());
+            try {
+                WebSocketServer.broadcast("component", componentId, result.toJSONString());
+            } catch (Exception e) {
+                log.error("componentId={} 广播组件数据失败", componentId, e);
+            }
         });
 
-        // 协议解析（若需要）
+      //调用协议
         String protocolId = ProtocolManager.PROTOCOL_MAP.getOrDefault(componentId, null);
-        if (StringUtils.isNotEmpty(protocolId)) {
-            Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
-            Object instance = ProtocolManager.CLASS_INSTANCE.get(protocolId);
-            try {
-                Object data = method.invoke(instance, result); // 传递整个 result
-                DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
-                if (decodeMessage != null) {
-                    threadPoolTaskExecutor.execute(() -> {
-                        WebSocketServer.broadcast("device", decodeMessage.getDeviceSn(), JSONObject.toJSONString(decodeMessage));
-                    });
-                    MessageCache.setDeviceLastData(decodeMessage.getDeviceSn(), decodeMessage);
-                    eventBus.publish("device.up", new MessageUpEvent(this, "device.up", decodeMessage.getDeviceSn(), decodeMessage));
+        if (StringUtils.isEmpty(protocolId)) {
+            log.debug("componentId={} 未配置协议解析器", componentId);
+            return;
+        }
+        Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
+        Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
+        if (method == null || object == null) {
+            log.error("componentId={} 协议解析器未初始化，protocolId={}", componentId, protocolId);
+            return;
+        }
+        try {
+            Object data = method.invoke(object, result); // 传递整个 result
+            DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
+            if (decodeMessage != null) {
+            	threadPoolTaskExecutor.execute(() -> {
+                    try {
+                        WebSocketServer.broadcast("device", decodeMessage.getDeviceSn(),
+                                JSONObject.toJSONString(decodeMessage));
+                    } catch (Exception e) {
+                        log.error("deviceSn={} 广播设备数据失败", decodeMessage.getDeviceSn(), e);
+                    }
+                });
+                MessageCache.setDeviceLastData(decodeMessage.getDeviceSn(), decodeMessage);
+                try {
+                    eventBus.publish("device.up", new MessageUpEvent(
+                            this, "device.up", decodeMessage.getDeviceSn(), decodeMessage));
+                } catch (Exception e) {
+                    log.error("deviceSn={} 发布设备事件失败", decodeMessage.getDeviceSn(), e);
                 }
-            } catch (Exception e) {
-                log.error("协议解析失败", e);
+                
             }
+        } catch (IllegalAccessException | InvocationTargetException e) {
+            log.error("componentId={} 调用协议解析器失败，protocolId={}", componentId, protocolId, e);
+            throw new RuntimeException("协议解析失败", e);
+        } catch (Exception e) {
+            log.error("componentId={} 协议数据处理异常", componentId, e);
+            throw new RuntimeException("协议数据处理失败", e);
+
         }
     }
 }

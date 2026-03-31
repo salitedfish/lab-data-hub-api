@@ -1,5 +1,7 @@
 package com.labdatahub.component.modbus_tcp;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,7 +20,7 @@ public class ModbusLoopConsumer {
     private static final Map<String, ConsumeThread> CONSUME_THREAD_MAP = new ConcurrentHashMap<>();
     // 消费线程前缀（便于日志排查）
     private static final String CONSUME_THREAD_NAME_PREFIX = "modbus-loop-consumer-";
-
+    private static final long STOP_TIMEOUT_MS = 5000L;
     // ========== 内部消费线程类（封装循环逻辑+停止标志） ==========
     private static class ConsumeThread extends Thread {
         private final String componentId; // 目标组件ID
@@ -34,7 +36,6 @@ public class ModbusLoopConsumer {
 
         @Override
         public void run() {
-            //System.out.printf("启动componentId=%s的循环消费线程%n", componentId);
             log.info("启动Modbus 循环消费线程 componentId={}", componentId);
             while (isRunning.get()) {
                 try {
@@ -44,19 +45,16 @@ public class ModbusLoopConsumer {
                     consumeHandler.handle(componentId,message);
                 } catch (InterruptedException e) {
                     // 线程被中断，终止循环（优雅停止）
-                    //System.out.printf("componentId=%s的消费线程被中断，准备停止%n", componentId);
                     log.info("componentId={} 消费线程被中断，准备停止", componentId);
+                    Thread.currentThread().interrupt();
                     break;
                 } catch (Exception e) {
                     // 消费单条消息异常：打印日志，不中断整个消费循环
-                    //System.err.printf("componentId=%s消费消息失败：%s%n", componentId, e.getMessage());
                     log.error("componentId={} 消费消息异常", componentId, e);
-                    e.printStackTrace();
                 }
             }
             // 线程退出，清理映射
             CONSUME_THREAD_MAP.remove(componentId);
-            //System.out.printf("componentId=%s的循环消费线程已停止%n", componentId);
             log.info("Modbus 消费线程已停止 componentId={}", componentId);
         }
 
@@ -114,6 +112,15 @@ public class ModbusLoopConsumer {
      * 停止指定componentId的循环消费
      * @param componentId 目标组件ID（不能为空）
      */
+//    public static void stopConsume(String componentId) {
+//        if (StringUtils.isBlank(componentId)) {
+//            return;
+//        }
+//        ConsumeThread consumeThread = CONSUME_THREAD_MAP.get(componentId);
+//        if (consumeThread != null && consumeThread.isConsuming()) {
+//            consumeThread.stopConsume();
+//        }
+//    }
     public static void stopConsume(String componentId) {
         if (StringUtils.isBlank(componentId)) {
             return;
@@ -121,6 +128,12 @@ public class ModbusLoopConsumer {
         ConsumeThread consumeThread = CONSUME_THREAD_MAP.get(componentId);
         if (consumeThread != null && consumeThread.isConsuming()) {
             consumeThread.stopConsume();
+            try {
+                consumeThread.join(STOP_TIMEOUT_MS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                log.warn("等待 componentId={} 消费线程停止时被中断", componentId, e);
+            }
         }
     }
 
@@ -141,11 +154,11 @@ public class ModbusLoopConsumer {
      * 停止所有componentId的循环消费（应用关闭时调用）
      */
     public static void stopAllConsume() {
-        for (String componentId : CONSUME_THREAD_MAP.keySet()) {
+        List<String> componentIds = new ArrayList<>(CONSUME_THREAD_MAP.keySet());
+        for (String componentId : componentIds) {
             stopConsume(componentId);
         }
         CONSUME_THREAD_MAP.clear();
-        //System.out.println("所有Modbus循环消费线程已停止");
-        log.info("所有Modbus循环消费线程已停止");
+        log.info("所有 Modbus 循环消费线程已停止，共停止 {} 个线程", componentIds.size());
     }
 }
