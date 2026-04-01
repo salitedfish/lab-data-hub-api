@@ -7,14 +7,18 @@ import lombok.Data;
  */
 @Data
 public class FinsMessage {
-    // FINS节点地址
-    private Integer finsNodeAddress;
+//    // FINS节点地址
+//    private Integer finsNodeAddress;
     // 设备SN
     private String deviceSn;
     // 指令编码
     private String code;
-    // FINS地址范围
-    private String addressRange;
+    // 存储区代码
+    private Integer areaCode;
+    // 起始地址
+    private Integer startAddress;
+    // 读取数量
+    private Integer length;
     // 读取完暂停时间
     private Integer delayTime;
 }

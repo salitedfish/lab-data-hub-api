@@ -26,6 +26,7 @@ import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.domain.LabdatahubDeviceLogs;
 import com.labdatahub.business.domain.LabdatahubFunction;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
+import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubProduct;
 import com.labdatahub.business.domain.LabdatahubProtocol;
 import com.labdatahub.business.domain.LabdatahubRuleEngine;
@@ -52,6 +53,7 @@ import com.labdatahub.business.service.ILabdatahubFunctionRecordService;
 import com.labdatahub.business.service.ILabdatahubFunctionService;
 import com.labdatahub.business.service.ILabdatahubLinkageWarnRecordService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
+import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubProductService;
 import com.labdatahub.business.service.ILabdatahubProtocolService;
 import com.labdatahub.business.service.ILabdatahubRuleEngineService;
@@ -62,6 +64,8 @@ import com.labdatahub.business.service.ILabdatahubWarnRecordService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.common.core.redis.RedisCache;
 import com.labdatahub.common.utils.StringUtils;
+import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
+import com.labdatahub.component.fins_tcp.FinsReadConfig;
 import com.labdatahub.component.message.DecodeMessage;
 import com.labdatahub.component.message.MessageCache;
 import com.labdatahub.component.modbus_tcp.ModbusMessageScheduler;
@@ -113,6 +117,8 @@ public class TimerTask {
     private RedisCache redisCache;
     @Autowired
     private ILabdatahubS71200ConfigService labdatahubS71200ConfigService;
+    @Autowired
+    private ILabdatahubOmronFinsConfigService labdatahubOmronFinsConfigService;
     /**
      * 初始化组件和协议
      */
@@ -358,6 +364,35 @@ public class TimerTask {
                         config.setStartAddress(o.getStartAddress());
                         config.setLength(o.getLength());
                         S7MessageScheduler.addReadConfig(device.getComponentId(),config);
+                    });
+                }
+            });
+        });
+    }
+    
+    /**
+     * 初始化OmronFins定时读取
+     */
+    @PostConstruct
+    public void initOmronFinsTcpRead(){
+        threadPoolTaskExecutor.execute(()->{
+            List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getModbusRead,"1"));
+            deviceList.forEach(device->{
+                List<LabdatahubOmronFinsConfig> list = labdatahubOmronFinsConfigService.list(new LambdaQueryWrapper<LabdatahubOmronFinsConfig>()
+                        .eq(LabdatahubOmronFinsConfig::getBelongSn,device.getDeviceSn()));
+                if("1".equals(device.getModbusRead())){
+                    list.forEach(o->{
+                    	FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    	FinsReadConfig config = new FinsReadConfig();
+                        config.setDeviceSn(o.getBelongSn());
+                        config.setCode(o.getCode());
+                        config.setDelayTime(o.getDelayTime().intValue());
+                        config.setIntervalTime(o.getIntervalTime().intValue());
+                        config.setAreaCode(o.getAreaCode());
+                        config.setStartAddress(o.getStartAddress());
+                        config.setLength(o.getLength());
+                        FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
                     });
                 }
             });

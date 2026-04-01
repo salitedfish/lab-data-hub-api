@@ -1,23 +1,34 @@
 package com.labdatahub.business.service.impl;
 
+import static com.labdatahub.business.service.impl.LabdatahubProtocolServiceImpl.PROTOCOL_PATH;
+
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.labdatahub.business.domain.LabdatahubComponent;
 import com.labdatahub.business.domain.LabdatahubProtocol;
+import com.labdatahub.business.mapper.LabdatahubComponentMapper;
 import com.labdatahub.business.mapper.LabdatahubProtocolMapper;
+import com.labdatahub.business.service.ILabdatahubComponentService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.common.exception.CommonWarnException;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.coap.CoapServerConfig;
 import com.labdatahub.component.coap.CoapServerManager;
+import com.labdatahub.component.fins_tcp.FinsConnectionManager;
+import com.labdatahub.component.fins_tcp.FinsTcpConfig;
 import com.labdatahub.component.http.HttpServerConfig;
 import com.labdatahub.component.http.HttpServerManager;
 import com.labdatahub.component.modbus_tcp.ModbusConnectionManager;
-import com.labdatahub.component.modbus_tcp.ModbusDeviceConfig;
 import com.labdatahub.component.modbus_tcp.ModbusTcpConfig;
 import com.labdatahub.component.mqtt.client.MqttClientConfig;
 import com.labdatahub.component.mqtt.client.MqttClientManager;
@@ -34,17 +45,7 @@ import com.labdatahub.component.udp.UDPServerHandlerInstance;
 import com.labdatahub.component.udp.UDPServerManager;
 import com.labdatahub.component.utils.PortChecker;
 import com.labdatahub.component.websocket.NettyWebSocketServer;
-import com.labdatahub.component.websocket.WebSocketManagerService;
 import com.labdatahub.component.websocket.WebsocketServerConfig;
-import org.eclipse.paho.client.mqttv3.MqttException;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Service;
-import com.labdatahub.business.mapper.LabdatahubComponentMapper;
-import com.labdatahub.business.domain.LabdatahubComponent;
-import com.labdatahub.business.service.ILabdatahubComponentService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-
-import static com.labdatahub.business.service.impl.LabdatahubProtocolServiceImpl.PROTOCOL_PATH;
 
 /**
  * 网络组件Service业务层处理
@@ -350,6 +351,27 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                     return false;
                 }
             }
+            case "OMRONFINS_TCP" : {
+                if(StringUtils.isNotEmpty(component.getOtherConfig())){
+                	FinsTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(FinsTcpConfig.class);
+                    boolean isOk = FinsConnectionManager.addConnection(component.getId(), config);
+                    if(!isOk){
+                        throw new CommonWarnException("开启失败，请检查配置信息是否正确");
+                    }
+                    component.setStatus("1");
+                    if(StringUtils.isNotEmpty(component.getProtocolId())){
+                        initProtocol(component.getProtocolId());
+                        ProtocolManager.PROTOCOL_MAP.put(component.getId(),component.getProtocolId());
+                    }
+                    component.setIpAddr(config.getIpAddr());
+                    component.setPort(String.valueOf(config.getPort()));
+                    labdatahubComponentMapper.updateById(component);
+                    CacheUtils.setComponentCache(component.getId(),component);
+                    return true;
+                }else {
+                    return false;
+                }
+            }
             default: return false;
         }
     }
@@ -429,6 +451,13 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "S71200_TCP" : {
             	S7ConnectionManager.closeConnection(component.getId());
+                component.setStatus("0");
+                labdatahubComponentMapper.updateById(component);
+                CacheUtils.setComponentCache(component.getId(),component);
+                return true;
+            }
+            case "OMRONFINS_TCP" : {
+            	FinsConnectionManager.closeConnection(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);

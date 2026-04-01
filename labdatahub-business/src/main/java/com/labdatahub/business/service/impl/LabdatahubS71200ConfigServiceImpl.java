@@ -1,11 +1,9 @@
 package com.labdatahub.business.service.impl;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.labdatahub.business.domain.LabdatahubS71200Config;
-import com.labdatahub.business.mapper.LabdatahubModbusConfigMapper;
 import com.labdatahub.business.mapper.LabdatahubS71200ConfigMapper;
 import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
 
@@ -19,8 +17,5 @@ import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
 @Service
 public class LabdatahubS71200ConfigServiceImpl extends ServiceImpl<LabdatahubS71200ConfigMapper, LabdatahubS71200Config> implements ILabdatahubS71200ConfigService
 {
-    @Autowired
-    private LabdatahubModbusConfigMapper labdatahubModbusConfigMapper;
 
-    
 }

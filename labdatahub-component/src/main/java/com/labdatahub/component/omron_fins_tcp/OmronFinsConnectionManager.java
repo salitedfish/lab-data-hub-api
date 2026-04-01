@@ -218,7 +218,7 @@ public class OmronFinsConnectionManager {
     public static void main(String[] args) {
     	OmronFinsTcpConfig config = new OmronFinsTcpConfig();
     	config.setIpAddr("192.168.0.6");
-    	config.setPort(9600);
+    	config.setPort(102);
     	OmronFinsClient client = new OmronFinsClient(config);
     	System.out.println(client.connect());
 	}

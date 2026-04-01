@@ -11,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.lang3.StringUtils;
 
+import cn.hutool.core.bean.BeanUtil;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -44,14 +45,7 @@ public class S7MessageScheduler {
         ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(() -> {
         	try {
         		S7Message message = new S7Message();
-                message.setDeviceSn(readConfig.getDeviceSn());
-                message.setCode(readConfig.getCode());
-                message.setDbNumber(readConfig.getDbNumber());
-                message.setBlockType(readConfig.getBlockType());
-                message.setStartAddress(readConfig.getStartAddress());
-                message.setBitOffset(readConfig.getBitOffset());
-                message.setLength(readConfig.getLength());
-                message.setDelayTime(readConfig.getDelayTime());
+        		BeanUtil.copyProperties(readConfig, message);
 
                 BlockingQueue<S7Message> queue = messageQueueMap.computeIfAbsent(componentId, k -> new LinkedBlockingQueue<>());
                 int currentSize = queue.size();

@@ -1,6 +1,5 @@
 package com.labdatahub.component.fins_tcp;
 
-import com.labdatahub.common.utils.spring.SpringUtils;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -12,9 +11,14 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import com.labdatahub.common.utils.spring.SpringUtils;
+
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * FINS连接管理器，维护多个设备的连接（新增自动检查+定时重连）
  */
+@Slf4j
 public class FinsConnectionManager {
     // 存储设备连接：key为componentId（线程安全）
     public static Map<String, Socket> connections = new ConcurrentHashMap<>();
@@ -29,14 +33,17 @@ public class FinsConnectionManager {
                 return t;
             }
     );
+    
+    private static final int HEALTH_CHECK_INTERVAL = 10;
     // 静态初始化：启动全局连接健康检查（每10秒检查一次）
     static {
         healthCheckScheduler.scheduleAtFixedRate(
                 FinsConnectionManager::checkAllConnections,
                 0,
-                10,
+                HEALTH_CHECK_INTERVAL,
                 TimeUnit.SECONDS
         );
+        log.info("FINS 连接健康检查任务已启动，检查间隔={}秒", HEALTH_CHECK_INTERVAL);
     }
     
     /**
@@ -86,9 +93,8 @@ public class FinsConnectionManager {
             if (componentId == null || config == null || config.getIpAddr() == null) {
                 return false;
             }
-            // 2. 存储配置（用于后续重连）
-            configMap.put(componentId, config);
-            // 3. 执行连接逻辑
+            
+            // 2. 执行连接逻辑
             InetAddress address = InetAddress.getByName(config.getIpAddr());
             Socket socket = new Socket(address, config.getPort());
             socket.setSoTimeout(config.getTimeout());
@@ -104,6 +110,9 @@ public class FinsConnectionManager {
             int plcNodeAddr = doHandshake(socket, config.getClientNodeAddress());
             config.setPlcNodeAddress(plcNodeAddr);
             System.out.printf("[FINS握手] componentId=%s 获取PLC节点地址：%d%n", componentId, plcNodeAddr);
+            
+            // 3. 存储配置（用于后续重连）
+            configMap.put(componentId, config);
             
             // 4. 更新连接映射
             connections.put(componentId, socket);

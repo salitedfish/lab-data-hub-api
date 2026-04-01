@@ -12,16 +12,16 @@ import lombok.NoArgsConstructor;
 
 /**
  * 
-* @ClassName: LabdatahubS71200Config  
-* @Description: s71200协议读取配置对象 labdatahub_s71200_config
+* @ClassName: LabdatahubOmronFinsConfig  
+* @Description: omronfins协议读取配置对象 labdatahub_omronfins_config
 * @author xwb  
-* @date 2026年3月24日
+* @date 2026年4月1日
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@TableName(value = "labdatahub_s71200_config")
-public class LabdatahubS71200Config implements Serializable
+@TableName(value = "labdatahub_omronfins_config")
+public class LabdatahubOmronFinsConfig implements Serializable
 {
 private static final long serialVersionUID = 1L;
 
@@ -45,17 +45,11 @@ private static final long serialVersionUID = 1L;
     @Excel(name = "同一网络组件读取属性延迟时间")
     private Long delayTime;
 
-    @Excel(name = "DB块号")
-    private Integer dbNumber;     // DB块号
-    
-    @Excel(name = "块类型（DBW，DBX，DBD，DBB）")
-    private String blockType;    
-    
+    @Excel(name = "存储区代码")
+    private Integer areaCode;     
+        
     @Excel(name = "起始地址")
     private Integer startAddress; 
-    
-    @Excel(name = "偏移量（0-7）")
-    private Integer bitOffset;   		// 偏移量
     
     @Excel(name = "读取长度（字节）")
     private Integer length;       // 读取长度（字节）

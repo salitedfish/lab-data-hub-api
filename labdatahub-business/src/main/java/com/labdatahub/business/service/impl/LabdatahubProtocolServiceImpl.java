@@ -47,6 +47,7 @@ public class LabdatahubProtocolServiceImpl extends ServiceImpl<LabdatahubProtoco
         MAIN_CLASS_PATH.put("WEBSOCKET_SERVER","com.labdatahub.protocol.parent.WsServerProtocol");
         MAIN_CLASS_PATH.put("MODBUS_TCP","com.labdatahub.protocol.parent.ModbusTcpProtocol");
         MAIN_CLASS_PATH.put("S71200_TCP","com.labdatahub.protocol.parent.S71200TcpProtocol");
+        MAIN_CLASS_PATH.put("OMRONFINS_TCP","com.labdatahub.protocol.parent.OmronFinsTcpProtocol");
     }
     /**
      * 查询协议管理

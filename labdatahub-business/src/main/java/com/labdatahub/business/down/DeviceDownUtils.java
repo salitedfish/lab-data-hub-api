@@ -1,21 +1,28 @@
 package com.labdatahub.business.down;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.eclipse.paho.client.mqttv3.MqttException;
+
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.labdatahub.business.domain.*;
+import com.labdatahub.business.domain.LabdatahubComponent;
+import com.labdatahub.business.domain.LabdatahubDevice;
+import com.labdatahub.business.domain.LabdatahubDeviceLogs;
+import com.labdatahub.business.domain.LabdatahubFunction;
+import com.labdatahub.business.domain.LabdatahubFunctionRecord;
 import com.labdatahub.business.process.function.FunctionProcessor;
 import com.labdatahub.business.service.ILabdatahubComponentService;
 import com.labdatahub.business.service.ILabdatahubDeviceLogsService;
 import com.labdatahub.business.service.ILabdatahubFunctionRecordService;
-import com.labdatahub.business.service.ILabdatahubFunctionService;
 import com.labdatahub.business.utils.CacheUtils;
-import com.labdatahub.common.core.domain.AjaxResult;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.coap.CoapCache;
-import com.labdatahub.component.coap.CoapServerManager;
-import com.labdatahub.component.event.EventBus;
-import com.labdatahub.component.event.MessageUpEvent;
 import com.labdatahub.component.http.HttpClientManager;
 import com.labdatahub.component.message.DecodeMessage;
 import com.labdatahub.component.message.MessageCache;
@@ -27,13 +34,6 @@ import com.labdatahub.component.protocol.ProtocolManager;
 import com.labdatahub.component.tcp.TCPServerManager;
 import com.labdatahub.component.udp.UDPServerManager;
 import com.labdatahub.component.websocket.WebSocketFrameHandler;
-import org.eclipse.paho.client.mqttv3.MqttException;
-
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * @Description: 设备功能下发工具
@@ -180,6 +180,14 @@ public class DeviceDownUtils {
                 }
                 case "MODBUS_TCP": {
                     isOk = modbusTcpDown(deviceSn, device.getSlaveId(), functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
+                    break;
+                }
+                case "S71200_TCP": {
+                    isOk = s71200TcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
+                    break;
+                }
+                case "OMRONFINS_TCP": {
+                    isOk = omronFinsTcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
                 default:
@@ -340,6 +348,38 @@ public class DeviceDownUtils {
             return true;
         }
         return ModbusDataReader.writeMultipleHoldingRegisters(componentId,slaveId,encodeMessage.getModbusWriteJson());
+    }
+    
+    /**
+     * S71200_TCP功能下发
+     */
+    public static boolean s71200TcpDown(String deviceSn,String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
+        Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
+        Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
+        //Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
+        EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
+        if(!encodeMessage.getIsSend()){
+            return true;
+        }
+        return true;
+        //return S7DataReader.writeMultipleHoldingRegisters(componentId,slaveId,encodeMessage.getModbusWriteJson());
+    }
+    
+    /**
+     * OMRONFINS_TCP功能下发
+     */
+    public static boolean omronFinsTcpDown(String deviceSn,String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
+        Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
+        Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
+        //Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
+        EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
+        if(!encodeMessage.getIsSend()){
+            return true;
+        }
+        return true;
+        //return FinsDataReader.writeMultipleHoldingRegisters(componentId,slaveId,encodeMessage.getModbusWriteJson());
     }
 
 }

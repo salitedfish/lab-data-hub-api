@@ -1,8 +1,17 @@
 package com.labdatahub.component.fins_tcp;
 
-import org.apache.commons.lang3.StringUtils;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+import org.apache.commons.lang3.StringUtils;
+
+import cn.hutool.core.bean.BeanUtil;
 
 /**
  * FINS消息定时生产-消费工具类（静态版+多组件隔离队列）
@@ -169,11 +178,7 @@ public class FinsMessageScheduler {
      */
     private static FinsMessage convertToFinsMessage(FinsReadConfig readConfig) {
         FinsMessage message = new FinsMessage();
-        message.setFinsNodeAddress(readConfig.getFinsNodeAddress());
-        message.setDeviceSn(readConfig.getDeviceSn());
-        message.setCode(readConfig.getCode());
-        message.setAddressRange(readConfig.getAddressRange());
-        message.setDelayTime(readConfig.getDelayTime());
+        BeanUtil.copyProperties(readConfig, message);
         return message;
     }
     /**
