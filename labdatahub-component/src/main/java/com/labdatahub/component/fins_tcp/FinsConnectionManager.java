@@ -93,19 +93,18 @@ public class FinsConnectionManager {
             if (componentId == null || config == null || config.getIpAddr() == null) {
                 return false;
             }
-            
-            // 2. 执行连接逻辑
-            InetAddress address = InetAddress.getByName(config.getIpAddr());
-            Socket socket = new Socket(address, config.getPort());
-            socket.setSoTimeout(config.getTimeout());
-            socket.setTcpNoDelay(true); // 禁用Nagle算法，降低延迟
-            
+            configMap.put(componentId, config);
             // 先关闭旧连接（避免资源泄漏）
             Socket oldConn = connections.get(componentId);
             if (oldConn != null && !oldConn.isClosed()) {
                 oldConn.close();
             }
-            
+            // 2. 执行连接逻辑
+            InetAddress address = InetAddress.getByName(config.getIpAddr());
+            Socket socket = new Socket(address, config.getPort());
+            socket.setSoTimeout(config.getTimeout());
+            socket.setTcpNoDelay(true); // 禁用Nagle算法，降低延迟
+                        
             // 建立连接后执行握手
             int plcNodeAddr = doHandshake(socket, config.getClientNodeAddress());
             config.setPlcNodeAddress(plcNodeAddr);

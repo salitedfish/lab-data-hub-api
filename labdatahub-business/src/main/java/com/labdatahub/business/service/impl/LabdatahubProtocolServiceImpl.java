@@ -1,25 +1,24 @@
 package com.labdatahub.business.service.impl;
 
 import java.io.File;
-import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
-import com.baomidou.mybatisplus.core.toolkit.IdWorker;
-import com.labdatahub.common.utils.uuid.UUID;
-import com.labdatahub.component.protocol.ProtocolManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
-import com.labdatahub.business.mapper.LabdatahubProtocolMapper;
-import com.labdatahub.business.domain.LabdatahubProtocol;
-import com.labdatahub.business.service.ILabdatahubProtocolService;
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
+
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.labdatahub.business.domain.LabdatahubProtocol;
+import com.labdatahub.business.mapper.LabdatahubProtocolMapper;
+import com.labdatahub.business.service.ILabdatahubProtocolService;
+import com.labdatahub.common.utils.uuid.UUID;
+import com.labdatahub.component.protocol.ProtocolManager;
 
 /**
  * 协议管理Service业务层处理
@@ -48,6 +47,7 @@ public class LabdatahubProtocolServiceImpl extends ServiceImpl<LabdatahubProtoco
         MAIN_CLASS_PATH.put("MODBUS_TCP","com.labdatahub.protocol.parent.ModbusTcpProtocol");
         MAIN_CLASS_PATH.put("S71200_TCP","com.labdatahub.protocol.parent.S71200TcpProtocol");
         MAIN_CLASS_PATH.put("OMRONFINS_TCP","com.labdatahub.protocol.parent.OmronFinsTcpProtocol");
+        MAIN_CLASS_PATH.put("DATABASE_TCP","com.labdatahub.protocol.parent.DataBaseTcpProtocol");
     }
     /**
      * 查询协议管理

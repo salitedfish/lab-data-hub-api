@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -35,6 +36,10 @@ import com.labdatahub.common.core.page.TableDataInfo;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.common.utils.poi.ExcelUtil;
+import com.labdatahub.common.utils.uuid.IdUtils;
+import com.labdatahub.component.db.DatabaseConfig;
+import com.labdatahub.component.db.DatabaseConnectionManager;
+import com.labdatahub.component.db.DatabaseReader;
 import com.labdatahub.component.utils.PortChecker;
 
 /**
@@ -208,6 +213,22 @@ public class LabdatahubComponentController extends BaseController
         }else {
             return AjaxResult.error("端口已被占用，请选择其他端口");
         }
+    }
+    
+    /**
+     * 获取表名
+     */
+    @PostMapping("/listAllTables")
+    public AjaxResult listAllTables(@RequestBody String otherConfig) throws Exception {
+    	DatabaseConfig config = JSONObject.parseObject(otherConfig).toJavaObject(DatabaseConfig.class);
+    	String tempId = IdUtils.simpleUUID();
+    	boolean isOk = DatabaseConnectionManager.addConnection(tempId, config);
+        if(!isOk){
+            return AjaxResult.error("数据库连接失败");
+        }
+        List<String> tables = DatabaseReader.getAllTables(tempId);
+        DatabaseConnectionManager.closeConnection(tempId);
+        return AjaxResult.success(tables);
     }
 
 }
