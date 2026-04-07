@@ -48,7 +48,7 @@ public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
         for (int i = 0; i < list.size(); i++) {
             RangeParserUtil.RangeItem item = list.get(i);
             try {
-                List<Integer> dataList = ModbusDataReader.readHoldingRegisters(connection,message.getSlaveId(),item.getStart(),item.getCount());
+                List<Integer> dataList = ModbusDataReader.readHoldingRegisters(componentId,connection,message.getSlaveId(),item.getStart(),item.getCount());
                 item.setRegisterList(dataList);
             }catch (Exception e){
                 log.error("componentId={} 读取寄存器失败，slaveId={}, range={}",

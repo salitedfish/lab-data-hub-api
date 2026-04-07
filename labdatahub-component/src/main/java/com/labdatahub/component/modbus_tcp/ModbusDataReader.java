@@ -1,12 +1,15 @@
 package com.labdatahub.component.modbus_tcp;
 
 import com.alibaba.fastjson2.JSONArray;
+
+import net.wimpi.modbus.ModbusIOException;
 import net.wimpi.modbus.io.ModbusTCPTransaction;
 import net.wimpi.modbus.msg.*;
 import net.wimpi.modbus.net.TCPMasterConnection;
 import net.wimpi.modbus.procimg.Register;
 import net.wimpi.modbus.procimg.SimpleRegister;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,9 +17,55 @@ import java.util.List;
  * 数据读取器，负责从Modbus设备读取/写入寄存器数据
  */
 public class ModbusDataReader {
+	
+	public static List<Integer> readHoldingRegisters(String componentId, Integer slaveId, int startAddr, int count) throws Exception {
+	    TCPMasterConnection connection = ModbusConnectionManager.getValidConnection(componentId);
+	    // 原有读取逻辑，但使用传入的 connection
+	    return readHoldingRegisters(componentId,connection, slaveId, startAddr, count);
+	}
+	
     /**
      * 读取保持寄存器
      */
+    public static List<Integer> readHoldingRegisters(String componentId,TCPMasterConnection connection, Integer slaveId, int startAddr, int count) throws Exception {
+        ModbusTCPTransaction transaction = null;
+
+        try {
+            // 创建请求
+            ReadMultipleRegistersRequest request = new ReadMultipleRegistersRequest();
+            request.setUnitID(slaveId);
+            request.setReference(startAddr);
+            request.setWordCount(count);
+
+            // 创建并执行事务
+            transaction = new ModbusTCPTransaction(connection);
+            transaction.setRequest(request);
+            transaction.execute();
+
+            // 处理响应
+            ReadMultipleRegistersResponse response = (ReadMultipleRegistersResponse) transaction.getResponse();
+            Register[] registers = response.getRegisters();
+
+            List<Integer> result = new ArrayList<>();
+            for (Register reg : registers) {
+                result.add(reg.getValue());
+            }
+            return result;
+
+        } catch (Exception e) {
+//        	// 如果是连接问题，尝试重新获取有效连接并重试一次
+            if (e instanceof ModbusIOException || e instanceof IOException) {
+                //log.warn("读取失败，尝试重新获取有效连接并重试");
+                TCPMasterConnection newConn = ModbusConnectionManager.renewConnection(componentId);
+                if (newConn != null) {
+                    return readHoldingRegisters(newConn, slaveId, startAddr, count);
+                }
+            }
+            e.printStackTrace();
+            throw e;
+        }
+    }
+    
     public static List<Integer> readHoldingRegisters(TCPMasterConnection connection, Integer slaveId, int startAddr, int count) throws Exception {
         ModbusTCPTransaction transaction = null;
 
@@ -44,7 +93,7 @@ public class ModbusDataReader {
 
         } catch (Exception e) {
             e.printStackTrace();
-            throw e; // 建议抛异常让上层处理，而非返回null
+            throw e;
         }
     }
 

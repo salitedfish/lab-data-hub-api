@@ -1,6 +1,8 @@
 package com.labdatahub.component.modbus_tcp;
 
 import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -12,7 +14,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import com.labdatahub.common.utils.spring.SpringUtils;
 
 import lombok.extern.slf4j.Slf4j;
+import net.wimpi.modbus.io.ModbusTCPTransaction;
+import net.wimpi.modbus.msg.ReadMultipleRegistersRequest;
+import net.wimpi.modbus.msg.ReadMultipleRegistersResponse;
 import net.wimpi.modbus.net.TCPMasterConnection;
+import net.wimpi.modbus.procimg.Register;
 
 /**
  * 连接管理器，维护多个设备的连接（支持自动重连+健康检查）
@@ -215,12 +221,34 @@ public class ModbusConnectionManager {
     /**
      * 精准校验连接是否有效
      */
+//    private static boolean isConnectionValid(TCPMasterConnection connection) {
+//        if (connection == null||!connection.isConnected()) {
+//            return false;
+//        }else {
+//            return true;
+//        }
+//    }
+    
     private static boolean isConnectionValid(TCPMasterConnection connection) {
-        if (connection == null||!connection.isConnected()) {
+        if (connection == null || !connection.isConnected()) {
             return false;
-        }else {
-            return true;
         }
+        else {
+        	return true;
+        }
+//        // 发送探测请求验证连接真正可用
+//        try {
+//            ReadMultipleRegistersRequest req = new ReadMultipleRegistersRequest(0, 1);
+//            req.setUnitID(1); // 使用一个常见的 slaveId，或者从配置中获取
+//            ModbusTCPTransaction tx = new ModbusTCPTransaction(connection);
+//            tx.setRequest(req);
+//            tx.execute();
+//            System.out.println(111111);
+//            return true;
+//        } catch (Exception e) {
+//            log.debug("连接探测失败，视为无效: {}", e.getMessage());
+//            return false;
+//        }
     }
 
     /**
@@ -317,4 +345,61 @@ public class ModbusConnectionManager {
         AtomicInteger count = reconnectFailCountMap.get(componentId);
         return count != null ? count.get() : 0;
     }
+    
+ // 获取有效连接（如果当前连接无效则触发重连）
+    public static TCPMasterConnection getValidConnection(String componentId) {
+        TCPMasterConnection conn = connections.get(componentId);
+        if (!isConnectionValid(conn)) {
+            // 异步触发重连（或者同步等待重连结果）
+            checkAndReconnect(componentId);
+            // 等待一小段时间让重连完成（简单起见，可以同步重连）
+            conn = connections.get(componentId);
+        }
+        return conn;
+    }
+
+    // 强制重连并返回新连接
+    public static TCPMasterConnection renewConnection(String componentId) {
+        ModbusTcpConfig config = configMap.get(componentId);
+        if (config == null) return null;
+        try {
+            InetAddress address = InetAddress.getByName(config.getIpAddr());
+            TCPMasterConnection newConn = new TCPMasterConnection(address);
+            newConn.setPort(config.getPort());
+            newConn.setTimeout(config.getTimeout());
+            newConn.connect();
+            connections.put(componentId, newConn);
+            return newConn;
+        } catch (Exception e) {
+            log.error("重连失败", e);
+            return null;
+        }
+    }
+    
+    public static void main(String[] args) throws Exception {
+    	InetAddress address = InetAddress.getByName("10.6.1.184");
+        TCPMasterConnection newConn = new TCPMasterConnection(address);
+        newConn.setPort(502);
+        newConn.setTimeout(3000000);
+        newConn.connect();
+        
+        ReadMultipleRegistersRequest request = new ReadMultipleRegistersRequest();
+        request.setUnitID(1);
+        request.setReference(4040);
+        request.setWordCount(1);
+
+        // 创建并执行事务
+        ModbusTCPTransaction transaction = new ModbusTCPTransaction(newConn);
+        transaction.setRequest(request);
+        transaction.execute();
+
+        // 处理响应
+        ReadMultipleRegistersResponse response = (ReadMultipleRegistersResponse) transaction.getResponse();
+        Register[] registers = response.getRegisters();
+        List<Integer> result = new ArrayList<>();
+        for (Register reg : registers) {
+            result.add(reg.getValue());
+            System.out.println(reg.getValue());
+        }
+	}
 }

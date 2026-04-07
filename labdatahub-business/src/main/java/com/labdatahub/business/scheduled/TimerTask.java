@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 import javax.annotation.PostConstruct;
 
+import org.apache.commons.collections.CollectionUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -22,6 +23,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.labdatahub.business.domain.LabdatahubComponent;
+import com.labdatahub.business.domain.LabdatahubDbConfig;
 import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.domain.LabdatahubDeviceLogs;
 import com.labdatahub.business.domain.LabdatahubFunction;
@@ -47,6 +49,7 @@ import com.labdatahub.business.process.warn.DatabaseWarnConsumer;
 import com.labdatahub.business.process.warn.WarnConsumer;
 import com.labdatahub.business.process.warn.WarnProcessor;
 import com.labdatahub.business.service.ILabdatahubComponentService;
+import com.labdatahub.business.service.ILabdatahubDbConfigService;
 import com.labdatahub.business.service.ILabdatahubDeviceLogsService;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubFunctionRecordService;
@@ -64,6 +67,8 @@ import com.labdatahub.business.service.ILabdatahubWarnRecordService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.common.core.redis.RedisCache;
 import com.labdatahub.common.utils.StringUtils;
+import com.labdatahub.component.db.DatabaseMessageScheduler;
+import com.labdatahub.component.db.DatabaseReadConfig;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
 import com.labdatahub.component.message.DecodeMessage;
@@ -119,6 +124,8 @@ public class TimerTask {
     private ILabdatahubS71200ConfigService labdatahubS71200ConfigService;
     @Autowired
     private ILabdatahubOmronFinsConfigService labdatahubOmronFinsConfigService;
+    @Autowired
+    private ILabdatahubDbConfigService labdatahubDbConfigService;
     /**
      * 初始化组件和协议
      */
@@ -398,6 +405,44 @@ public class TimerTask {
             });
         });
     }
+    
+    /**
+     * 初始化Database定时读取
+     */
+    @PostConstruct
+    public void initDatabaseTcpRead(){
+        threadPoolTaskExecutor.execute(()->{
+            List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getModbusRead,"1"));
+            deviceList.forEach(device->{
+                List<LabdatahubDbConfig> databaseConfigList = labdatahubDbConfigService.list(new LambdaQueryWrapper<LabdatahubDbConfig>()
+                        .eq(LabdatahubDbConfig::getBelongSn,device.getDeviceSn()));
+                if("1".equals(device.getModbusRead())){
+                	if(CollectionUtils.isNotEmpty(databaseConfigList)) {
+                		DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);
+                        DatabaseReadConfig config = new DatabaseReadConfig();
+                        config.setDeviceSn(device.getDeviceSn());
+                        config.setDelayTime(databaseConfigList.get(0).getDelayTime().intValue());
+                        config.setIntervalTime(databaseConfigList.get(0).getIntervalTime().intValue());;
+                        DatabaseMessageScheduler.addReadConfig(device.getComponentId(),config);
+                    }
+//                    list.forEach(o->{
+//                    	FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+//                    	FinsReadConfig config = new FinsReadConfig();
+//                        config.setDeviceSn(o.getBelongSn());
+//                        config.setCode(o.getCode());
+//                        config.setDelayTime(o.getDelayTime().intValue());
+//                        config.setIntervalTime(o.getIntervalTime().intValue());
+//                        config.setAreaCode(o.getAreaCode());
+//                        config.setStartAddress(o.getStartAddress());
+//                        config.setLength(o.getLength());
+//                        FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
+//                    });
+                }
+            });
+        });
+    }
+
 
 
     /**

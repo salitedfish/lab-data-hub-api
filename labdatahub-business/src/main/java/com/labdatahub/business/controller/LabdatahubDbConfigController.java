@@ -89,7 +89,15 @@ public class LabdatahubDbConfigController extends BaseController
     @Log(title = "database协议读取配置", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody LabdatahubDbConfig labdatahubDbConfig)
-    {
+    {	
+    	//更新
+    	LabdatahubDbConfig updateEntity = new LabdatahubDbConfig();
+    	updateEntity.setIntervalTime(labdatahubDbConfig.getIntervalTime());
+    	updateEntity.setDelayTime(labdatahubDbConfig.getDelayTime());
+    	LambdaUpdateWrapper<LabdatahubDbConfig> updateWrapper = new LambdaUpdateWrapper<>();
+    	updateWrapper.eq(LabdatahubDbConfig::getBelongSn, labdatahubDbConfig.getBelongSn());
+    	labdatahubDbConfigService.update(updateEntity, updateWrapper);
+    	
         labdatahubDbConfig.setCreateTime(new Date());
         return toAjax(labdatahubDbConfigService.save(labdatahubDbConfig));
     }
@@ -100,7 +108,14 @@ public class LabdatahubDbConfigController extends BaseController
     @Log(title = "database协议读取配置", businessType = BusinessType.UPDATE)
     @PutMapping
     public AjaxResult edit(@RequestBody LabdatahubDbConfig labdatahubDbConfig)
-    {
+    {	
+    	//更新
+    	LabdatahubDbConfig updateEntity = new LabdatahubDbConfig();
+    	updateEntity.setIntervalTime(labdatahubDbConfig.getIntervalTime());
+    	updateEntity.setDelayTime(labdatahubDbConfig.getDelayTime());
+    	LambdaUpdateWrapper<LabdatahubDbConfig> updateWrapper = new LambdaUpdateWrapper<>();
+    	updateWrapper.eq(LabdatahubDbConfig::getBelongSn, labdatahubDbConfig.getBelongSn());
+    	labdatahubDbConfigService.update(updateEntity, updateWrapper);
         return toAjax(labdatahubDbConfigService.updateById(labdatahubDbConfig));
     }
 
