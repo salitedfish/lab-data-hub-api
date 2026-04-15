@@ -15,7 +15,7 @@ public class FinsTcpConfig {
     // 连接超时时间
     private Integer timeout = 3000;
     // 客户端FINS节点地址，0表示自动获取
-    private Integer clientNodeAddress = 0;
+    private Integer clientNodeAddress = 1;
     // PLC FINS节点地址，连接后握手会自动获取，也可手动配置
     private Integer plcNodeAddress = 0;
 }

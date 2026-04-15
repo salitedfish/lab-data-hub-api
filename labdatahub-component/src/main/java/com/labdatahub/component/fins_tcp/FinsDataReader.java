@@ -15,6 +15,21 @@ public class FinsDataReader {
     private static byte sid = 0;
     
     /**
+     * 从输入流中读取指定长度的数据，直到读满
+     */
+    private static void readFully(InputStream in, byte[] buffer) throws Exception {
+        int totalRead = 0;
+        int len;
+        while (totalRead < buffer.length) {
+            len = in.read(buffer, totalRead, buffer.length - totalRead);
+            if (len == -1) {
+                throw new Exception("流已结束，无法读取足够的数据，预期" + buffer.length + "字节，已读取" + totalRead + "字节");
+            }
+            totalRead += len;
+        }
+    }
+    
+    /**
      * 读取FINS内存区数据
      * @param componentId 组件ID，用于获取连接和配置
      * @param areaCode 存储区代码
@@ -26,10 +41,15 @@ public class FinsDataReader {
     public static List<Integer> readMemoryArea(String componentId, int areaCode, int startAddr, int count) throws Exception {
         Socket socket = FinsConnectionManager.connections.get(componentId);
         FinsTcpConfig config = FinsConnectionManager.configMap.get(componentId);
-        if(socket==null||!socket.isConnected()||socket.isClosed()){
-            throw new Exception("连接已断开");
+        System.out.println("ClientNodeAddress："+config.getClientNodeAddress());
+        System.out.println("plcNodeAddress："+config.getPlcNodeAddress());
+     // ===================== 关键修复：连接状态检查 =====================
+        if (socket == null || socket.isClosed() || !socket.isConnected()) {
+            throw new Exception("连接已断开，请重新连接");
         }
-        
+        if (socket.isInputShutdown() || socket.isOutputShutdown()) {
+            throw new Exception("Socket通道已关闭，无法通信");
+        }
         OutputStream out = socket.getOutputStream();
         InputStream in = socket.getInputStream();
         
@@ -94,28 +114,56 @@ public class FinsDataReader {
         out.write(finsFrame);
         out.flush();
         
+     // ===================== 关键修复：等待PLC响应 =====================
+        Thread.sleep(10);
+        
         // 5. 读取响应
-        // 先读头
+        // 先读FINS/TCP头（8字节：FINS+Length）
         byte[] respHeader = new byte[8];
-        in.read(respHeader);
-        // 读长度
-        int respLen = ((respHeader[4] & 0xFF) << 24) |
-                     ((respHeader[5] & 0xFF) << 16) |
-                     ((respHeader[6] & 0xFF) << 8) |
-                     (respHeader[7] & 0xFF);
-        // 读剩下的内容
+        readFully(in, respHeader);
+        
+        // 验证FINS头
+        if (respHeader[0] != 'F' || respHeader[1] != 'I' || respHeader[2] != 'N' || respHeader[3] != 'S') {
+            throw new Exception("无效的FINS/TCP响应头");
+        }
+        
+        // 解析Length字段（4字节无符号大端，用long避免溢出）
+        long respLenLong = ((respHeader[4] & 0xFFL) << 24) |
+                           ((respHeader[5] & 0xFFL) << 16) |
+                           ((respHeader[6] & 0xFFL) << 8) |
+                           (respHeader[7] & 0xFFL);
+        
+        // 检查长度是否合理（0 < 长度 <= 1MB，防止恶意报文或错误）
+        if (respLenLong <= 0 || respLenLong > 1024 * 1024) {
+            throw new Exception("无效的FINS/TCP响应长度: " + respLenLong);
+        }
+        
+        int respLen = (int) respLenLong;
+        
+        // 读取后续数据（Command+Error+FINS Frame）
         byte[] respBody = new byte[respLen];
-        in.read(respBody);
+        readFully(in, respBody);
         
         // 6. 解析响应
         // 跳过command和error，前8字节
         byte[] respFinsFrame = new byte[respLen - 8];
         System.arraycopy(respBody, 8, respFinsFrame, 0, respLen - 8);
         
-        // 跳过Fins头10字节，命令2字节
+        // 检查FINS帧长度是否足够（头10 + 命令2 + 结束码2 = 14字节）
+        if (respFinsFrame.length < 14) {
+            throw new Exception("响应FINS帧长度不足，预期至少14字节，实际: " + respFinsFrame.length);
+        }
+        
+        // 跳过Fins头10字节，命令2字节，读取结束码
         int endCode = ((respFinsFrame[12] & 0xFF) << 8) | (respFinsFrame[13] & 0xFF);
         if (endCode != 0) {
             throw new Exception(String.format("FINS读命令错误，结束码: 0x%04X", endCode));
+        }
+        
+        // 检查数据部分长度是否足够
+        int expectedDataLen = 14 + count * 2;
+        if (respFinsFrame.length < expectedDataLen) {
+            throw new Exception("响应FINS帧数据部分长度不足，预期: " + expectedDataLen + "，实际: " + respFinsFrame.length);
         }
         
         // 解析数据
@@ -233,18 +281,38 @@ public class FinsDataReader {
         out.flush();
         
         // 5. 读取响应
+        // 先读FINS/TCP头
         byte[] respHeader = new byte[8];
-        in.read(respHeader);
-        int respLen = ((respHeader[4] & 0xFF) << 24) |
-                     ((respHeader[5] & 0xFF) << 16) |
-                     ((respHeader[6] & 0xFF) << 8) |
-                     (respHeader[7] & 0xFF);
-        byte[] respBody = new byte[respLen];
-        in.read(respBody);
+        readFully(in, respHeader);
         
-        // 6. 解析响应
+        // 验证FINS头
+        if (respHeader[0] != 'F' || respHeader[1] != 'I' || respHeader[2] != 'N' || respHeader[3] != 'S') {
+            throw new Exception("无效的FINS/TCP响应头");
+        }
+        
+        // 解析Length
+        long respLenLong = ((respHeader[4] & 0xFFL) << 24) |
+                           ((respHeader[5] & 0xFFL) << 16) |
+                           ((respHeader[6] & 0xFFL) << 8) |
+                           (respHeader[7] & 0xFFL);
+        
+        if (respLenLong <= 0 || respLenLong > 1024 * 1024) {
+            throw new Exception("无效的FINS/TCP响应长度: " + respLenLong);
+        }
+        
+        int respLen = (int) respLenLong;
+        
+        // 读取后续数据
+        byte[] respBody = new byte[respLen];
+        readFully(in, respBody);
+        
+        // 解析响应
         byte[] respFinsFrame = new byte[respLen - 8];
         System.arraycopy(respBody, 8, respFinsFrame, 0, respLen - 8);
+        
+        if (respFinsFrame.length < 14) {
+            throw new Exception("响应FINS帧长度不足，预期至少14字节，实际: " + respFinsFrame.length);
+        }
         
         int endCode = ((respFinsFrame[12] & 0xFF) << 8) | (respFinsFrame[13] & 0xFF);
         return endCode == 0;

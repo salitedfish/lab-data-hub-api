@@ -47,6 +47,21 @@ public class FinsConnectionManager {
     }
     
     /**
+     * 从输入流中读取指定长度的数据，直到读满
+     */
+    private static void readFully(InputStream in, byte[] buffer) throws Exception {
+        int totalRead = 0;
+        int len;
+        while (totalRead < buffer.length) {
+            len = in.read(buffer, totalRead, buffer.length - totalRead);
+            if (len == -1) {
+                throw new Exception("流已结束，无法读取足够的数据，预期" + buffer.length + "字节，已读取" + totalRead + "字节");
+            }
+            totalRead += len;
+        }
+    }
+    
+    /**
      * FINS/TCP握手，获取PLC节点地址
      */
     private static int doHandshake(Socket socket, int clientNodeAddr) throws Exception {
@@ -65,12 +80,9 @@ public class FinsConnectionManager {
         out.write(handshakeReq);
         out.flush();
         
-        // 读取握手响应，共24字节
+        // 读取握手响应，共24字节（使用readFully确保读满）
         byte[] handshakeResp = new byte[24];
-        int read = in.read(handshakeResp);
-        if (read != 24) {
-            throw new Exception("握手响应长度错误，预期24字节，实际" + read + "字节");
-        }
+        readFully(in, handshakeResp);
         
         // 解析PLC节点地址，最后4字节，大端
         int plcNodeAddr = ((handshakeResp[20] & 0xFF) << 24) |

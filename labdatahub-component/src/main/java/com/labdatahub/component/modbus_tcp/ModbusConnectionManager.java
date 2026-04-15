@@ -347,12 +347,27 @@ public class ModbusConnectionManager {
     }
     
  // 获取有效连接（如果当前连接无效则触发重连）
+//    public static TCPMasterConnection getValidConnection(String componentId) {
+//        TCPMasterConnection conn = connections.get(componentId);
+//        if (!isConnectionValid(conn)) {
+//            // 异步触发重连（或者同步等待重连结果）
+//            checkAndReconnect(componentId);
+//            // 等待一小段时间让重连完成（简单起见，可以同步重连）
+//            conn = connections.get(componentId);
+//        }
+//        return conn;
+//    }
+    
     public static TCPMasterConnection getValidConnection(String componentId) {
         TCPMasterConnection conn = connections.get(componentId);
         if (!isConnectionValid(conn)) {
-            // 异步触发重连（或者同步等待重连结果）
-            checkAndReconnect(componentId);
-            // 等待一小段时间让重连完成（简单起见，可以同步重连）
+            log.warn("[Modbus 连接] componentId={} 连接无效，尝试同步重连", componentId);
+            ModbusTcpConfig config = configMap.get(componentId);
+            if (config != null) {
+                // 同步调用一次重连逻辑，避免异步等待
+                AtomicInteger failCount = reconnectFailCountMap.computeIfAbsent(componentId, k -> new AtomicInteger(0));
+                reconnect(componentId, config, failCount);
+            }
             conn = connections.get(componentId);
         }
         return conn;

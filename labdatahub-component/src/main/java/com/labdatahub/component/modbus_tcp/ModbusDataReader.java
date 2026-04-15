@@ -2,6 +2,7 @@ package com.labdatahub.component.modbus_tcp;
 
 import com.alibaba.fastjson2.JSONArray;
 
+import lombok.extern.slf4j.Slf4j;
 import net.wimpi.modbus.ModbusIOException;
 import net.wimpi.modbus.io.ModbusTCPTransaction;
 import net.wimpi.modbus.msg.*;
@@ -16,10 +17,14 @@ import java.util.List;
 /**
  * 数据读取器，负责从Modbus设备读取/写入寄存器数据
  */
+@Slf4j
 public class ModbusDataReader {
 	
 	public static List<Integer> readHoldingRegisters(String componentId, Integer slaveId, int startAddr, int count) throws Exception {
 	    TCPMasterConnection connection = ModbusConnectionManager.getValidConnection(componentId);
+	    if (connection == null) {
+	        throw new Exception("componentId=" + componentId + " 无法获取有效连接");
+	    }
 	    // 原有读取逻辑，但使用传入的 connection
 	    return readHoldingRegisters(componentId,connection, slaveId, startAddr, count);
 	}
@@ -54,15 +59,25 @@ public class ModbusDataReader {
 
         } catch (Exception e) {
 //        	// 如果是连接问题，尝试重新获取有效连接并重试一次
-            if (e instanceof ModbusIOException || e instanceof IOException) {
-                //log.warn("读取失败，尝试重新获取有效连接并重试");
-                TCPMasterConnection newConn = ModbusConnectionManager.renewConnection(componentId);
+//            if (e instanceof ModbusIOException || e instanceof IOException) {
+//                //log.warn("读取失败，尝试重新获取有效连接并重试");
+//                TCPMasterConnection newConn = ModbusConnectionManager.renewConnection(componentId);
+//                if (newConn != null) {
+//                    return readHoldingRegisters(newConn, slaveId, startAddr, count);
+//                }
+//            }
+//            e.printStackTrace();
+//            throw e;
+        	if (e instanceof ModbusIOException || e instanceof IOException) {
+                log.warn("[Modbus读取] 连接异常，自动重建：componentId={}", componentId);
+                ModbusConnectionManager.connections.remove(componentId); // 清理旧连接
+                TCPMasterConnection newConn = ModbusConnectionManager.getValidConnection(componentId);
                 if (newConn != null) {
-                    return readHoldingRegisters(newConn, slaveId, startAddr, count);
+                    return readHoldingRegisters(componentId, newConn, slaveId, startAddr, count);
                 }
             }
-            e.printStackTrace();
-            throw e;
+        	e.printStackTrace();
+        	throw e;
         }
     }
     

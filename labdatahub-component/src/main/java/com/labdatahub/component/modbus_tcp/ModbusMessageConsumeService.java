@@ -35,9 +35,14 @@ public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
     private EventBus eventBus;
     @Override
     public void handle(String componentId,ModbusMessage message) throws Exception {
-        TCPMasterConnection connection = ModbusConnectionManager.connections.get(componentId);
-        if(connection==null||!connection.isConnected()){
-            log.warn("componentId={} 连接不存在或未连接", componentId);
+//        TCPMasterConnection connection = ModbusConnectionManager.connections.get(componentId);
+//        if(connection==null||!connection.isConnected()){
+//            log.warn("componentId={} 连接不存在或未连接", componentId);
+//            return;
+//        }
+        TCPMasterConnection connection = ModbusConnectionManager.getValidConnection(componentId);
+        if(connection == null){
+            log.warn("componentId={} 连接不存在或无效", componentId);
             return;
         }
         List<RangeParserUtil.RangeItem> list = RangeParserUtil.parse(message.getRegisterRange());
@@ -48,7 +53,7 @@ public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
         for (int i = 0; i < list.size(); i++) {
             RangeParserUtil.RangeItem item = list.get(i);
             try {
-                List<Integer> dataList = ModbusDataReader.readHoldingRegisters(componentId,connection,message.getSlaveId(),item.getStart(),item.getCount());
+                List<Integer> dataList = ModbusDataReader.readHoldingRegisters(connection,message.getSlaveId(),item.getStart(),item.getCount());
                 item.setRegisterList(dataList);
             }catch (Exception e){
                 log.error("componentId={} 读取寄存器失败，slaveId={}, range={}",

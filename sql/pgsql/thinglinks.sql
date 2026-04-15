@@ -4124,3 +4124,100 @@ SELECT setval('sys_oper_log_oper_id_seq', GREATEST(10000, COALESCE((SELECT MAX(o
 SELECT setval('sys_post_post_id_seq', GREATEST(10000, COALESCE((SELECT MAX(post_id) FROM sys_post), 10000)));
 SELECT setval('sys_role_role_id_seq', GREATEST(10000, COALESCE((SELECT MAX(role_id) FROM sys_role), 10000)));
 SELECT setval('sys_user_user_id_seq', GREATEST(10000, COALESCE((SELECT MAX(user_id) FROM sys_user), 10000)));
+
+DROP TABLE IF EXISTS "public"."labdatahub_db_config";
+CREATE TABLE "public"."labdatahub_db_config" (
+  "id" varchar(255) COLLATE "pg_catalog"."default" NOT NULL,
+  "belong_sn" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "belong_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT '0'::character varying,
+  "code" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "create_time" timestamp(6),
+  "interval_time" int4 DEFAULT 1,
+  "delay_time" int4 DEFAULT 0,
+  "field_type" varchar(255) COLLATE "pg_catalog"."default",
+  "field_comment" varchar(255) COLLATE "pg_catalog"."default",
+  "field_length" varchar(255) COLLATE "pg_catalog"."default"
+)
+;
+COMMENT ON COLUMN "public"."labdatahub_db_config"."id" IS 'id';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."belong_sn" IS '归属sn';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."belong_type" IS '归属类型 0-产品 1-设备';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."code" IS '读取编码(字段名)';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."create_time" IS '创建时间';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."interval_time" IS '多少毫秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."delay_time" IS '同一网络组件读取属性延迟时间';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."field_type" IS '字段类型';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."field_comment" IS '字段备注';
+COMMENT ON COLUMN "public"."labdatahub_db_config"."field_length" IS '字段长度';
+COMMENT ON TABLE "public"."labdatahub_db_config" IS 'modbus协议读取配置表';
+
+-- ----------------------------
+-- Primary Key structure for table labdatahub_db_config
+-- ----------------------------
+ALTER TABLE "public"."labdatahub_db_config" ADD CONSTRAINT "labdatahub_s71200_config_copy1_pkey1" PRIMARY KEY ("id");
+
+DROP TABLE IF EXISTS "public"."labdatahub_omronfins_config";
+CREATE TABLE "public"."labdatahub_omronfins_config" (
+  "id" varchar(255) COLLATE "pg_catalog"."default" NOT NULL,
+  "belong_sn" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "belong_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT '0'::character varying,
+  "code" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "create_time" timestamp(6),
+  "area_code" numeric(10,0),
+  "interval_time" int4 DEFAULT 1,
+  "delay_time" int4 DEFAULT 0,
+  "start_address" numeric(10,0),
+  "length" numeric(10,0)
+)
+;
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."id" IS 'id';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."belong_sn" IS '归属sn';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."belong_type" IS '归属类型 0-产品 1-设备';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."code" IS '读取编码';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."create_time" IS '创建时间';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."area_code" IS '存储区代码';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."interval_time" IS '多少毫秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."delay_time" IS '同一网络组件读取属性延迟时间';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."start_address" IS '起始字节';
+COMMENT ON COLUMN "public"."labdatahub_omronfins_config"."length" IS '读取长度（字节）';
+COMMENT ON TABLE "public"."labdatahub_omronfins_config" IS 'modbus协议读取配置表';
+
+-- ----------------------------
+-- Primary Key structure for table labdatahub_omronfins_config
+-- ----------------------------
+ALTER TABLE "public"."labdatahub_omronfins_config" ADD CONSTRAINT "labdatahub_s71200_config_copy1_pkey" PRIMARY KEY ("id");
+
+DROP TABLE IF EXISTS "public"."labdatahub_s71200_config";
+CREATE TABLE "public"."labdatahub_s71200_config" (
+  "id" varchar(255) COLLATE "pg_catalog"."default" NOT NULL,
+  "belong_sn" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "belong_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT '0'::character varying,
+  "code" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "create_time" timestamp(6),
+  "db_number" numeric(10,0),
+  "interval_time" int4 DEFAULT 1,
+  "delay_time" int4 DEFAULT 0,
+  "start_address" numeric(10,0),
+  "length" numeric(10,0),
+  "block_type" varchar(255) COLLATE "pg_catalog"."default",
+  "bit_offset" numeric(10,0)
+)
+;
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."id" IS 'id';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."belong_sn" IS '归属sn';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."belong_type" IS '归属类型 0-产品 1-设备';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."code" IS '读取编码';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."create_time" IS '创建时间';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."db_number" IS 'DB块号';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."interval_time" IS '多少毫秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."delay_time" IS '同一网络组件读取属性延迟时间';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."start_address" IS '起始字节偏移';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."length" IS '读取长度（字节）';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."block_type" IS '块类型';
+COMMENT ON COLUMN "public"."labdatahub_s71200_config"."bit_offset" IS '偏移量';
+COMMENT ON TABLE "public"."labdatahub_s71200_config" IS 'modbus协议读取配置表';
+
+-- ----------------------------
+-- Primary Key structure for table labdatahub_s71200_config
+-- ----------------------------
+ALTER TABLE "public"."labdatahub_s71200_config" ADD CONSTRAINT "labdatahub_modbus_config_copy1_pkey" PRIMARY KEY ("id");
