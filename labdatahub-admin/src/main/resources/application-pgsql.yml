@@ -59,3 +59,49 @@ spring:
                 wall:
                     config:
                         multi-statement-allow: true
+
+# ===================== TimescaleDB 自动化配置 =====================
+# 与 TimescaleDbProperties.java 完全绑定
+# 项目启动后自动执行：超表创建/索引/压缩/保留/聚合视图
+timescaledb:
+  # 启用自动化配置
+  enabled: true
+
+  # 1. 超表配置（支持多表，当前仅配置设备日志表）
+  hypertables:
+    - tableName: labdatahub_device_logs          # 表名
+      timeColumn: create_time                    # 时间分区列
+      partitioningColumn: device_sn              # 空间分区列
+      numberPartitions: 4                        # 分区数量
+      chunkTimeInterval: 1 day                   # 分片时间间隔
+      compressionEnabled: true                   # 开启自动压缩
+      compressionInterval: 7 days                 # 7天前数据自动压缩
+
+  # 2. 数据保留策略
+  retention-policies:
+    - tableName: labdatahub_device_logs          # 表名
+      retentionInterval: 90 days                 # 数据保留90天
+
+  # 3. 连续聚合视图配置
+  continuous-aggregates:
+    # 小时级聚合视图
+    - viewName: device_logs_hourly_mat           # 视图名
+      sourceTable: labdatahub_device_logs        # 源表
+      timeColumn: create_time                    # 时间列
+      partitioningColumn: device_sn              # 分组列
+      bucketInterval: 1 hour                     # 聚合时间窗口
+      # 👇 新增：刷新策略配置
+      refreshStartOffset: 3 hours     # 刷新 3小时前 的数据
+      refreshEndOffset: 1 minute      # 刷新到 1分钟前（避免未入库数据）
+      refreshInterval: 10 minutes     # 每10分钟自动刷新一次
+
+    # 天级聚合视图
+    - viewName: device_logs_daily_mat            # 视图名
+      sourceTable: labdatahub_device_logs        # 源表
+      timeColumn: create_time                    # 时间列
+      partitioningColumn: device_sn              # 分组列
+      bucketInterval: 1 day                      # 聚合时间窗口         
+      # 👇 新增：刷新策略配置
+      refreshStartOffset: 3 days
+      refreshEndOffset: 1 hour
+      refreshInterval: 30 minutes               

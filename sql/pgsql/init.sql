@@ -1,3 +1,16 @@
+CREATE OR REPLACE FUNCTION public.find_in_set(str bigint, strlist text)
+RETURNS boolean AS $$
+BEGIN
+    RETURN str::text = ANY(string_to_array(strlist, ','));
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION public.find_in_set(str text, strlist text)
+RETURNS boolean AS $$
+BEGIN
+    RETURN str = ANY(string_to_array(strlist, ','));
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
 /*
  Navicat Premium Data Transfer
 
@@ -4221,3 +4234,16 @@ COMMENT ON TABLE "public"."labdatahub_s71200_config" IS 'modbus协议读取配�
 -- Primary Key structure for table labdatahub_s71200_config
 -- ----------------------------
 ALTER TABLE "public"."labdatahub_s71200_config" ADD CONSTRAINT "labdatahub_modbus_config_copy1_pkey" PRIMARY KEY ("id");
+
+-- 为设备日志表添加索引
+CREATE INDEX IF NOT EXISTS idx_device_logs_device_sn 
+ON labdatahub_device_logs (device_sn, create_time DESC);
+
+CREATE INDEX IF NOT EXISTS idx_device_logs_log_type 
+ON labdatahub_device_logs (log_type, create_time DESC);
+
+CREATE INDEX IF NOT EXISTS idx_device_logs_report_time 
+ON labdatahub_device_logs (report_time DESC);
+
+ALTER TABLE labdatahub_device_logs DROP CONSTRAINT IF EXISTS labdatahub_device_logs_pkey;
+ALTER TABLE labdatahub_device_logs ADD PRIMARY KEY (id, create_time, device_sn);
