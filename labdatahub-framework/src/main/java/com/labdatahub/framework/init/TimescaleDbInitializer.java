@@ -132,7 +132,7 @@ public class TimescaleDbInitializer {
                 String createViewSql = String.format(
                         "CREATE MATERIALIZED VIEW IF NOT EXISTS %s " +
                         "WITH (timescaledb.continuous) AS " +
-                        "SELECT time_bucket('%s'::interval, %s) AS time_bucket, %s, COUNT(*) AS total_count " +
+                        "SELECT time_bucket('%s'::interval, %s) AS bucket, %s, COUNT(*) AS log_count,MAX(create_time) as last_log_time " +
                         "FROM %s " +
                         "GROUP BY time_bucket, %s " +
                         "WITH NO DATA",

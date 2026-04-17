@@ -61,11 +61,10 @@ WITH (timescaledb.continuous) AS
 SELECT
     time_bucket('1 hour', create_time) AS bucket,
     device_sn,
-    log_type,
     COUNT(*) as log_count,
     MAX(create_time) as last_log_time
 FROM labdatahub_device_logs
-GROUP BY bucket, device_sn, log_type
+GROUP BY bucket, device_sn
 WITH NO DATA;
 
 -- 5.2 设备日志天级聚合视图
@@ -74,11 +73,10 @@ WITH (timescaledb.continuous) AS
 SELECT
     time_bucket('1 day', create_time) AS bucket,
     device_sn,
-    log_type,
     COUNT(*) as log_count,
     MAX(create_time) as last_log_time
 FROM labdatahub_device_logs
-GROUP BY bucket, device_sn, log_type
+GROUP BY bucket, device_sn
 WITH NO DATA;
 
 -- 为聚合视图添加刷新策略 (每 10 分钟刷新一次)
