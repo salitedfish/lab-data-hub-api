@@ -6,7 +6,8 @@ spring:
         druid:
             # 主库数据源
             master:
-                url: jdbc:postgresql://122.112.239.186:5432/sc_1.0.0
+#                url: jdbc:postgresql://122.112.239.186:5432/sc_1.0.0
+                url: jdbc:postgresql://172.20.10.2:5432/sc_1.0.0
                 username: sc_1.0.0
                 password: sc_1.0.0
             # 从库数据源

@@ -3418,7 +3418,11 @@ CREATE TABLE "public"."labdatahub_properties" (
   "sort_num" int4 DEFAULT 0,
   "from_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
   "remark" text COLLATE "pg_catalog"."default",
-  "unit" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying
+  "unit" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "byte_order" varchar(20) COLLATE "pg_catalog"."default" DEFAULT 'big'::character varying,
+  "is_signed" varchar(10) COLLATE "pg_catalog"."default" DEFAULT '1'::character varying,
+  "scale" numeric(20,6) DEFAULT 1,
+  "offset_value" numeric(20,6) DEFAULT 0
 )
 ;
 COMMENT ON COLUMN "public"."labdatahub_properties"."id" IS 'id';
@@ -3432,6 +3436,10 @@ COMMENT ON COLUMN "public"."labdatahub_properties"."sort_num" IS '排序';
 COMMENT ON COLUMN "public"."labdatahub_properties"."from_type" IS '来源 0-产品继承 1-设备自定义(继承不可修改)';
 COMMENT ON COLUMN "public"."labdatahub_properties"."remark" IS '备注';
 COMMENT ON COLUMN "public"."labdatahub_properties"."unit" IS '单位';
+COMMENT ON COLUMN "public"."labdatahub_properties"."byte_order" IS '字节序: big-大端 little-小端（多寄存器/多字节数值解析用）';
+COMMENT ON COLUMN "public"."labdatahub_properties"."is_signed" IS '是否有符号: 1-有符号 0-无符号（整型解析用）';
+COMMENT ON COLUMN "public"."labdatahub_properties"."scale" IS '缩放系数（value = 原始值*scale + offset）';
+COMMENT ON COLUMN "public"."labdatahub_properties"."offset_value" IS '偏移量（value = 原始值*scale + offset）';
 COMMENT ON TABLE "public"."labdatahub_properties" IS '物模型属性定义表';
 
 -- ----------------------------

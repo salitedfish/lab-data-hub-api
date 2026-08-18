@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.controller;
 
 import java.util.Arrays;
@@ -24,6 +25,7 @@ import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.utils.CacheUtils;
+import com.labdatahub.business.utils.ParseMetaUtils;
 import com.labdatahub.common.annotation.Log;
 import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
@@ -159,6 +161,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {
@@ -193,6 +196,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                 config.setAreaCode(o.getAreaCode());
                 config.setStartAddress(o.getStartAddress());
                 config.setLength(o.getLength());
+                ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                 FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
             });
         }else {
@@ -226,6 +230,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {

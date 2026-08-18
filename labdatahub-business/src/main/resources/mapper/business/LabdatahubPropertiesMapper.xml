@@ -14,10 +14,14 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
         <result property="dataType"    column="data_type"    />
         <result property="sortNum"    column="sort_num"    />
         <result property="fromType"    column="from_type"    />
+        <result property="byteOrder"    column="byte_order"    />
+        <result property="isSigned"    column="is_signed"    />
+        <result property="scale"    column="scale"    />
+        <result property="offset"    column="offset_value"    />
     </resultMap>
 
     <sql id="selectLabdatahubPropertiesVo">
-        select id, belong_sn, belong_type, identifier, name, parent_id, data_type, sort_num, from_type from labdatahub_properties
+        select id, belong_sn, belong_type, identifier, name, parent_id, data_type, sort_num, from_type, byte_order, is_signed, scale, offset_value from labdatahub_properties
     </sql>
 
     <select id="selectLabdatahubPropertiesList" parameterType="LabdatahubProperties" resultMap="LabdatahubPropertiesResult">
@@ -51,6 +55,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="dataType != null">data_type,</if>
             <if test="sortNum != null">sort_num,</if>
             <if test="fromType != null">from_type,</if>
+            <if test="byteOrder != null">byte_order,</if>
+            <if test="isSigned != null">is_signed,</if>
+            <if test="scale != null">scale,</if>
+            <if test="offset != null">offset_value,</if>
          </trim>
         <trim prefix="values (" suffix=")" suffixOverrides=",">
             <if test="id != null">#{id},</if>
@@ -62,6 +70,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="dataType != null">#{dataType},</if>
             <if test="sortNum != null">#{sortNum},</if>
             <if test="fromType != null">#{fromType},</if>
+            <if test="byteOrder != null">#{byteOrder},</if>
+            <if test="isSigned != null">#{isSigned},</if>
+            <if test="scale != null">#{scale},</if>
+            <if test="offset != null">#{offset},</if>
          </trim>
     </insert>
 
@@ -76,6 +88,10 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="dataType != null">data_type = #{dataType},</if>
             <if test="sortNum != null">sort_num = #{sortNum},</if>
             <if test="fromType != null">from_type = #{fromType},</if>
+            <if test="byteOrder != null">byte_order = #{byteOrder},</if>
+            <if test="isSigned != null">is_signed = #{isSigned},</if>
+            <if test="scale != null">scale = #{scale},</if>
+            <if test="offset != null">offset_value = #{offset},</if>
         </trim>
         where id = #{id}
     </update>

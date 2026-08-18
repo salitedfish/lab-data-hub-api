@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.s7_tcp;
 
 import lombok.Data;
@@ -12,4 +13,9 @@ public class S7Message {
     private Integer bitOffset;   		// 偏移量
     private Integer length;       // 读取长度（字节）
     private Integer delayTime;    // 读取完成后暂停时间（毫秒）
+    private String dataType;      // 数据类型: int/double/bool/string（来自物模型）
+    private String byteOrder;     // 字节序: big-大端 little-小端
+    private String isSigned;      // 是否有符号: 1-有符号 0-无符号
+    private Double scale;         // 缩放系数
+    private Double offset;        // 偏移量
 }

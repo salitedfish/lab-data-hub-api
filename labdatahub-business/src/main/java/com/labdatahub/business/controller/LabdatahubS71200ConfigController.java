@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.controller;
 
 import java.util.Arrays;
@@ -24,6 +25,7 @@ import com.labdatahub.business.domain.LabdatahubS71200Config;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
 import com.labdatahub.business.utils.CacheUtils;
+import com.labdatahub.business.utils.ParseMetaUtils;
 import com.labdatahub.common.annotation.Log;
 import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
@@ -163,6 +165,7 @@ public class LabdatahubS71200ConfigController extends BaseController
                     config.setBitOffset(o.getBitOffset());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     S7MessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {
@@ -199,6 +202,7 @@ public class LabdatahubS71200ConfigController extends BaseController
                 config.setBitOffset(o.getBitOffset());
                 config.setStartAddress(o.getStartAddress());
                 config.setLength(o.getLength());
+                ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                 S7MessageScheduler.addReadConfig(device.getComponentId(),config);
             });
         }else {
@@ -234,6 +238,7 @@ public class LabdatahubS71200ConfigController extends BaseController
                     config.setBitOffset(o.getBitOffset());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     S7MessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {

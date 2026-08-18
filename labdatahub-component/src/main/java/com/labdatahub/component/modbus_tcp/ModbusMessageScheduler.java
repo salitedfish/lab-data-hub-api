@@ -124,6 +124,21 @@ public class ModbusMessageScheduler {
     }
 
     /**
+     * 【静态方法】判断指定读取配置当前是否在定时轮询（用于物模型改动后重建轮询时区分开/关状态）
+     * @param componentId 组件ID
+     * @param deviceSn 设备SN
+     * @param code 指令编码
+     * @return true-当前正在轮询
+     */
+    public static boolean isReadConfigRunning(String componentId, String deviceSn, String code) {
+        if (StringUtils.isBlank(componentId) || StringUtils.isBlank(deviceSn) || StringUtils.isBlank(code)) {
+            return false;
+        }
+        String configKey = String.format(CONFIG_KEY_FORMAT, componentId, deviceSn, code);
+        return configTaskMap.containsKey(configKey);
+    }
+
+    /**
      * 【静态方法】消费者获取指定组件的消息（阻塞式，无消息时等待）
      * @param componentId 组件ID（标识要读取的队列）
      * @return ModbusMessage
@@ -207,6 +222,11 @@ public class ModbusMessageScheduler {
         message.setCode(readConfig.getCode());
         message.setRegisterRange(readConfig.getRegisterRange());
         message.setDelayTime(readConfig.getDelayTime());
+        message.setDataType(readConfig.getDataType());
+        message.setByteOrder(readConfig.getByteOrder());
+        message.setIsSigned(readConfig.getIsSigned());
+        message.setScale(readConfig.getScale());
+        message.setOffset(readConfig.getOffset());
         return message;
     }
 

@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.controller;
 
 import java.util.Arrays;
@@ -26,6 +27,7 @@ import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.utils.CacheUtils;
+import com.labdatahub.business.utils.ParseMetaUtils;
 import com.labdatahub.common.annotation.Log;
 import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
@@ -97,12 +99,39 @@ public class LabdatahubModbusConfigController extends BaseController
     }
 
     /**
+     * 校验寄存器范围：一个标识只对应一个读取点位，只允许单段区间（如 0 或 0-3）
+     * 多段区间会因协议端按 code 折叠丢数据，这里直接拒绝
+     *
+     * @return null-校验通过，否则返回错误信息
+     */
+    private AjaxResult checkRegisterRange(LabdatahubModbusConfig config) {
+        String registerRange = config.getRegisterRange();
+        if (StringUtils.isEmpty(registerRange)) {
+            return AjaxResult.error("寄存器范围不能为空");
+        }
+        String range = registerRange.trim();
+        String[] parts = range.split("-");
+        boolean valid = parts.length <= 2
+                && parts[0].matches("\\d+")
+                && (parts.length == 1 || parts[1].matches("\\d+"))
+                && (parts.length == 1 || Integer.parseInt(parts[1]) >= Integer.parseInt(parts[0]));
+        if (!valid) {
+            return AjaxResult.error("寄存器范围格式不正确，请输入单个区间，如：0 或 0-3");
+        }
+        return null;
+    }
+
+    /**
      * 新增modbus协议读取配置
      */
     @Log(title = "modbus协议读取配置", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody LabdatahubModbusConfig labdatahubModbusConfig)
     {
+        AjaxResult check = checkRegisterRange(labdatahubModbusConfig);
+        if (check != null) {
+            return check;
+        }
         labdatahubModbusConfig.setCreateTime(new Date());
         return toAjax(labdatahubModbusConfigService.save(labdatahubModbusConfig));
     }
@@ -114,6 +143,10 @@ public class LabdatahubModbusConfigController extends BaseController
     @PutMapping
     public AjaxResult edit(@RequestBody LabdatahubModbusConfig labdatahubModbusConfig)
     {
+        AjaxResult check = checkRegisterRange(labdatahubModbusConfig);
+        if (check != null) {
+            return check;
+        }
         return toAjax(labdatahubModbusConfigService.updateById(labdatahubModbusConfig));
     }
 
@@ -163,6 +196,7 @@ public class LabdatahubModbusConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime().intValue());
                     config.setSlaveId(device.getSlaveId());
                     config.setRegisterRange(o.getRegisterRange());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {
@@ -196,6 +230,7 @@ public class LabdatahubModbusConfigController extends BaseController
                 config.setIntervalTime(o.getIntervalTime().intValue());
                 config.setSlaveId(device.getSlaveId());
                 config.setRegisterRange(o.getRegisterRange());
+                ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                 ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
             });
         }else {
@@ -228,6 +263,7 @@ public class LabdatahubModbusConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime().intValue());
                     config.setSlaveId(device.getSlaveId());
                     config.setRegisterRange(o.getRegisterRange());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {

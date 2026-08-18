@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.fins_tcp;
 
 import com.alibaba.fastjson2.JSONArray;
@@ -71,6 +72,11 @@ public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
     	objecotData.put("code", message.getCode());
     	//objecotData.put("addressRange", message.getAddressRange());
     	objecotData.put("jsonArray", JSONArray.from(dataList));
+        objecotData.put("dataType", message.getDataType());
+        objecotData.put("byteOrder", message.getByteOrder());
+        objecotData.put("isSigned", message.getIsSigned());
+        objecotData.put("scale", message.getScale());
+        objecotData.put("offset", message.getOffset());
         threadPoolTaskExecutor.execute(() -> {
             WebSocketServer.broadcast("component", componentId, objecotData.toJSONString());
         });

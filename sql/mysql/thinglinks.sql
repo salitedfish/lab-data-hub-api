@@ -1446,6 +1446,10 @@ CREATE TABLE `labdatahub_properties`  (
   `from_type` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '来源 0-产品继承 1-设备自定义(继承不可修改)',
   `remark` text CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL COMMENT '备注',
   `unit` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT NULL COMMENT '单位',
+  `byte_order` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT 'big' COMMENT '字节序: big-大端 little-小端（多寄存器/多字节数值解析用）',
+  `is_signed` varchar(10) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NULL DEFAULT '1' COMMENT '是否有符号: 1-有符号 0-无符号（整型解析用）',
+  `scale` decimal(20,6) NULL DEFAULT 1 COMMENT '缩放系数: 数值乘此系数得到工程值',
+  `offset_value` decimal(20,6) NULL DEFAULT 0 COMMENT '偏移量: 数值乘缩放后再加此偏移（列名避开保留字offset）',
   PRIMARY KEY (`id`) USING BTREE,
   INDEX `idx_product_key`(`belong_sn` ASC) USING BTREE,
   INDEX `idx_identifier`(`identifier` ASC) USING BTREE

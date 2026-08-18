@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.modbus_tcp;
 
 import com.alibaba.fastjson2.JSONArray;
@@ -73,6 +74,11 @@ public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
         objectData.put("code", message.getCode());
         objectData.put("registerRange", message.getRegisterRange());
         objectData.put("jsonArray", JSONArray.from(list));
+        objectData.put("dataType", message.getDataType());
+        objectData.put("byteOrder", message.getByteOrder());
+        objectData.put("isSigned", message.getIsSigned());
+        objectData.put("scale", message.getScale());
+        objectData.put("offset", message.getOffset());
         threadPoolTaskExecutor.execute(() -> {
             try {
                 WebSocketServer.broadcast("component", componentId, JSONArray.toJSONString(list));

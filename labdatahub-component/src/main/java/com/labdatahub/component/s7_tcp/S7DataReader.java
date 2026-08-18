@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.s7_tcp;
 
 import java.io.UnsupportedEncodingException;
@@ -74,7 +75,7 @@ public class S7DataReader {
     		}
     		case "DBX":{//1字节
     			byte[] data = connector.read(DaveArea.DB, dbNumber, 1, startAddress);
-    	    	boolean value = new BitConverter().extract(Boolean.class, data, 0, bitOffset);
+    	    	boolean value = new BitConverter().extract(Boolean.class, data, 0, bitOffset == null ? 0 : bitOffset);
     	    	return value;
     		}
     		case "DBD":{//4字节
@@ -83,7 +84,7 @@ public class S7DataReader {
     	    	return value;
     		}
     		case "DBB":{//length字节
-    			byte[] data = connector.read(DaveArea.DB, dbNumber, length, startAddress);
+    			byte[] data = connector.read(DaveArea.DB, dbNumber, length == null ? 1 : length, startAddress);
 //    			String value = new StringConverter().extract(String.class, data, 0, 0);
 //    			// 读取前两个字节（最大长度和实际长度）
 //    	        byte[] header = connector.read(DaveArea.DB, dbNumber, 2, startAddress);

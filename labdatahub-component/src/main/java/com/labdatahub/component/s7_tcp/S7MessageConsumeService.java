@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.s7_tcp;
 
 import java.lang.reflect.InvocationTargetException;
@@ -49,6 +50,11 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
         result.put("startAddress", message.getStartAddress());
         result.put("length", message.getLength());
         result.put("data", rawData); // 可按需转换为 hex 或数值列表
+        result.put("dataType", message.getDataType());
+        result.put("byteOrder", message.getByteOrder());
+        result.put("isSigned", message.getIsSigned());
+        result.put("scale", message.getScale());
+        result.put("offset", message.getOffset());
 
         // 广播到 WebSocket
         threadPoolTaskExecutor.execute(() -> {

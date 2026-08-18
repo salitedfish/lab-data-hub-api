@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.controller;
 
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import com.labdatahub.business.service.ILabdatahubDeviceLogsService;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubProductService;
 import com.labdatahub.business.utils.PropertyConverter;
+import com.labdatahub.business.utils.ProtocolReadConfigRebuilder;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.component.message.DecodeMessage;
@@ -148,6 +150,11 @@ public class LabdatahubPropertiesController extends BaseController
             if(device!=null){
                 List<PropertyNode> nodeList = PropertyConverter.buildPropertyTree(list);
                 PropertyToJson.PROPERTY_TREE.put(propertyListDTO.getBelongSn(),nodeList);
+                // 物模型解析参数变更，重建该设备正在轮询的读取配置（dataType/字节序/缩放/偏移即时生效）
+                ProtocolReadConfigRebuilder.rebuildDevice(propertyListDTO.getBelongSn());
+            } else {
+                // 产品物模型解析参数变更，重建该产品下所有设备的轮询读取配置
+                ProtocolReadConfigRebuilder.rebuildByProduct(propertyListDTO.getBelongSn());
             }
             return AjaxResult.success("更新属性成功");
         }else {

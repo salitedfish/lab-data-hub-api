@@ -1,6 +1,8 @@
+//由AI修改
 package com.labdatahub.business.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -85,5 +87,18 @@ public class LabdatahubProperties {
 
     /**单位*/
     private String unit;
+
+    /**字节序: big-大端 little-小端（多寄存器/多字节数值解析用）*/
+    private String byteOrder;
+
+    /**是否有符号: 1-有符号 0-无符号（整型解析用）*/
+    private String isSigned;
+
+    /**缩放系数: 数值乘此系数得到工程值*/
+    private Double scale;
+
+    /**偏移量: 数值乘缩放后再加此偏移（列名避开PG/MySQL保留字offset，用offset_value）*/
+    @TableField("offset_value")
+    private Double offset;
 
 }

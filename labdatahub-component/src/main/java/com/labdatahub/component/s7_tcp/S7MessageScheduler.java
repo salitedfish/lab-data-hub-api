@@ -30,6 +30,12 @@ public class S7MessageScheduler {
         if (StringUtils.isBlank(componentId) || readConfig == null) {
             throw new IllegalArgumentException("参数不能为空");
         }
+        if (StringUtils.isBlank(readConfig.getDeviceSn())) {
+            throw new IllegalArgumentException("deviceSn 不能为空");
+        }
+        if (StringUtils.isBlank(readConfig.getCode())) {
+            throw new IllegalArgumentException("code 不能为空");
+        }
         if (readConfig.getDbNumber() == null || readConfig.getDbNumber() <= 0) {
             throw new IllegalArgumentException("dbNumber 必须为正整数");
         }
@@ -82,6 +88,21 @@ public class S7MessageScheduler {
             log.info("已移除S7定时配置：componentId={}, deviceSn={}, code={}", componentId, deviceSn, code);
             //System.out.printf("已移除S7定时配置：componentId=%s, deviceSn=%s, code=%s%n", componentId, deviceSn, code);
         }
+    }
+
+    /**
+     * 【静态方法】判断指定读取配置当前是否在定时轮询（用于物模型改动后重建轮询时区分开/关状态）
+     * @param componentId 组件ID
+     * @param deviceSn 设备SN
+     * @param code 指令编码
+     * @return true-当前正在轮询
+     */
+    public static boolean isReadConfigRunning(String componentId, String deviceSn, String code) {
+        if (StringUtils.isBlank(componentId) || StringUtils.isBlank(deviceSn) || StringUtils.isBlank(code)) {
+            return false;
+        }
+        String configKey = String.format(CONFIG_KEY_FORMAT, componentId, deviceSn, code);
+        return configTaskMap.containsKey(configKey);
     }
 
     /**
