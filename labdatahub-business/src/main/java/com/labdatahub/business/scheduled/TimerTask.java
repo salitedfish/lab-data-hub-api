@@ -27,6 +27,7 @@ import com.labdatahub.business.domain.LabdatahubDbConfig;
 import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.domain.LabdatahubDeviceLogs;
 import com.labdatahub.business.domain.LabdatahubFunction;
+import com.labdatahub.business.domain.LabdatahubBrotherConfig;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubProduct;
@@ -55,6 +56,7 @@ import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubFunctionRecordService;
 import com.labdatahub.business.service.ILabdatahubFunctionService;
 import com.labdatahub.business.service.ILabdatahubLinkageWarnRecordService;
+import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubProductService;
@@ -65,8 +67,11 @@ import com.labdatahub.business.service.ILabdatahubScheduledTaskService;
 import com.labdatahub.business.service.ILabdatahubWarnLinkageService;
 import com.labdatahub.business.service.ILabdatahubWarnRecordService;
 import com.labdatahub.business.utils.CacheUtils;
+import com.labdatahub.business.utils.ParseMetaUtils;
 import com.labdatahub.common.core.redis.RedisCache;
 import com.labdatahub.common.utils.StringUtils;
+import com.labdatahub.component.brother_tcp.BrotherTcpMessageScheduler;
+import com.labdatahub.component.brother_tcp.BrotherTcpReadConfig;
 import com.labdatahub.component.db.DatabaseMessageScheduler;
 import com.labdatahub.component.db.DatabaseReadConfig;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
@@ -124,6 +129,8 @@ public class TimerTask {
     private ILabdatahubS71200ConfigService labdatahubS71200ConfigService;
     @Autowired
     private ILabdatahubOmronFinsConfigService labdatahubOmronFinsConfigService;
+    @Autowired
+    private ILabdatahubBrotherConfigService labdatahubBrotherConfigService;
     @Autowired
     private ILabdatahubDbConfigService labdatahubDbConfigService;
     /**
@@ -405,7 +412,43 @@ public class TimerTask {
             });
         });
     }
-    
+
+    /**
+     * 初始化Brother定时读取（仅拉起 netType=BROTHER_TCP 组件的设备，避免对其它协议组件误调度）
+     */
+    @PostConstruct
+    public void initBrotherTcpRead(){
+        threadPoolTaskExecutor.execute(()->{
+            List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getModbusRead,"1"));
+            deviceList.forEach(device->{
+                // 只拉起 Brother 网络组件下设备的轮询
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"BROTHER_TCP".equals(component.getNetType())){
+                    return;
+                }
+                List<LabdatahubBrotherConfig> list = labdatahubBrotherConfigService.list(new LambdaQueryWrapper<LabdatahubBrotherConfig>()
+                        .eq(LabdatahubBrotherConfig::getBelongSn,device.getDeviceSn()));
+                list.forEach(o->{
+                    BrotherTcpMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    BrotherTcpReadConfig config = new BrotherTcpReadConfig();
+                    config.setDeviceSn(o.getBelongSn());
+                    config.setCode(o.getCode());
+                    config.setDelayTime(o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDataArea(o.getDataArea());
+                    config.setRowNumber(o.getRowNumber());
+                    config.setFieldIndex(o.getFieldIndex());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+                    BrotherTcpMessageScheduler.addReadConfig(device.getComponentId(),config);
+                });
+            });
+        });
+    }
+
     /**
      * 初始化Database定时读取
      */

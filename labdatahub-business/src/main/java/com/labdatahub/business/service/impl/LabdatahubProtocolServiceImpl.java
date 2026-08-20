@@ -47,6 +47,7 @@ public class LabdatahubProtocolServiceImpl extends ServiceImpl<LabdatahubProtoco
         MAIN_CLASS_PATH.put("MODBUS_TCP","com.labdatahub.protocol.parent.ModbusTcpProtocol");
         MAIN_CLASS_PATH.put("S71200_TCP","com.labdatahub.protocol.parent.S71200TcpProtocol");
         MAIN_CLASS_PATH.put("OMRONFINS_TCP","com.labdatahub.protocol.parent.OmronFinsTcpProtocol");
+        MAIN_CLASS_PATH.put("BROTHER_TCP","com.labdatahub.protocol.parent.BrotherTcpProtocol");
         MAIN_CLASS_PATH.put("DATABASE_TCP","com.labdatahub.protocol.parent.DataBaseTcpProtocol");
     }
     /**

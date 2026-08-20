@@ -4,16 +4,20 @@ package com.labdatahub.business.utils;
 import java.util.List;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.labdatahub.business.domain.LabdatahubBrotherConfig;
 import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubS71200Config;
+import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.common.utils.spring.SpringUtils;
+import com.labdatahub.component.brother_tcp.BrotherTcpMessageScheduler;
+import com.labdatahub.component.brother_tcp.BrotherTcpReadConfig;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
 import com.labdatahub.component.modbus_tcp.ModbusMessageScheduler;
@@ -66,7 +70,7 @@ public class ProtocolReadConfigRebuilder {
     }
 
     /**
-     * 重建单个设备的三类协议轮询（Modbus/S7/Fins），仅重建当前正在轮询的配置
+     * 重建单个设备的四类协议轮询（Modbus/S7/Fins/Brother），仅重建当前正在轮询的配置
      */
     private static void rebuildForDevice(LabdatahubDevice device) {
         if (StringUtils.isEmpty(device.getComponentId())) {
@@ -75,6 +79,7 @@ public class ProtocolReadConfigRebuilder {
         rebuildModbus(device);
         rebuildS7(device);
         rebuildFins(device);
+        rebuildBrother(device);
     }
 
     /**
@@ -159,6 +164,34 @@ public class ProtocolReadConfigRebuilder {
             config.setLength(o.getLength());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
             FinsMessageScheduler.addReadConfig(componentId, config);
+        }
+    }
+
+    /**
+     * 重建 Brother 读取配置（构建逻辑与 LabdatahubBrotherConfigController 保持一致）
+     */
+    private static void rebuildBrother(LabdatahubDevice device) {
+        String componentId = device.getComponentId();
+        String deviceSn = device.getDeviceSn();
+        List<LabdatahubBrotherConfig> list = SpringUtils.getBean(ILabdatahubBrotherConfigService.class).list(
+                new LambdaQueryWrapper<LabdatahubBrotherConfig>().eq(LabdatahubBrotherConfig::getBelongSn, deviceSn));
+        for (LabdatahubBrotherConfig o : list) {
+            if (o.getDelayTime() == null || o.getIntervalTime() == null) {
+                continue;
+            }
+            if (!BrotherTcpMessageScheduler.isReadConfigRunning(componentId, deviceSn, o.getCode())) {
+                continue;
+            }
+            BrotherTcpReadConfig config = new BrotherTcpReadConfig();
+            config.setDeviceSn(o.getBelongSn());
+            config.setCode(o.getCode());
+            config.setDelayTime(o.getDelayTime().intValue());
+            config.setIntervalTime(o.getIntervalTime().intValue());
+            config.setDataArea(o.getDataArea());
+            config.setRowNumber(o.getRowNumber());
+            config.setFieldIndex(o.getFieldIndex());
+            ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+            BrotherTcpMessageScheduler.addReadConfig(componentId, config);
         }
     }
 }

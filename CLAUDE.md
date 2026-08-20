@@ -41,7 +41,8 @@ mvn spring-boot:run -pl labdatahub-admin
 - 端口：`8081`，context-path：`/`
 - 活跃配置：`spring.profiles.active: pgsql`（见 `labdatahub-admin/src/main/resources/application.yml`）
 - 协议包位于 `protocol/` 目录，由 `scprotocol` 子项目产出，需先编译放入
-- 轮询类协议（Modbus / S7 / Fins）的点位解析参数来自物模型 `labdatahub_properties` 的 `dataType`/`byteOrder`/`isSigned`/`scale`/`offset`（`identifier` 与协议 `code` 一一对应），由 `business.utils.ParseMetaUtils` 在构建 `XxxReadConfig` 时注入，随 decode JSONObject 传给协议库解析
+- 轮询类协议（Modbus / S7 / Fins / Brother）的点位解析参数来自物模型 `labdatahub_properties` 的 `dataType`/`byteOrder`/`isSigned`/`scale`/`offset`（`identifier` 与协议 `code` 一一对应），由 `business.utils.ParseMetaUtils` 在构建 `XxxReadConfig` 时注入，随 decode JSONObject 传给协议库解析
+- **Brother NC 协议（`BROTHER_TCP`）**：机床直连平台采集，TCP 10000 只读。点位地址 = `数据区.行号.字段序号`（如 `PDSP.4.1` = 机械坐标 P01 行第 1 字段 X 轴），`component` 模块 `com.labdatahub.component.brother_tcp` 包实现连接/调度/消费，点位配置存 `labdatahub_brother_config` 表（data_area/row_number/field_index），由 `scheduled/TimerTask#initBrotherTcpRead` 启动轮询、`utils/ProtocolReadConfigRebuilder#rebuildBrother` 重建，指令下发只读 stub（`DeviceDownUtils#brotherTcpDown`）
 - Redis 配置在 `application.yml` 的 `spring.redis`
 
 ## 编码规范
