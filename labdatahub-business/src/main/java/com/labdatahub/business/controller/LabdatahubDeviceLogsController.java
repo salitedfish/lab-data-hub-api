@@ -44,14 +44,18 @@ public class LabdatahubDeviceLogsController extends BaseController
 
     /**
      * 查询设备日志列表
+     * @param propertyName 属性标识符（物模型 identifier），匹配 properties 字段 JSON 中的属性 key
      */
     @GetMapping("/list")
-    public TableDataInfo list(LabdatahubDeviceLogs labdatahubDeviceLogs,String startTime,String endTime)
+    public TableDataInfo list(LabdatahubDeviceLogs labdatahubDeviceLogs,String startTime,String endTime,String propertyName)
     {
     	LambdaQueryWrapper<LabdatahubDeviceLogs> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.orderByDesc(LabdatahubDeviceLogs::getCreateTime);
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getLogType()),LabdatahubDeviceLogs::getLogType,labdatahubDeviceLogs.getLogType());
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDeviceLogs.getDeviceSn()),LabdatahubDeviceLogs::getDeviceSn,labdatahubDeviceLogs.getDeviceSn());
+        // 属性名称过滤：properties 字段存 DecodeMessage JSON（{"properties":{identifier:value},...}），
+        // 用引号包裹的标识符匹配属性 key，避免误命中数值
+        queryWrapper.like(StringUtils.isNotEmpty(propertyName), LabdatahubDeviceLogs::getProperties, "\"" + propertyName + "\"");
      // 处理时间范围查询
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
         queryWrapper.ge(StringUtils.isNotEmpty(startTime),LabdatahubDeviceLogs::getCreateTime, LocalDateTime.parse(startTime, formatter));

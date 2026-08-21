@@ -28,7 +28,7 @@ COMMENT ON COLUMN "public"."labdatahub_brother_config"."create_time" IS '创建�
 COMMENT ON COLUMN "public"."labdatahub_brother_config"."data_area" IS '数据区名（PDSP/ALARM/PRD3/WKCNTR）';
 COMMENT ON COLUMN "public"."labdatahub_brother_config"."row_number" IS '行号（1起，对应数据区点表行顺序）';
 COMMENT ON COLUMN "public"."labdatahub_brother_config"."field_index" IS '字段序号（1起，第1个字段=行Symbol后第一个值）';
-COMMENT ON COLUMN "public"."labdatahub_brother_config"."interval_time" IS '多少毫秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."interval_time" IS '多少秒读取一次';
 COMMENT ON COLUMN "public"."labdatahub_brother_config"."delay_time" IS '同一网络组件读取属性延迟时间';
 COMMENT ON TABLE "public"."labdatahub_brother_config" IS 'Brother NC协议读取配置表';
 

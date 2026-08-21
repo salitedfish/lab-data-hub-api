@@ -1,6 +1,7 @@
 //由AI修改
 package com.labdatahub.component.brother_tcp;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
@@ -29,19 +30,38 @@ public class BrotherTcpDataReader {
     }
 
     /**
-     * 读取整个数据区
+     * 读取整个数据区（带自动重连重试）
+     * 机床会周期性掐断长连接，首次连接级失败时自动清理死连接、重连一次并重发，自愈后正常返回
+     * @param componentId 组件ID，用于获取连接
+     * @param dataArea 数据区名（如 PDSP/ALARM/PRD3）
+     * @return 按 \r\n 分行、按 , 拆分的行数组列表；rows.get(0) 为 % 帧头，rows.get(rowNumber) 为第 rowNumber 行
+     * @throws Exception 通信异常（重连重试后仍失败时抛出）
+     */
+    public static List<String[]> readDataArea(String componentId, String dataArea) throws Exception {
+        try {
+            return doReadDataArea(componentId, dataArea);
+        } catch (IOException e) {
+            // 连接级异常（broken pipe / connection reset / 对端关闭）：连接已被机床掐断，重连一次后重发
+            System.err.printf("[Brother读取] componentId=%s 连接异常（%s），自动重连后重试%n", componentId, e.getMessage());
+            BrotherTcpConnectionManager.forceReconnect(componentId);
+            return doReadDataArea(componentId, dataArea);
+        }
+    }
+
+    /**
+     * 单次读取整个数据区（不含重试）
      * @param componentId 组件ID，用于获取连接
      * @param dataArea 数据区名（如 PDSP/ALARM/PRD3）
      * @return 按 \r\n 分行、按 , 拆分的行数组列表；rows.get(0) 为 % 帧头，rows.get(rowNumber) 为第 rowNumber 行
      * @throws Exception 通信异常
      */
-    public static List<String[]> readDataArea(String componentId, String dataArea) throws Exception {
+    private static List<String[]> doReadDataArea(String componentId, String dataArea) throws Exception {
         Socket socket = BrotherTcpConnectionManager.connections.get(componentId);
         if (socket == null || socket.isClosed() || !socket.isConnected()) {
-            throw new Exception("连接已断开，请重新连接");
+            throw new IOException("连接已断开，请重新连接");
         }
         if (socket.isInputShutdown() || socket.isOutputShutdown()) {
-            throw new Exception("Socket通道已关闭，无法通信");
+            throw new IOException("Socket通道已关闭，无法通信");
         }
         // 1. 构建 LOD 请求帧并发送
         String request = buildRequest(dataArea);
@@ -132,7 +152,8 @@ public class BrotherTcpDataReader {
                 throw new Exception("读取Brother响应超时：" + e.getMessage());
             }
             if (n == -1) {
-                throw new Exception("连接已关闭，读取Brother响应失败");
+                // 对端已关闭连接：视为连接级异常，便于上层自动重连重试
+                throw new IOException("连接已关闭，读取Brother响应失败");
             }
             sb.append(new String(buf, 0, n, StandardCharsets.US_ASCII));
             if (sb.length() > MAX_RESPONSE_SIZE) {

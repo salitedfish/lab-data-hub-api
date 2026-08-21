@@ -39,8 +39,8 @@ private static final long serialVersionUID = 1L;
     private String code;
     /** 创建时间 */
     private Date createTime;
-    /** 多少毫秒读取一次 */
-    @Excel(name = "多少毫秒读取一次")
+    /** 多少秒读取一次 */
+    @Excel(name = "多少秒读取一次")
     private Long intervalTime;
     /** 同一网络组件读取属性延迟时间 */
     @Excel(name = "同一网络组件读取属性延迟时间")

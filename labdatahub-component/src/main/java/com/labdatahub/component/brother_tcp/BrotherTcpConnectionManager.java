@@ -3,7 +3,6 @@ package com.labdatahub.component.brother_tcp;
 
 import java.net.InetAddress;
 import java.net.Socket;
-import java.net.SocketException;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -172,7 +171,7 @@ public class BrotherTcpConnectionManager {
     }
 
     /**
-     * 精准校验连接是否有效
+     * 校验连接是否有效
      * @param socket Brother TCP连接
      * @return true=有效，false=失效
      */
@@ -181,15 +180,12 @@ public class BrotherTcpConnectionManager {
             return false;
         }
         try {
-            // 检查Socket基础状态
+            // 仅检查Socket本地状态即可；不再发送OOB紧急字节（sendUrgentData 0xFF）探测半开连接——
+            // 机床是严格的ASCII文本协议，0xFF 会被协议栈当垃圾数据，反而可能触发断连
             if (!socket.isConnected() || socket.isClosed() || socket.isInputShutdown() || socket.isOutputShutdown()) {
                 return false;
             }
-            // 发送紧急数据探测半开连接
-            socket.sendUrgentData(0xFF);
             return true;
-        } catch (SocketException e) {
-            return false;
         } catch (Exception e) {
             return false;
         }
@@ -202,6 +198,16 @@ public class BrotherTcpConnectionManager {
      * @return 重连是否成功
      */
     private static boolean reconnect(String componentId, BrotherTcpConfig config) {
+        // 先关闭旧连接（机床只服务一个活动数据连接，新旧并存会把正在使用的旧连接踢掉）
+        Socket oldConn = connections.remove(componentId);
+        if (oldConn != null) {
+            try {
+                oldConn.close();
+            } catch (Exception e) {
+                // 旧连接关闭失败不影响新连接创建
+                System.err.printf("[Brother重连] componentId=%s 旧连接关闭失败：%s%n", componentId, e.getMessage());
+            }
+        }
         try {
             // 1. 创建新连接
             InetAddress address = InetAddress.getByName(config.getIpAddr());
@@ -209,18 +215,7 @@ public class BrotherTcpConnectionManager {
             newSocket.setSoTimeout(config.getTimeout());
             newSocket.setTcpNoDelay(true);
 
-            // 2. 关闭旧连接（释放资源）
-            Socket oldConn = connections.get(componentId);
-            if (oldConn != null) {
-                try {
-                    oldConn.close();
-                } catch (Exception e) {
-                    // 旧连接关闭失败不影响新连接创建
-                    System.err.printf("[Brother重连] componentId=%s 旧连接关闭失败：%s%n", componentId, e.getMessage());
-                }
-            }
-
-            // 3. 更新连接映射
+            // 2. 更新连接映射
             connections.put(componentId, newSocket);
             System.out.printf("[Brother重连] componentId=%s 重连成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
@@ -231,5 +226,26 @@ public class BrotherTcpConnectionManager {
             connections.remove(componentId);
             return false;
         }
+    }
+
+    /**
+     * 主动强制重连（读取失败时由读取器触发）：关闭死连接并建立新连接
+     * @param componentId 组件唯一标识
+     */
+    public static void forceReconnect(String componentId) {
+        BrotherTcpConfig config = configMap.get(componentId);
+        if (config == null) {
+            // 无连接配置时仅清理死连接，避免残留悬挂
+            Socket dead = connections.remove(componentId);
+            if (dead != null) {
+                try {
+                    dead.close();
+                } catch (Exception e) {
+                    // 忽略关闭异常
+                }
+            }
+            return;
+        }
+        reconnect(componentId, config);
     }
 }

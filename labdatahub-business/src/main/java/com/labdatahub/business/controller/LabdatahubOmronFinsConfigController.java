@@ -204,6 +204,9 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                 FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
             });
         }
+        // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致
+        device.setModbusRead(isOpen);
+        labdatahubDeviceService.updateById(device);
         return AjaxResult.success("操作成功");
     }
 
@@ -238,6 +241,9 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                     FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
                 });
             }
+            // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致
+            device.setModbusRead(isOpen);
+            labdatahubDeviceService.updateById(device);
         });
         return AjaxResult.success("操作成功");
     }

@@ -86,6 +86,10 @@ public class LabdatahubBrotherConfigController extends BaseController
     @PostMapping
     public AjaxResult add(@RequestBody LabdatahubBrotherConfig labdatahubBrotherConfig)
     {
+        String error = validateConfig(labdatahubBrotherConfig);
+        if (StringUtils.isNotEmpty(error)) {
+            return AjaxResult.error(error);
+        }
         labdatahubBrotherConfig.setCreateTime(new Date());
         return toAjax(labdatahubBrotherConfigService.save(labdatahubBrotherConfig));
     }
@@ -97,7 +101,39 @@ public class LabdatahubBrotherConfigController extends BaseController
     @PutMapping
     public AjaxResult edit(@RequestBody LabdatahubBrotherConfig labdatahubBrotherConfig)
     {
+        String error = validateConfig(labdatahubBrotherConfig);
+        if (StringUtils.isNotEmpty(error)) {
+            return AjaxResult.error(error);
+        }
         return toAjax(labdatahubBrotherConfigService.updateById(labdatahubBrotherConfig));
+    }
+
+    /**
+     * 校验Brother配置必填项与地址合法性（避免脏数据导致调度空指针或静默采空）
+     * @param config 待校验配置
+     * @return 空串表示通过，否则为错误提示
+     */
+    private String validateConfig(LabdatahubBrotherConfig config)
+    {
+        if (config == null) {
+            return "配置不能为空";
+        }
+        if (StringUtils.isBlank(config.getCode())) {
+            return "标识不能为空";
+        }
+        if (StringUtils.isBlank(config.getDataArea())) {
+            return "数据区不能为空";
+        }
+        if (config.getRowNumber() == null || config.getRowNumber() <= 0) {
+            return "行号必须大于0";
+        }
+        if (config.getFieldIndex() == null || config.getFieldIndex() <= 0) {
+            return "字段序号必须大于0";
+        }
+        if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
+            return "读取间隔必须大于0";
+        }
+        return "";
     }
 
     /**
@@ -144,8 +180,8 @@ public class LabdatahubBrotherConfigController extends BaseController
                     BrotherTcpReadConfig config = new BrotherTcpReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
-                    config.setDelayTime(o.getDelayTime().intValue());
-                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setDataArea(o.getDataArea());
                     config.setRowNumber(o.getRowNumber());
                     config.setFieldIndex(o.getFieldIndex());
@@ -179,8 +215,8 @@ public class LabdatahubBrotherConfigController extends BaseController
                 BrotherTcpReadConfig config = new BrotherTcpReadConfig();
                 config.setDeviceSn(o.getBelongSn());
                 config.setCode(o.getCode());
-                config.setDelayTime(o.getDelayTime().intValue());
-                config.setIntervalTime(o.getIntervalTime().intValue());
+                config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                 config.setDataArea(o.getDataArea());
                 config.setRowNumber(o.getRowNumber());
                 config.setFieldIndex(o.getFieldIndex());
@@ -192,6 +228,9 @@ public class LabdatahubBrotherConfigController extends BaseController
                 BrotherTcpMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
             });
         }
+        // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致
+        device.setModbusRead(isOpen);
+        labdatahubDeviceService.updateById(device);
         return AjaxResult.success("操作成功");
     }
 
@@ -213,8 +252,8 @@ public class LabdatahubBrotherConfigController extends BaseController
                     BrotherTcpReadConfig config = new BrotherTcpReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
-                    config.setDelayTime(o.getDelayTime().intValue());
-                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setDataArea(o.getDataArea());
                     config.setRowNumber(o.getRowNumber());
                     config.setFieldIndex(o.getFieldIndex());
@@ -226,6 +265,9 @@ public class LabdatahubBrotherConfigController extends BaseController
                     BrotherTcpMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
                 });
             }
+            // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致
+            device.setModbusRead(isOpen);
+            labdatahubDeviceService.updateById(device);
         });
         return AjaxResult.success("操作成功");
     }

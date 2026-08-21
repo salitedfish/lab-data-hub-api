@@ -38,11 +38,12 @@ mvn spring-boot:run -pl labdatahub-admin
 # 或直接运行 LabdatahubApplication
 ```
 
-- 端口：`8081`，context-path：`/`
+- 端口：`8085`，context-path：`/`
 - 活跃配置：`spring.profiles.active: pgsql`（见 `labdatahub-admin/src/main/resources/application.yml`）
 - 协议包位于 `protocol/` 目录，由 `scprotocol` 子项目产出，需先编译放入
 - 轮询类协议（Modbus / S7 / Fins / Brother）的点位解析参数来自物模型 `labdatahub_properties` 的 `dataType`/`byteOrder`/`isSigned`/`scale`/`offset`（`identifier` 与协议 `code` 一一对应），由 `business.utils.ParseMetaUtils` 在构建 `XxxReadConfig` 时注入，随 decode JSONObject 传给协议库解析
-- **Brother NC 协议（`BROTHER_TCP`）**：机床直连平台采集，TCP 10000 只读。点位地址 = `数据区.行号.字段序号`（如 `PDSP.4.1` = 机械坐标 P01 行第 1 字段 X 轴），`component` 模块 `com.labdatahub.component.brother_tcp` 包实现连接/调度/消费，点位配置存 `labdatahub_brother_config` 表（data_area/row_number/field_index），由 `scheduled/TimerTask#initBrotherTcpRead` 启动轮询、`utils/ProtocolReadConfigRebuilder#rebuildBrother` 重建，指令下发只读 stub（`DeviceDownUtils#brotherTcpDown`）
+- **Brother NC 协议（`BROTHER_TCP`）**：机床直连平台采集，TCP 10000 只读。点位地址 = `数据区.行号.字段序号`（如 `PDSP.4.1` = 机械坐标 P01 行第 1 字段 X 轴），`component` 模块 `com.labdatahub.component.brother_tcp` 包实现连接/调度/消费，点位配置存 `labdatahub_brother_config` 表（data_area/row_number/field_index），由 `scheduled/TimerTask#initBrotherTcpRead` 启动轮询、`utils/ProtocolReadConfigRebuilder#rebuildBrother` 重建，指令下发只读 stub（`DeviceDownUtils#brotherTcpDown`）。PDSP 语义点位表为**前端内置**（`lab-data-hub-web/src/utils/brotherTcpPoints.js`，语义点位→地址映射，选点后 code 填点位 key），后端不感知点表，仅做地址合法性校验：`LabdatahubBrotherConfigController#add/edit` 校验 标识/数据区 非空、行号/字段序号/间隔 >0，`syncConfigToDevice`/`readSwitchByDevice`/`readSwitchByProduct` 对 delayTime/intervalTime 做空值兜底防 NPE。**定时读取开关**：`readSwitchByDevice`/`readSwitchByProduct`（Brother/Modbus/S7/Fins/Db 五个控制器相同）切换内存调度器后**同时把 `device.modbusRead` 落库**（`setModbusRead(isOpen)` + `updateById`），保证刷新页面后开关状态与实际读取一致。连接自愈：机床会周期性掐断长连接，`BrotherTcpDataReader#readDataArea` 遇连接级异常（broken pipe / connection reset / 对端关闭）自动重连一次并重发；健康检查 `isConnectionValid` 只查本地 socket 状态（**不发送 OOB 紧急字节** 0xFF 探测，避免打乱机床协议栈），`reconnect`/`forceReconnect` 先关旧连接再建新连接，避免与机床单活动连接冲突
+- **设备日志查询**：`LabdatahubDeviceLogsController#list` 支持 `propertyName`（物模型标识符）过滤，对 `properties` 字段（存 DecodeMessage JSON，`{"properties":{identifier:value}}`）用引号包裹的标识符做 LIKE 匹配，避免误命中数值
 - Redis 配置在 `application.yml` 的 `spring.redis`
 
 ## 编码规范
