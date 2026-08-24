@@ -121,12 +121,29 @@ public class DeviceUpListener {
         }
         List<String> mqttList = map.get(RuleEngineCache.TargetType.MQTT);
         if (mqttList != null && !mqttList.isEmpty()) {
+            // MQTT 规则转发：携带该设备全部点位最新数据（合并 MessageCache 累积缓存），而非仅当前点位
+            String mqttPayload = buildFullDataPayload(decodeMessage);
             threadPoolTaskExecutor.execute(() -> {
                 mqttList.forEach(o -> {
-                    MqttBrokerUtils.publishMessage(o, JSONObject.toJSONString(decodeMessage));
+                    MqttBrokerUtils.publishMessage(o, mqttPayload);
                 });
             });
         }
+    }
+
+    /**
+     * 构建规则转发载荷：携带该设备全部点位的最新数据
+     * 各协议 consume 在发布 device.up 前已调 MessageCache.setDeviceLastData 将本点位累积合并到设备缓存，
+     * 此处直接取缓存即得全量属性（含本点位）；缓存为空（如新设备首点）时退化为仅当前点位
+     * @param decodeMessage 当前点位解码消息
+     * @return 转发 JSON 字符串
+     */
+    private String buildFullDataPayload(DecodeMessage decodeMessage) {
+        DecodeMessage lastData = MessageCache.getDeviceLastData(decodeMessage.getDeviceSn());
+        if (lastData == null || lastData.getProperties() == null || lastData.getProperties().isEmpty()) {
+            return JSONObject.toJSONString(decodeMessage);
+        }
+        return JSONObject.toJSONString(lastData);
     }
 
     /**
