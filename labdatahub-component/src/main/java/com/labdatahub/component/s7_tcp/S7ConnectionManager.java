@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.s7_tcp;
 
 
@@ -54,24 +55,38 @@ public class S7ConnectionManager {
         if (componentId == null || config == null || config.getIpAddr() == null) {
         	log.warn("[S7连接] componentId={} 参数非法", componentId);
             return false;
-        }       
+        }
+        S7Connector connection = null;
         try {
         	configMap.put(componentId, config);
             // 关闭旧连接
         	closeOldConnection(componentId);
             // 创建新连接（使用 s7connector）
-            S7Connector connection = buildConnector(config);
+            connection = buildConnector(config);
             connections.put(componentId, connection);
             log.info("[S7连接] componentId={} 首次连接成功 ({}:{})", componentId, config.getIpAddr(), config.getPort());
-            // 启动消费线程
-            S7LoopConsumer.startConsume(componentId, SpringUtils.getBean(S7MessageConsumeService.class));
-            return true;
         } catch (Exception e) {
         	log.error("[S7连接] componentId={} 首次连接失败: {}", componentId, e.getMessage(), e);
             connections.remove(componentId);
             configMap.remove(componentId);
+            // 关闭刚创建的连接，避免失败时连接泄漏
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception closeEx) {
+                    log.warn("[S7连接] componentId={} 关闭失败连接异常：{}", componentId, closeEx.getMessage());
+                }
+            }
             return false;
         }
+        // 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
+        //    应复用已有消费线程，而不是回滚刚建立的有效连接）
+        try {
+            S7LoopConsumer.startConsume(componentId, SpringUtils.getBean(S7MessageConsumeService.class));
+        } catch (IllegalStateException e) {
+            log.warn("[S7连接] componentId={} 已存在消费线程，跳过重复启动", componentId);
+        }
+        return true;
     }
 
     /**

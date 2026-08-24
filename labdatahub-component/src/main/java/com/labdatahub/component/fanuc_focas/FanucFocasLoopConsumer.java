@@ -46,8 +46,8 @@ public class FanucFocasLoopConsumer {
                     e.printStackTrace();
                 }
             }
-            // 线程退出，清理映射
-            CONSUME_THREAD_MAP.remove(componentId);
+            // 线程退出，清理映射（仅当映射值仍是本线程时才删除，避免旧线程退出误删新注册的消费线程）
+            CONSUME_THREAD_MAP.remove(componentId, this);
             System.out.printf("componentId=%s的循环消费线程已停止%n", componentId);
         }
         /**

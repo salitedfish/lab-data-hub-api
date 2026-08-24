@@ -38,6 +38,11 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
         	log.warn("componentId={} 连接不存在或未连接", componentId);
             return;
         }
+        // 配置不完整（dbNumber/startAddress 任一为空）时跳过本次，避免 Integer 拆箱 NPE 被误判为读失败触发无谓重连
+        if (message.getDbNumber() == null || message.getStartAddress() == null) {
+            log.warn("componentId={} 读取code={}配置不完整（dbNumber/startAddress 为空），跳过本次", componentId, message.getCode());
+            return;
+        }
 
         // 读取数据（按 区类型+块类型+数据类型 解析，读异常强制重连修复自愈）
         Object rawData;

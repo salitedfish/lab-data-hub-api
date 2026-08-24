@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.modbus_tcp;
 
 import java.net.InetAddress;
@@ -82,6 +83,7 @@ public class ModbusConnectionManager {
      * @return 首次连接是否成功
      */
     public static boolean addConnection(String componentId, ModbusTcpConfig config) {
+        TCPMasterConnection connection = null;
         try {
             if (componentId == null || config == null || config.getIpAddr() == null) {
                 log.error("[Modbus 连接] componentId={} 参数非法", componentId);
@@ -92,7 +94,7 @@ public class ModbusConnectionManager {
             reconnectFailCountMap.put(componentId, new AtomicInteger(0));
 
             InetAddress address = InetAddress.getByName(config.getIpAddr());
-            TCPMasterConnection connection = new TCPMasterConnection(address);
+            connection = new TCPMasterConnection(address);
             connection.setPort(config.getPort());
             connection.setTimeout(config.getTimeout());
 
@@ -111,18 +113,31 @@ public class ModbusConnectionManager {
             }
 
             connections.put(componentId, connection);
-            log.info("[Modbus 连接] componentId={} 首次连接成功（{}:{}）", 
+            log.info("[Modbus 连接] componentId={} 首次连接成功（{}:{}）",
                     componentId, config.getIpAddr(), config.getPort());
-            
-            ModbusLoopConsumer.startConsume(componentId, SpringUtils.getBean(ModbusMessageConsumeService.class));
-            return true;
         } catch (Exception e) {
             log.error("[Modbus 连接] componentId={} 首次连接失败：{}", componentId, e.getMessage(), e);
             connections.remove(componentId);
             configMap.remove(componentId);
             reconnectFailCountMap.remove(componentId);
+            // 关闭刚创建的连接，避免失败时 socket 泄漏
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (Exception closeEx) {
+                    log.warn("[Modbus 连接] componentId={} 关闭失败连接异常：{}", componentId, closeEx.getMessage());
+                }
+            }
             return false;
         }
+        // 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
+        //    应复用已有消费线程，而不是回滚刚建立的有效连接）
+        try {
+            ModbusLoopConsumer.startConsume(componentId, SpringUtils.getBean(ModbusMessageConsumeService.class));
+        } catch (IllegalStateException e) {
+            log.warn("[Modbus 连接] componentId={} 已存在消费线程，跳过重复启动", componentId);
+        }
+        return true;
     }
 
     /**

@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.modbus_tcp;
 
 
@@ -256,6 +257,18 @@ public class ModbusMessageScheduler {
         if (StringUtils.isBlank(componentId)) {
             return;
         }
+        // 取消该组件所有定时生产任务（key 前缀 = componentId_），避免关闭组件后遗留僵尸定时任务
+        String prefix = componentId + "_";
+        configTaskMap.entrySet().removeIf(entry -> {
+            if (entry.getKey().startsWith(prefix)) {
+                ScheduledFuture<?> future = entry.getValue();
+                if (future != null) {
+                    future.cancel(true);
+                }
+                return true;
+            }
+            return false;
+        });
         BlockingQueue<ModbusMessage> targetQueue = messageQueueMap.remove(componentId);
         if (targetQueue != null) {
             log.info("已移除 componentId={} 的消息队列，清空消息数：{}", componentId, targetQueue.size());

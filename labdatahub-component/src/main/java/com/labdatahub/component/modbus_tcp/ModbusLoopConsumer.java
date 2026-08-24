@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.modbus_tcp;
 
 import java.util.ArrayList;
@@ -53,8 +54,8 @@ public class ModbusLoopConsumer {
                     log.error("componentId={} 消费消息异常", componentId, e);
                 }
             }
-            // 线程退出，清理映射
-            CONSUME_THREAD_MAP.remove(componentId);
+            // 线程退出，清理映射（仅当映射值仍是本线程时才删除，避免旧线程退出误删新注册的消费线程）
+            CONSUME_THREAD_MAP.remove(componentId, this);
             log.info("Modbus 消费线程已停止 componentId={}", componentId);
         }
 

@@ -1,8 +1,10 @@
+//由AI修改
 package com.labdatahub.component.fins_tcp;
 
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -99,6 +101,7 @@ public class FinsConnectionManager {
      * @return 首次连接是否成功
      */
     public static boolean addConnection(String componentId, FinsTcpConfig config) {
+        Socket socket = null;
         try {
             // 1. 校验参数
             if (componentId == null || config == null || config.getIpAddr() == null) {
@@ -110,26 +113,35 @@ public class FinsConnectionManager {
             if (oldConn != null && !oldConn.isClosed()) {
                 oldConn.close();
             }
-            // 2. 执行连接逻辑
+            // 2. 执行连接逻辑（带连接超时，避免对不可达地址长时间阻塞）
             InetAddress address = InetAddress.getByName(config.getIpAddr());
-            Socket socket = new Socket(address, config.getPort());
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(address, config.getPort()), config.getTimeout());
             socket.setSoTimeout(config.getTimeout());
             socket.setTcpNoDelay(true); // 禁用Nagle算法，降低延迟
-                        
+
             // 建立连接后执行握手
             int plcNodeAddr = doHandshake(socket, config.getClientNodeAddress());
             config.setPlcNodeAddress(plcNodeAddr);
             System.out.printf("[FINS握手] componentId=%s 获取PLC节点地址：%d%n", componentId, plcNodeAddr);
-            
+
             // 3. 存储配置（用于后续重连）
             configMap.put(componentId, config);
-            
+
             // 4. 更新连接映射
             connections.put(componentId, socket);
             System.out.printf("[FINS连接] componentId=%s 首次连接成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
         } catch (Exception e) {
             System.err.printf("[FINS连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
+            // 连接失败时关闭刚创建的 socket（含握手失败场景），避免 socket 泄漏
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (Exception closeEx) {
+                    System.err.printf("[FINS连接] componentId=%s 关闭失败连接异常：%s%n", componentId, closeEx.getMessage());
+                }
+            }
             // 连接失败时移除无效配置/连接，避免空转
             connections.remove(componentId);
             configMap.remove(componentId);

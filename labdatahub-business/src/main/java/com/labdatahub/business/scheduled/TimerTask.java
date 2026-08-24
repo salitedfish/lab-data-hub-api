@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.scheduled;
 
 import static com.labdatahub.business.service.impl.LabdatahubProtocolServiceImpl.PROTOCOL_PATH;
@@ -565,6 +566,14 @@ public class TimerTask {
             List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                     .eq(LabdatahubDevice::getModbusRead,"1"));
             deviceList.forEach(device->{
+                // 只拉起 DATABASE_TCP 网络组件下设备的轮询（对齐其它协议 init：netType 门，避免误调度到其它协议组件）
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"DATABASE_TCP".equals(component.getNetType())){
+                    return;
+                }
                 List<LabdatahubDbConfig> databaseConfigList = labdatahubDbConfigService.list(new LambdaQueryWrapper<LabdatahubDbConfig>()
                         .eq(LabdatahubDbConfig::getBelongSn,device.getDeviceSn()));
                 if("1".equals(device.getModbusRead())){
@@ -572,8 +581,9 @@ public class TimerTask {
                 		DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);
                         DatabaseReadConfig config = new DatabaseReadConfig();
                         config.setDeviceSn(device.getDeviceSn());
-                        config.setDelayTime(databaseConfigList.get(0).getDelayTime().intValue());
-                        config.setIntervalTime(databaseConfigList.get(0).getIntervalTime().intValue());;
+                        // 空值兜底防 NPE（对齐其它 7 个 init）：delayTime 缺省 0、intervalTime 缺省 1
+                        config.setDelayTime(databaseConfigList.get(0).getDelayTime() == null ? 0 : databaseConfigList.get(0).getDelayTime().intValue());
+                        config.setIntervalTime(databaseConfigList.get(0).getIntervalTime() == null ? 1 : databaseConfigList.get(0).getIntervalTime().intValue());
                         DatabaseMessageScheduler.addReadConfig(device.getComponentId(),config);
                     }
 //                    list.forEach(o->{

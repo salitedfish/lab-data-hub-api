@@ -38,6 +38,11 @@ public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
         if(connection==null||!connection.isConnected()||connection.isClosed()){
             return;
         }
+        // 配置不完整（areaCode/startAddress/length 任一为空）时跳过本次，避免 Integer 拆箱 NPE 被误判为传输层异常触发无谓重连
+        if (message.getAreaCode() == null || message.getStartAddress() == null || message.getLength() == null) {
+            log.warn("componentId={} 读取code={}配置不完整（areaCode/startAddress/length 为空），跳过本次", componentId, message.getCode());
+            return;
+        }
         List<Integer> dataList = new ArrayList<>();
         try {
         	dataList = FinsDataReader.readMemoryArea(componentId, message.getAreaCode(), message.getStartAddress(), message.getLength());          

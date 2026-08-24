@@ -2,6 +2,7 @@
 package com.labdatahub.component.brother_tcp;
 
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,6 +53,7 @@ public class BrotherTcpConnectionManager {
      * @return 首次连接是否成功
      */
     public static boolean addConnection(String componentId, BrotherTcpConfig config) {
+        Socket socket = null;
         try {
             // 1. 校验参数
             if (componentId == null || config == null || config.getIpAddr() == null) {
@@ -63,9 +65,10 @@ public class BrotherTcpConnectionManager {
             if (oldConn != null && !oldConn.isClosed()) {
                 oldConn.close();
             }
-            // 2. 执行连接逻辑（Brother NC 无握手，建连即可）
+            // 2. 执行连接逻辑（带连接超时，避免对不可达地址长时间阻塞；Brother NC 无握手，建连即可）
             InetAddress address = InetAddress.getByName(config.getIpAddr());
-            Socket socket = new Socket(address, config.getPort());
+            socket = new Socket();
+            socket.connect(new InetSocketAddress(address, config.getPort()), config.getTimeout());
             socket.setSoTimeout(config.getTimeout());
             socket.setTcpNoDelay(true); // 禁用Nagle算法，降低延迟
 
@@ -83,6 +86,14 @@ public class BrotherTcpConnectionManager {
             return true;
         } catch (Exception e) {
             System.err.printf("[Brother连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
+            // 连接失败时关闭刚创建的 socket，避免 socket 泄漏
+            if (socket != null) {
+                try {
+                    socket.close();
+                } catch (Exception closeEx) {
+                    System.err.printf("[Brother连接] componentId=%s 关闭失败连接异常：%s%n", componentId, closeEx.getMessage());
+                }
+            }
             // 连接失败时移除无效配置/连接，避免空转
             connections.remove(componentId);
             configMap.remove(componentId);

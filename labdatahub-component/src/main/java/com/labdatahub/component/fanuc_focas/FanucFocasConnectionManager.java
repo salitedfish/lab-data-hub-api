@@ -56,15 +56,14 @@ public class FanucFocasConnectionManager {
      * @return 首次连接是否成功
      */
     public static boolean addConnection(String componentId, FanucFocasConfig config) {
+        if (componentId == null || config == null || config.getIpAddr() == null) {
+            return false;
+        }
         try {
-            // 1. 校验参数
-            if (componentId == null || config == null || config.getIpAddr() == null) {
-                return false;
-            }
             configMap.put(componentId, config);
-            // 2. 先关闭旧连接（避免资源泄漏）
+            // 先关闭旧连接（避免资源泄漏）
             closeHandle(componentId);
-            // 3. 加载 fwlib32 库并建立连接
+            // 加载 fwlib32 库并建立连接
             Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
             ShortByReference handleRef = new ShortByReference();
             short ret = lib.cnc_allclibhndl3(config.getIpAddr(), config.getPort().shortValue(),
@@ -75,21 +74,27 @@ public class FanucFocasConnectionManager {
                 configMap.remove(componentId);
                 return false;
             }
-            // 4. 存储句柄与读锁
+            // 存储句柄与读锁
             handleMap.put(componentId, handleRef.getValue());
             readLockMap.put(componentId, new ReentrantLock());
             System.out.printf("[FOCAS2连接] componentId=%s 首次连接成功（%s:%d, 句柄=%d）%n",
                     componentId, config.getIpAddr(), config.getPort(), handleRef.getValue());
-            FanucFocasLoopConsumer.startConsume(componentId, SpringUtils.getBean(FanucFocasMessageConsumeService.class));
-            return true;
         } catch (Exception e) {
             System.err.printf("[FOCAS2连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
-            // 连接失败时移除无效配置/句柄，避免空转
-            handleMap.remove(componentId);
+            // 连接失败时释放已建立句柄并移除无效配置，避免空转/泄漏
+            closeHandle(componentId);
             configMap.remove(componentId);
             readLockMap.remove(componentId);
             return false;
         }
+        // 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
+        //    应复用已有消费线程，而不是回滚刚建立的有效连接）
+        try {
+            FanucFocasLoopConsumer.startConsume(componentId, SpringUtils.getBean(FanucFocasMessageConsumeService.class));
+        } catch (IllegalStateException e) {
+            System.out.printf("[FOCAS2连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);
+        }
+        return true;
     }
 
     /**
