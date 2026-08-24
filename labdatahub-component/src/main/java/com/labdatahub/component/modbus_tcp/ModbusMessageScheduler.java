@@ -221,6 +221,7 @@ public class ModbusMessageScheduler {
         message.setDeviceSn(readConfig.getDeviceSn());
         message.setCode(readConfig.getCode());
         message.setRegisterRange(readConfig.getRegisterRange());
+        message.setFunctionCode(readConfig.getFunctionCode());
         message.setDelayTime(readConfig.getDelayTime());
         message.setDataType(readConfig.getDataType());
         message.setByteOrder(readConfig.getByteOrder());

@@ -92,12 +92,41 @@ public class LabdatahubOmronFinsConfigController extends BaseController
     }
 
     /**
+     * 校验 FINS 读取配置字段（存储区白名单 + 地址/长度/间隔）
+     *
+     * @return null-校验通过，否则返回错误信息
+     */
+    private AjaxResult checkConfig(LabdatahubOmronFinsConfig config) {
+        if (config.getAreaCode() == null) {
+            return AjaxResult.error("存储区 areaCode 不能为空");
+        }
+        // 存储区白名单：DM区/CIO区/WR区/H区/IR区/LR区/EM区
+        if (!Arrays.asList(0x82, 0x30, 0xB1, 0x31, 0x80, 0x98, 0xA0).contains(config.getAreaCode())) {
+            return AjaxResult.error("存储区 areaCode 只能是 DM区(0x82)/CIO区(0x30)/WR区(0xB1)/H区(0x31)/IR区(0x80)/LR区(0x98)/EM区(0xA0)");
+        }
+        if (config.getStartAddress() == null || config.getStartAddress() < 0) {
+            return AjaxResult.error("起始地址 startAddress 不能为负数");
+        }
+        if (config.getLength() == null || config.getLength() < 1 || config.getLength() > 1000) {
+            return AjaxResult.error("读取长度 length 必须在 1-1000 之间");
+        }
+        if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
+            return AjaxResult.error("读取间隔 intervalTime 必须为正整数（单位：秒）");
+        }
+        return null;
+    }
+
+    /**
      * 新增modbus协议读取配置
      */
     @Log(title = "modbus协议读取配置", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody LabdatahubOmronFinsConfig labdatahubOmronFinsConfig)
     {
+        AjaxResult check = checkConfig(labdatahubOmronFinsConfig);
+        if (check != null) {
+            return check;
+        }
         labdatahubOmronFinsConfig.setCreateTime(new Date());
         return toAjax(labdatahubOmronFinsConfigService.save(labdatahubOmronFinsConfig));
     }
@@ -109,6 +138,10 @@ public class LabdatahubOmronFinsConfigController extends BaseController
     @PutMapping
     public AjaxResult edit(@RequestBody LabdatahubOmronFinsConfig labdatahubOmronFinsConfig)
     {
+        AjaxResult check = checkConfig(labdatahubOmronFinsConfig);
+        if (check != null) {
+            return check;
+        }
         return toAjax(labdatahubOmronFinsConfigService.updateById(labdatahubOmronFinsConfig));
     }
 

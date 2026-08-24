@@ -340,25 +340,33 @@ public class TimerTask {
             List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                     .eq(LabdatahubDevice::getModbusRead,"1"));
             deviceList.forEach(device->{
+                // 只拉起 Modbus 网络组件下设备的轮询
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"MODBUS_TCP".equals(component.getNetType())){
+                    return;
+                }
                 List<LabdatahubModbusConfig> list = labdatahubModbusConfigService.list(new LambdaQueryWrapper<LabdatahubModbusConfig>()
                         .eq(LabdatahubModbusConfig::getBelongSn,device.getDeviceSn()));
-                if("1".equals(device.getModbusRead())){
-                    list.forEach(o->{
-                        ModbusMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                        ModbusReadConfig config = new ModbusReadConfig();
-                        config.setDeviceSn(o.getBelongSn());
-                        config.setCode(o.getCode());
-                        config.setDelayTime(o.getDelayTime().intValue());
-                        config.setIntervalTime(o.getIntervalTime().intValue());
-                        config.setSlaveId(device.getSlaveId());
-                        config.setRegisterRange(o.getRegisterRange());
-                        ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
-                    });
-                }
+                list.forEach(o->{
+                    ModbusMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    ModbusReadConfig config = new ModbusReadConfig();
+                    config.setDeviceSn(o.getBelongSn());
+                    config.setCode(o.getCode());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
+                    config.setSlaveId(device.getSlaveId());
+                    config.setRegisterRange(o.getRegisterRange());
+                    config.setFunctionCode(o.getFunctionCode());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+                    ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
+                });
             });
         });
     }
-    
+
     /**
      * 初始化s71200定时读取
      */
@@ -368,28 +376,36 @@ public class TimerTask {
             List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                     .eq(LabdatahubDevice::getModbusRead,"1"));
             deviceList.forEach(device->{
+                // 只拉起 S71200 网络组件下设备的轮询
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"S71200_TCP".equals(component.getNetType())){
+                    return;
+                }
                 List<LabdatahubS71200Config> list = labdatahubS71200ConfigService.list(new LambdaQueryWrapper<LabdatahubS71200Config>()
                         .eq(LabdatahubS71200Config::getBelongSn,device.getDeviceSn()));
-                if("1".equals(device.getModbusRead())){
-                    list.forEach(o->{
-                    	S7MessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                    	S7ReadConfig config = new S7ReadConfig();
-                        config.setDeviceSn(o.getBelongSn());
-                        config.setCode(o.getCode());
-                        config.setDelayTime(o.getDelayTime().intValue());
-                        config.setIntervalTime(o.getIntervalTime().intValue());
-                        config.setDbNumber(o.getDbNumber());
-                        config.setBlockType(o.getBlockType());
-                        config.setBitOffset(o.getBitOffset());
-                        config.setStartAddress(o.getStartAddress());
-                        config.setLength(o.getLength());
-                        S7MessageScheduler.addReadConfig(device.getComponentId(),config);
-                    });
-                }
+                list.forEach(o->{
+                	S7MessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                	S7ReadConfig config = new S7ReadConfig();
+                    config.setDeviceSn(o.getBelongSn());
+                    config.setCode(o.getCode());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
+                    config.setDbNumber(o.getDbNumber());
+                    config.setBlockType(o.getBlockType());
+                    config.setBitOffset(o.getBitOffset());
+                    config.setStartAddress(o.getStartAddress());
+                    config.setLength(o.getLength());
+                    config.setAreaType(o.getAreaType());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+                    S7MessageScheduler.addReadConfig(device.getComponentId(),config);
+                });
             });
         });
     }
-    
+
     /**
      * 初始化OmronFins定时读取
      */
@@ -399,22 +415,29 @@ public class TimerTask {
             List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                     .eq(LabdatahubDevice::getModbusRead,"1"));
             deviceList.forEach(device->{
+                // 只拉起 OMRONFINS 网络组件下设备的轮询
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"OMRONFINS_TCP".equals(component.getNetType())){
+                    return;
+                }
                 List<LabdatahubOmronFinsConfig> list = labdatahubOmronFinsConfigService.list(new LambdaQueryWrapper<LabdatahubOmronFinsConfig>()
                         .eq(LabdatahubOmronFinsConfig::getBelongSn,device.getDeviceSn()));
-                if("1".equals(device.getModbusRead())){
-                    list.forEach(o->{
-                    	FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                    	FinsReadConfig config = new FinsReadConfig();
-                        config.setDeviceSn(o.getBelongSn());
-                        config.setCode(o.getCode());
-                        config.setDelayTime(o.getDelayTime().intValue());
-                        config.setIntervalTime(o.getIntervalTime().intValue());
-                        config.setAreaCode(o.getAreaCode());
-                        config.setStartAddress(o.getStartAddress());
-                        config.setLength(o.getLength());
-                        FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
-                    });
-                }
+                list.forEach(o->{
+                	FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                	FinsReadConfig config = new FinsReadConfig();
+                    config.setDeviceSn(o.getBelongSn());
+                    config.setCode(o.getCode());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
+                    config.setAreaCode(o.getAreaCode());
+                    config.setStartAddress(o.getStartAddress());
+                    config.setLength(o.getLength());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+                    FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
+                });
             });
         });
     }

@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.modbus_tcp;
 
 import com.alibaba.fastjson2.JSONArray;
@@ -7,8 +8,10 @@ import net.wimpi.modbus.ModbusIOException;
 import net.wimpi.modbus.io.ModbusTCPTransaction;
 import net.wimpi.modbus.msg.*;
 import net.wimpi.modbus.net.TCPMasterConnection;
+import net.wimpi.modbus.procimg.InputRegister;
 import net.wimpi.modbus.procimg.Register;
 import net.wimpi.modbus.procimg.SimpleRegister;
+import net.wimpi.modbus.util.BitVector;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,6 +30,108 @@ public class ModbusDataReader {
 	    }
 	    // 原有读取逻辑，但使用传入的 connection
 	    return readHoldingRegisters(componentId,connection, slaveId, startAddr, count);
+	}
+
+	/**
+	 * 按功能码读取：01线圈 / 02离散输入 / 03保持寄存器 / 04输入寄存器（读补全，功能码为空默认 03）
+	 *
+	 * @param componentId  组件ID
+	 * @param slaveId      从站ID
+	 * @param functionCode 功能码 1/2/3/4（null 按 3）
+	 * @param startAddr    起始地址
+	 * @param count        读取数量（03/04 ≤125，01/02 ≤2000）
+	 * @return 读取到的整数列表（线圈/离散输入转 0/1）
+	 */
+	public static List<Integer> readByFunction(String componentId, Integer slaveId, Integer functionCode, int startAddr, int count) throws Exception {
+		if (functionCode == null) {
+			functionCode = 3;
+		}
+		if (functionCode == 3) {
+			if (count > 125) {
+				throw new Exception("保持寄存器读取数量超过协议上限125，当前：" + count);
+			}
+			return readHoldingRegisters(componentId, slaveId, startAddr, count);
+		}
+		TCPMasterConnection connection = ModbusConnectionManager.getValidConnection(componentId);
+		if (connection == null) {
+			throw new Exception("componentId=" + componentId + " 无法获取有效连接");
+		}
+		return readByFunctionWithConn(componentId, connection, slaveId, functionCode, startAddr, count);
+	}
+
+	/**
+	 * 带连接的按功能码读取（含连接异常自动重建重试一次，镜像 readHoldingRegisters 自愈）
+	 */
+	private static List<Integer> readByFunctionWithConn(String componentId, TCPMasterConnection connection, Integer slaveId, Integer functionCode, int startAddr, int count) throws Exception {
+		try {
+			ModbusTCPTransaction transaction = new ModbusTCPTransaction(connection);
+			List<Integer> result = new ArrayList<>();
+			switch (functionCode) {
+				case 1: { // 读线圈
+					if (count > 2000) {
+						throw new Exception("线圈读取数量超过协议上限2000，当前：" + count);
+					}
+					ReadCoilsRequest request = new ReadCoilsRequest();
+					request.setUnitID(slaveId);
+					request.setReference(startAddr);
+					request.setBitCount(count);
+					transaction.setRequest(request);
+					transaction.execute();
+					ReadCoilsResponse response = (ReadCoilsResponse) transaction.getResponse();
+					BitVector coils = response.getCoils();
+					for (int i = 0; i < count; i++) {
+						result.add(coils.getBit(i) ? 1 : 0);
+					}
+					return result;
+				}
+				case 2: { // 读离散输入
+					if (count > 2000) {
+						throw new Exception("离散输入读取数量超过协议上限2000，当前：" + count);
+					}
+					ReadInputDiscretesRequest request = new ReadInputDiscretesRequest();
+					request.setUnitID(slaveId);
+					request.setReference(startAddr);
+					request.setBitCount(count);
+					transaction.setRequest(request);
+					transaction.execute();
+					ReadInputDiscretesResponse response = (ReadInputDiscretesResponse) transaction.getResponse();
+					BitVector bits = response.getDiscretes();
+					for (int i = 0; i < count; i++) {
+						result.add(bits.getBit(i) ? 1 : 0);
+					}
+					return result;
+				}
+				case 4: { // 读输入寄存器
+					if (count > 125) {
+						throw new Exception("输入寄存器读取数量超过协议上限125，当前：" + count);
+					}
+					ReadInputRegistersRequest request = new ReadInputRegistersRequest();
+					request.setUnitID(slaveId);
+					request.setReference(startAddr);
+					request.setWordCount(count);
+					transaction.setRequest(request);
+					transaction.execute();
+					ReadInputRegistersResponse response = (ReadInputRegistersResponse) transaction.getResponse();
+					InputRegister[] registers = response.getRegisters();
+					for (InputRegister reg : registers) {
+						result.add(reg.getValue());
+					}
+					return result;
+				}
+				default:
+					throw new Exception("不支持的功能码：" + functionCode + "，仅支持 01线圈/02离散输入/03保持寄存器/04输入寄存器");
+			}
+		} catch (Exception e) {
+			if (e instanceof ModbusIOException || e instanceof IOException) {
+				log.warn("[Modbus读取] 连接异常，自动重建：componentId={}", componentId);
+				ModbusConnectionManager.connections.remove(componentId); // 清理旧连接
+				TCPMasterConnection newConn = ModbusConnectionManager.getValidConnection(componentId);
+				if (newConn != null) {
+					return readByFunctionWithConn(componentId, newConn, slaveId, functionCode, startAddr, count);
+				}
+			}
+			throw e;
+		}
 	}
 	
     /**

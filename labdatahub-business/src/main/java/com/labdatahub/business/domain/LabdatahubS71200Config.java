@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.domain;
 
 import java.io.Serializable;
@@ -49,8 +50,11 @@ private static final long serialVersionUID = 1L;
     private Integer dbNumber;     // DB块号
     
     @Excel(name = "块类型（DBW，DBX，DBD，DBB）")
-    private String blockType;    
-    
+    private String blockType;
+
+    @Excel(name = "区类型（DB，M，I，Q）")
+    private String areaType;      // 区类型: DB数据块/M标志位/I输入区/Q输出区
+
     @Excel(name = "起始地址")
     private Integer startAddress; 
     

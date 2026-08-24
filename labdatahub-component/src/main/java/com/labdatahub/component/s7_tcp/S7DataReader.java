@@ -63,28 +63,33 @@ public class S7DataReader {
         }, "readDB", dbNumber, numberOfBytes, startByteOffset);
     }
     
-    public static Object readDB(S7Connector connector, Integer dbNumber, String blockType,Integer startAddress, Integer length, Integer bitOffset) throws Exception {
+    public static Object readDB(S7Connector connector, Integer dbNumber, String blockType, String areaType, String dataType, Integer startAddress, Integer length, Integer bitOffset) throws Exception {
     	if (connector == null) {
             throw new IllegalStateException("S7连接未建立或已断开");
         }
+        DaveArea area = toDaveArea(areaType);
     	switch (blockType){
     		case "DBW":{//2字节
-    			byte[] data = connector.read(DaveArea.DB, dbNumber, 2, startAddress);
+    			byte[] data = connector.read(area, dbNumber, 2, startAddress);
     	    	int value = new IntegerConverter().extract(Integer.class, data, 0, 0);
     	    	return value;
     		}
     		case "DBX":{//1字节
-    			byte[] data = connector.read(DaveArea.DB, dbNumber, 1, startAddress);
+    			byte[] data = connector.read(area, dbNumber, 1, startAddress);
     	    	boolean value = new BitConverter().extract(Boolean.class, data, 0, bitOffset == null ? 0 : bitOffset);
     	    	return value;
     		}
-    		case "DBD":{//4字节
-    			byte[] data = connector.read(DaveArea.DB, dbNumber, 4, startAddress);
+    		case "DBD":{//4字节 32位浮点数或DINT整型
+    			byte[] data = connector.read(area, dbNumber, 4, startAddress);
+    			if (isIntType(dataType)) {// 物模型 dataType 为 int 系列：按 DINT 32位有符号整型解析（S7大端）
+    				int value = ((data[0] & 0xFF) << 24) | ((data[1] & 0xFF) << 16) | ((data[2] & 0xFF) << 8) | (data[3] & 0xFF);
+    				return value;
+    			}
     			float value = new RealConverter().extract(Float.class, data, 0, 0);
     	    	return value;
     		}
     		case "DBB":{//length字节
-    			byte[] data = connector.read(DaveArea.DB, dbNumber, length == null ? 1 : length, startAddress);
+    			byte[] data = connector.read(area, dbNumber, length == null ? 1 : length, startAddress);
 //    			String value = new StringConverter().extract(String.class, data, 0, 0);
 //    			// 读取前两个字节（最大长度和实际长度）
 //    	        byte[] header = connector.read(DaveArea.DB, dbNumber, 2, startAddress);
@@ -104,6 +109,37 @@ public class S7DataReader {
     	return null;
     }
     
+    /**
+     * 区类型转 DaveArea：DB→DB数据块，M→FLAGS标志位，I→INPUTS输入区，Q→OUTPUTS输出区
+     */
+    private static DaveArea toDaveArea(String areaType) {
+        if (areaType == null) {
+            return DaveArea.DB;
+        }
+        switch (areaType.trim()) {
+            case "M":
+                return DaveArea.FLAGS;
+            case "I":
+                return DaveArea.INPUTS;
+            case "Q":
+                return DaveArea.OUTPUTS;
+            case "DB":
+            default:
+                return DaveArea.DB;
+        }
+    }
+
+    /**
+     * 是否 int 系列数据类型（DBD 按 DINT 32位整型解析；否则按 32位浮点 Real）
+     */
+    private static boolean isIntType(String dataType) {
+        if (dataType == null) {
+            return false;
+        }
+        String type = dataType.trim().toLowerCase();
+        return "int".equals(type) || "integer".equals(type) || "short".equals(type) || "long".equals(type) || "byte".equals(type);
+    }
+
     public static  <T> T readDB(S7Connector connector, int dbNumber, int startByteOffset, int numberOfBytes, Class<T> targetClass) throws Exception {
         if (connector == null) {
             throw new IllegalStateException("S7连接未建立或已断开");

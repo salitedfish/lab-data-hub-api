@@ -18,6 +18,8 @@ public class ModbusMessage {
     private String code;
     //寄存器区间
     private String registerRange;
+    //功能码: 01线圈 02离散输入 03保持寄存器 04输入寄存器，默认03
+    private String functionCode;
     //读取完暂停时间
     private Integer delayTime;
     //数据类型: int/double/bool/string（来自物模型）

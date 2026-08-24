@@ -92,12 +92,61 @@ public class LabdatahubS71200ConfigController extends BaseController
     }
 
     /**
+     * 校验 S7 读取配置字段
+     *
+     * @return null-校验通过，否则返回错误信息
+     */
+    private AjaxResult checkConfig(LabdatahubS71200Config config) {
+        if (config.getDbNumber() == null || config.getDbNumber() <= 0) {
+            return AjaxResult.error("DB块号 dbNumber 必须为正整数");
+        }
+        String blockType = config.getBlockType();
+        if (blockType == null || StringUtils.isEmpty(blockType.trim())) {
+            config.setBlockType("DBW");
+            blockType = "DBW";
+        }
+        blockType = blockType.trim();
+        if (!"DBW".equals(blockType) && !"DBX".equals(blockType)
+                && !"DBD".equals(blockType) && !"DBB".equals(blockType)) {
+            return AjaxResult.error("块类型 blockType 只能是 DBW(16位整型)/DBX(位)/DBD(32位浮点或整型)/DBB(字符串)");
+        }
+        config.setBlockType(blockType);
+        if (config.getAreaType() == null || StringUtils.isEmpty(config.getAreaType().trim())) {
+            config.setAreaType("DB");
+        } else {
+            String areaType = config.getAreaType().trim();
+            if (!"DB".equals(areaType) && !"M".equals(areaType)
+                    && !"I".equals(areaType) && !"Q".equals(areaType)) {
+                return AjaxResult.error("区类型 areaType 只能是 DB数据块/M标志位/I输入区/Q输出区");
+            }
+            config.setAreaType(areaType);
+        }
+        if (config.getStartAddress() == null || config.getStartAddress() < 0) {
+            return AjaxResult.error("起始地址 startAddress 不能为负数（字节偏移）");
+        }
+        if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
+            return AjaxResult.error("读取间隔 intervalTime 必须为正整数（单位：秒）");
+        }
+        if ("DBX".equals(blockType) && (config.getBitOffset() == null || config.getBitOffset() < 0 || config.getBitOffset() > 7)) {
+            return AjaxResult.error("DBX 位读取的偏移量 bitOffset 必须在 0-7 之间");
+        }
+        if ("DBB".equals(blockType) && (config.getLength() == null || config.getLength() <= 0)) {
+            return AjaxResult.error("DBB 字符串读取的长度 length 必须为正整数（字节）");
+        }
+        return null;
+    }
+
+    /**
      * 新增s71200协议读取配置
      */
     @Log(title = "s71200协议读取配置", businessType = BusinessType.INSERT)
     @PostMapping
     public AjaxResult add(@RequestBody LabdatahubS71200Config labdatahubS71200Config)
     {
+        AjaxResult check = checkConfig(labdatahubS71200Config);
+        if (check != null) {
+            return check;
+        }
         labdatahubS71200Config.setCreateTime(new Date());
         return toAjax(labdatahubS71200ConfigService.save(labdatahubS71200Config));
     }
@@ -109,6 +158,10 @@ public class LabdatahubS71200ConfigController extends BaseController
     @PutMapping
     public AjaxResult edit(@RequestBody LabdatahubS71200Config labdatahubS71200Config)
     {
+        AjaxResult check = checkConfig(labdatahubS71200Config);
+        if (check != null) {
+            return check;
+        }
         return toAjax(labdatahubS71200ConfigService.updateById(labdatahubS71200Config));
     }
 
@@ -162,6 +215,7 @@ public class LabdatahubS71200ConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime().intValue());
                     config.setDbNumber(o.getDbNumber());
                     config.setBlockType(o.getBlockType());
+                    config.setAreaType(o.getAreaType());
                     config.setBitOffset(o.getBitOffset());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
@@ -199,6 +253,7 @@ public class LabdatahubS71200ConfigController extends BaseController
                 config.setIntervalTime(o.getIntervalTime().intValue());
                 config.setDbNumber(o.getDbNumber());
                 config.setBlockType(o.getBlockType());
+                config.setAreaType(o.getAreaType());
                 config.setBitOffset(o.getBitOffset());
                 config.setStartAddress(o.getStartAddress());
                 config.setLength(o.getLength());
@@ -238,6 +293,7 @@ public class LabdatahubS71200ConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime().intValue());
                     config.setDbNumber(o.getDbNumber());
                     config.setBlockType(o.getBlockType());
+                    config.setAreaType(o.getAreaType());
                     config.setBitOffset(o.getBitOffset());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());

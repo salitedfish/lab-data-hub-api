@@ -39,14 +39,25 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
             return;
         }
 
-        // 读取 DB 数据
-        //byte[] rawData = S7DataReader.readDB(connector, message.getDbNumber(), message.getStartAddress(), message.getLength());
-        Object rawData = S7DataReader.readDB(connector, message.getDbNumber(),message.getBlockType(), message.getStartAddress(), message.getLength(),message.getBitOffset());
+        // 读取数据（按 区类型+块类型+数据类型 解析，读异常强制重连修复自愈）
+        Object rawData;
+        try {
+            rawData = S7DataReader.readDB(connector, message.getDbNumber(), message.getBlockType(), message.getAreaType(), message.getDataType(), message.getStartAddress(), message.getLength(), message.getBitOffset());
+        } catch (Exception e) {
+            log.error("componentId={} 读取S7数据失败，触发强制重连", componentId, e);
+            S7ConnectionManager.forceReconnect(componentId);
+            throw e;
+        }
+        // 读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
+        if (message.getDelayTime() != null && message.getDelayTime() > 0) {
+            Thread.sleep(message.getDelayTime());
+        }
         // 构建结果 JSON
         JSONObject result = new JSONObject();
         result.put("deviceSn", message.getDeviceSn());
         result.put("code", message.getCode());
         result.put("dbNumber", message.getDbNumber());
+        result.put("blockType", message.getBlockType());
         result.put("startAddress", message.getStartAddress());
         result.put("length", message.getLength());
         result.put("data", rawData); // 可按需转换为 hex 或数值列表

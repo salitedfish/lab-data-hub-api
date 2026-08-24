@@ -49,6 +49,10 @@ public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
             }
             throw e;
         }
+        //读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
+        if (message.getDelayTime() != null && message.getDelayTime() > 0) {
+            Thread.sleep(message.getDelayTime());
+        }
 //        List<FinsRangeParserUtil.RangeItem> list = FinsRangeParserUtil.parse(message.getAddressRange());
 //        if(list.size()>0){
 //            for (int i = 0; i < list.size(); i++) {

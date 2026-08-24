@@ -109,6 +109,7 @@ public class ProtocolReadConfigRebuilder {
             config.setIntervalTime(o.getIntervalTime().intValue());
             config.setSlaveId(device.getSlaveId());
             config.setRegisterRange(o.getRegisterRange());
+            config.setFunctionCode(o.getFunctionCode());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
             ModbusMessageScheduler.addReadConfig(componentId, config);
         }
@@ -136,6 +137,7 @@ public class ProtocolReadConfigRebuilder {
             config.setIntervalTime(o.getIntervalTime().intValue());
             config.setDbNumber(o.getDbNumber());
             config.setBlockType(o.getBlockType());
+            config.setAreaType(o.getAreaType());
             config.setBitOffset(o.getBitOffset());
             config.setStartAddress(o.getStartAddress());
             config.setLength(o.getLength());

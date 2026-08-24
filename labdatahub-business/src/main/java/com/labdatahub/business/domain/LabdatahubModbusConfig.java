@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.domain;
 
 import org.apache.commons.lang3.builder.ToStringBuilder;
@@ -39,6 +40,9 @@ private static final long serialVersionUID = 1L;
     /** 范围,逗号分隔如（1,2-5,7） */
     @Excel(name = "范围,逗号分隔如", readConverterExp = "1=,2-5,7")
     private String registerRange;
+    /** 功能码: 01线圈 02离散输入 03保持寄存器 04输入寄存器，默认03 */
+    @Excel(name = "功能码")
+    private String functionCode;
     /** 多少毫秒读取一次 */
     @Excel(name = "多少毫秒读取一次")
     private Long intervalTime;

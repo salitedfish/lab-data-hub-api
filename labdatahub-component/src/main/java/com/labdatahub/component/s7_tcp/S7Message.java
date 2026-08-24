@@ -9,6 +9,7 @@ public class S7Message {
     private String code;          // 指令编码
     private Integer dbNumber;     // DB块号
     private String blockType;    	//块类型
+    private String areaType;    	// 区类型: DB数据块/M标志位/I输入区/Q输出区（默认DB）
     private Integer startAddress; // 起始字节偏移
     private Integer bitOffset;   		// 偏移量
     private Integer length;       // 读取长度（字节）

@@ -138,6 +138,32 @@ public class S7ConnectionManager {
         }
     }
 
+    /**
+     * 强制重连（读异常时由消费端调用，修复 PLC 重启/断网后读失败不自愈的问题）
+     * 先关闭旧连接再走指数退避重连
+     *
+     * @param componentId 组件ID
+     */
+    public static void forceReconnect(String componentId) {
+        S7TcpConfig config = configMap.get(componentId);
+        if (config == null) {
+            log.warn("[S7重连] componentId={} 无连接配置，无法重连", componentId);
+            return;
+        }
+        S7Connector connection = connections.get(componentId);
+        if (connection != null) {
+            try {
+                connection.close();
+                log.info("[S7重连] componentId={} 旧连接已关闭", componentId);
+            } catch (Exception e) {
+                log.warn("[S7重连] componentId={} 关闭旧连接异常：{}", componentId, e.getMessage());
+            } finally {
+                connections.remove(componentId);
+            }
+        }
+        reconnectWithRetry(componentId, config);
+    }
+
     private static void reconnectWithRetry(String componentId, S7TcpConfig config) {
         int attempt = 0;
         long delayMs = INITIAL_RETRY_DELAY_MS;
@@ -196,6 +222,7 @@ public class S7ConnectionManager {
             	.withPort(config.getPort())
             	.withRack(config.getRack())       // rack 机架号，通常为 0,根据实际调整
             	.withSlot(config.getSlot())       // slot 插槽号，S7-1200 通常为 1,根据实际调整
+            	.withTimeout(config.getTimeout()) // 连接/读写超时（毫秒），默认5000
             	.build();
     }
     public static void main(String[] args) throws Exception {
@@ -205,10 +232,10 @@ public class S7ConnectionManager {
     	S7Connector connector = buildConnector(config);
 //    	byte[] data = connector.read(DaveArea.DB, 1, 2, 0);
 //    	int value = new IntegerConverter().extract(Integer.class, data, 0, 0);
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBW", 0, null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBX", 2, null,0));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBD", 260, null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBD", 264, null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBB", 6, 8,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBW","DB","int", 0, null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBX","DB","bool", 2, null,0));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","float", 260, null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","int", 264, null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBB","DB","string", 6, 8,null));
 	}
 }

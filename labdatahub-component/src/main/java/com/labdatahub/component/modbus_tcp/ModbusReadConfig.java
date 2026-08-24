@@ -18,6 +18,8 @@ public class ModbusReadConfig {
     private String code;
     //寄存器区间
     private String registerRange;
+    //功能码: 01线圈 02离散输入 03保持寄存器 04输入寄存器，默认03
+    private String functionCode = "03";
     //间隔时间
     private Integer intervalTime;
     //读取完暂停时间

@@ -122,6 +122,28 @@ public class LabdatahubModbusConfigController extends BaseController
     }
 
     /**
+     * 校验功能码与读取间隔
+     *
+     * @return null-校验通过，否则返回错误信息
+     */
+    private AjaxResult checkReadConfig(LabdatahubModbusConfig config) {
+        if (config.getFunctionCode() == null || StringUtils.isEmpty(config.getFunctionCode().trim())) {
+            config.setFunctionCode("03");
+        } else {
+            String functionCode = config.getFunctionCode().trim();
+            if (!"01".equals(functionCode) && !"02".equals(functionCode)
+                    && !"03".equals(functionCode) && !"04".equals(functionCode)) {
+                return AjaxResult.error("功能码只能是 01线圈/02离散输入/03保持寄存器/04输入寄存器");
+            }
+            config.setFunctionCode(functionCode);
+        }
+        if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
+            return AjaxResult.error("读取间隔 intervalTime 必须为正整数（单位：秒）");
+        }
+        return null;
+    }
+
+    /**
      * 新增modbus协议读取配置
      */
     @Log(title = "modbus协议读取配置", businessType = BusinessType.INSERT)
@@ -131,6 +153,10 @@ public class LabdatahubModbusConfigController extends BaseController
         AjaxResult check = checkRegisterRange(labdatahubModbusConfig);
         if (check != null) {
             return check;
+        }
+        AjaxResult checkConfig = checkReadConfig(labdatahubModbusConfig);
+        if (checkConfig != null) {
+            return checkConfig;
         }
         labdatahubModbusConfig.setCreateTime(new Date());
         return toAjax(labdatahubModbusConfigService.save(labdatahubModbusConfig));
@@ -146,6 +172,10 @@ public class LabdatahubModbusConfigController extends BaseController
         AjaxResult check = checkRegisterRange(labdatahubModbusConfig);
         if (check != null) {
             return check;
+        }
+        AjaxResult checkConfig = checkReadConfig(labdatahubModbusConfig);
+        if (checkConfig != null) {
+            return checkConfig;
         }
         return toAjax(labdatahubModbusConfigService.updateById(labdatahubModbusConfig));
     }
@@ -196,6 +226,7 @@ public class LabdatahubModbusConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime().intValue());
                     config.setSlaveId(device.getSlaveId());
                     config.setRegisterRange(o.getRegisterRange());
+                    config.setFunctionCode(o.getFunctionCode());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
@@ -230,6 +261,7 @@ public class LabdatahubModbusConfigController extends BaseController
                 config.setIntervalTime(o.getIntervalTime().intValue());
                 config.setSlaveId(device.getSlaveId());
                 config.setRegisterRange(o.getRegisterRange());
+                config.setFunctionCode(o.getFunctionCode());
                 ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                 ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
             });
@@ -266,6 +298,7 @@ public class LabdatahubModbusConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime().intValue());
                     config.setSlaveId(device.getSlaveId());
                     config.setRegisterRange(o.getRegisterRange());
+                    config.setFunctionCode(o.getFunctionCode());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     ModbusMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
