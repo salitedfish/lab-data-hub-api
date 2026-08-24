@@ -124,7 +124,7 @@ public class FinsDataReader {
         
         // 验证FINS头
         if (respHeader[0] != 'F' || respHeader[1] != 'I' || respHeader[2] != 'N' || respHeader[3] != 'S') {
-            throw new Exception("无效的FINS/TCP响应头");
+            throw new FinsResponseException("无效的FINS/TCP响应头");
         }
         
         // 解析Length字段（4字节无符号大端，用long避免溢出）
@@ -135,7 +135,7 @@ public class FinsDataReader {
         
         // 检查长度是否合理（0 < 长度 <= 1MB，防止恶意报文或错误）
         if (respLenLong <= 0 || respLenLong > 1024 * 1024) {
-            throw new Exception("无效的FINS/TCP响应长度: " + respLenLong);
+            throw new FinsResponseException("无效的FINS/TCP响应长度: " + respLenLong);
         }
         
         int respLen = (int) respLenLong;
@@ -151,19 +151,19 @@ public class FinsDataReader {
         
         // 检查FINS帧长度是否足够（头10 + 命令2 + 结束码2 = 14字节）
         if (respFinsFrame.length < 14) {
-            throw new Exception("响应FINS帧长度不足，预期至少14字节，实际: " + respFinsFrame.length);
+            throw new FinsResponseException("响应FINS帧长度不足，预期至少14字节，实际: " + respFinsFrame.length);
         }
         
         // 跳过Fins头10字节，命令2字节，读取结束码
         int endCode = ((respFinsFrame[12] & 0xFF) << 8) | (respFinsFrame[13] & 0xFF);
         if (endCode != 0) {
-            throw new Exception(String.format("FINS读命令错误，结束码: 0x%04X", endCode));
+            throw new FinsResponseException(String.format("FINS读命令错误，结束码: 0x%04X", endCode));
         }
-        
+
         // 检查数据部分长度是否足够
         int expectedDataLen = 14 + count * 2;
         if (respFinsFrame.length < expectedDataLen) {
-            throw new Exception("响应FINS帧数据部分长度不足，预期: " + expectedDataLen + "，实际: " + respFinsFrame.length);
+            throw new FinsResponseException("响应FINS帧数据部分长度不足，预期: " + expectedDataLen + "，实际: " + respFinsFrame.length);
         }
         
         // 解析数据
@@ -287,7 +287,7 @@ public class FinsDataReader {
         
         // 验证FINS头
         if (respHeader[0] != 'F' || respHeader[1] != 'I' || respHeader[2] != 'N' || respHeader[3] != 'S') {
-            throw new Exception("无效的FINS/TCP响应头");
+            throw new FinsResponseException("无效的FINS/TCP响应头");
         }
         
         // 解析Length

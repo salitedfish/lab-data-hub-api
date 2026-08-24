@@ -63,7 +63,7 @@ public class S7DataReader {
         }, "readDB", dbNumber, numberOfBytes, startByteOffset);
     }
     
-    public static Object readDB(S7Connector connector, Integer dbNumber, String blockType, String areaType, String dataType, Integer startAddress, Integer length, Integer bitOffset) throws Exception {
+    public static Object readDB(S7Connector connector, Integer dbNumber, String blockType, String areaType, String dataType, Integer startAddress, Integer length, Integer bitOffset, String isSigned) throws Exception {
     	if (connector == null) {
             throw new IllegalStateException("S7连接未建立或已断开");
         }
@@ -81,27 +81,22 @@ public class S7DataReader {
     		}
     		case "DBD":{//4字节 32位浮点数或DINT整型
     			byte[] data = connector.read(area, dbNumber, 4, startAddress);
-    			if (isIntType(dataType)) {// 物模型 dataType 为 int 系列：按 DINT 32位有符号整型解析（S7大端）
+    			if (isIntType(dataType)) {// 物模型 dataType 为 int 系列：按 DINT 32位大端整型解析（S7大端）
     				int value = ((data[0] & 0xFF) << 24) | ((data[1] & 0xFF) << 16) | ((data[2] & 0xFF) << 8) | (data[3] & 0xFF);
-    				return value;
+    				// isSigned=1（或 0/false/无符号 之外）按有符号 32 位整型返回；否则按无符号返回（值范围 0~4294967295，用 Long 承载）
+    				return isSignedInteger(isSigned) ? value : (Object) Integer.toUnsignedLong(value);
     			}
     			float value = new RealConverter().extract(Float.class, data, 0, 0);
     	    	return value;
     		}
-    		case "DBB":{//length字节
+    		case "DBB":{//length字节（西门子 STRING：前2字节为 最大长度+实际长度 头，字符内容从第3字节起，GBK编码兼容中文）
     			byte[] data = connector.read(area, dbNumber, length == null ? 1 : length, startAddress);
-//    			String value = new StringConverter().extract(String.class, data, 0, 0);
-//    			// 读取前两个字节（最大长度和实际长度）
-//    	        byte[] header = connector.read(DaveArea.DB, dbNumber, 2, startAddress);
-//    	        int maxLength = header[0] & 0xFF;
-//    	        int actualLength = header[1] & 0xFF;
-//    	        // 实际读取字符内容（跳过头部2字节）
-//    	        byte[] charData = connector.read(DaveArea.DB, dbNumber, actualLength, startAddress + 2);
-    	        // 西门子 String 类型的中文使用 GBK 编码
+    	        // 西门子 STRING 结构：data[0]=最大长度，data[1]=实际长度，内容从 data[2] 起；跳过头部再按实际长度取内容
+    	        int contentLen = data.length >= 2 ? Math.min(data[1] & 0xFF, data.length - 2) : 0;
     	        try {
-    	            return new String(data, "GBK").trim();
+    	            return new String(data, 2, contentLen, "GBK").trim();
     	        } catch (UnsupportedEncodingException e) {
-    	            return new String(data, StandardCharsets.ISO_8859_1).trim();
+    	            return new String(data, 2, contentLen, StandardCharsets.ISO_8859_1).trim();
     	        }
     		}
     		default:
@@ -127,6 +122,17 @@ public class S7DataReader {
             default:
                 return DaveArea.DB;
         }
+    }
+
+    /**
+     * 物模型 isSigned 是否按有符号处理："0"/"false"/"无符号" 视为无符号，其余（含空/1）默认有符号
+     */
+    private static boolean isSignedInteger(String isSigned) {
+        if (isSigned == null || isSigned.trim().isEmpty()) {
+            return true;
+        }
+        String s = isSigned.trim().toLowerCase();
+        return !("0".equals(s) || "false".equals(s) || "无符号".equals(s));
     }
 
     /**

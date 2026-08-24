@@ -42,7 +42,7 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
         // 读取数据（按 区类型+块类型+数据类型 解析，读异常强制重连修复自愈）
         Object rawData;
         try {
-            rawData = S7DataReader.readDB(connector, message.getDbNumber(), message.getBlockType(), message.getAreaType(), message.getDataType(), message.getStartAddress(), message.getLength(), message.getBitOffset());
+            rawData = S7DataReader.readDB(connector, message.getDbNumber(), message.getBlockType(), message.getAreaType(), message.getDataType(), message.getStartAddress(), message.getLength(), message.getBitOffset(), message.getIsSigned());
         } catch (Exception e) {
             log.error("componentId={} 读取S7数据失败，触发强制重连", componentId, e);
             S7ConnectionManager.forceReconnect(componentId);

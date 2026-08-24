@@ -232,10 +232,10 @@ public class S7ConnectionManager {
     	S7Connector connector = buildConnector(config);
 //    	byte[] data = connector.read(DaveArea.DB, 1, 2, 0);
 //    	int value = new IntegerConverter().extract(Integer.class, data, 0, 0);
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBW","DB","int", 0, null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBX","DB","bool", 2, null,0));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","float", 260, null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","int", 264, null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBB","DB","string", 6, 8,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBW","DB","int", 0, null,null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBX","DB","bool", 2, null,0,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","float", 260, null,null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","int", 264, null,null,null));
+    	System.out.println(S7DataReader.readDB(connector, 1,"DBB","DB","string", 6, 8,null,null));
 	}
 }

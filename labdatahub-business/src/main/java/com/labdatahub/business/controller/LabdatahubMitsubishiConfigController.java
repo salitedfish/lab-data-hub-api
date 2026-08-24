@@ -108,6 +108,11 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         if (config.getStartAddress() == null || config.getStartAddress() < 0) {
             return AjaxResult.error("起始地址 startAddress 不能为负数");
         }
+        // X/Y 输入/输出继电器地址为八进制：十进制写法含 8/9 即为非法八进制数字，配置期拦截（读取期 MitsubishiDataReader 也会抛）
+        if ((config.getAreaCode() == 0x9C || config.getAreaCode() == 0x9D)
+                && Integer.toString(config.getStartAddress()).matches(".*[89].*")) {
+            return AjaxResult.error("X/Y 软元件地址为八进制（仅允许数字 0-7），当前起始地址含非法数字：" + config.getStartAddress());
+        }
         if (config.getLength() == null || config.getLength() < 1) {
             return AjaxResult.error("读取数量 length 不能小于1");
         }

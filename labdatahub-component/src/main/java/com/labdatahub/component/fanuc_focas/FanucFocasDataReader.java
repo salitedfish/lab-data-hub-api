@@ -74,7 +74,21 @@ public class FanucFocasDataReader {
                     return null;
                 }
                 Fwlib32.ODBDATA data = new Fwlib32.ODBDATA();
-                short ret = lib.cnc_rdaxisdata(handle, param2.shortValue(), param1.shortValue(), data);
+                // fwlib cls=1（坐标数据）的 type：1=机械 2=绝对 3=剩余距离 4=相对坐标；
+                // 前端 param2=3 是"相对"、4 是"剩余"，需与 fwlib type 互换映射
+                short axisType;
+                switch (param2) {
+                    case 3:
+                        axisType = 4; // 相对坐标 → fwlib type 4
+                        break;
+                    case 4:
+                        axisType = 3; // 剩余移动量 → fwlib type 3
+                        break;
+                    default:
+                        axisType = param2.shortValue(); // 1=机械 2=绝对
+                        break;
+                }
+                short ret = lib.cnc_rdaxisdata(handle, (short) 1, axisType, param1.shortValue(), data);
                 if (ret == Fwlib32.EW_SOCKET) {
                     throw new IOException("cnc_rdaxisdata socket错误(" + ret + ")");
                 }

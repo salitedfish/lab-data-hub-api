@@ -60,13 +60,16 @@ public interface Fwlib32 extends Library {
 	// ==================== 坐标 ====================
 	/**
 	 * 读取坐标（ODBDATA 一次返回机械/绝对/相对/剩余 4 个坐标）
+	 * FOCAS2 签名 5 参数：cnc_rdaxisdata(FlibHndl, cls, type, axis, ODBDATA*)，
+	 * cls=数据类（1=坐标数据），type=坐标类型（1=机械 2=绝对 3=剩余距离 4=相对坐标）
 	 * @param flibhndl 句柄
-	 * @param type 坐标类型：1=机械 2=绝对 3=相对 4=剩余
+	 * @param cls 数据类（1=坐标）
+	 * @param type 坐标类型（1=机械 2=绝对 3=剩余 4=相对）
 	 * @param axis 轴号（1起：1=X 2=Y 3=Z 4=A 5=B 6=C）
 	 * @param data 返回的坐标数据
 	 * @return 返回码
 	 */
-	short cnc_rdaxisdata(short flibhndl, short type, short axis, ODBDATA data);
+	short cnc_rdaxisdata(short flibhndl, short cls, short type, short axis, ODBDATA data);
 
 	// ==================== 主轴 ====================
 	/**

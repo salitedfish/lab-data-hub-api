@@ -101,8 +101,10 @@ public class LabdatahubOmronFinsConfigController extends BaseController
             return AjaxResult.error("存储区 areaCode 不能为空");
         }
         // 存储区白名单：DM区/CIO区/WR区/H区/IR区/LR区/EM区
-        if (!Arrays.asList(0x82, 0x30, 0xB1, 0x31, 0x80, 0x98, 0xA0).contains(config.getAreaCode())) {
-            return AjaxResult.error("存储区 areaCode 只能是 DM区(0x82)/CIO区(0x30)/WR区(0xB1)/H区(0x31)/IR区(0x80)/LR区(0x98)/EM区(0xA0)");
+        // FINS 标准区码：DM=0x82 / CIO=0x30 / WR=0xB1 / H(HR)=0x32 / IR=0x88 / LR=0x98 / EM=0xA0
+        // 注意：H 区是 0x32（0x31 是 WR 的位码，旧配置误用会静默读到 WR 区）
+        if (!Arrays.asList(0x82, 0x30, 0xB1, 0x32, 0x88, 0x98, 0xA0).contains(config.getAreaCode())) {
+            return AjaxResult.error("存储区 areaCode 只能是 DM区(0x82)/CIO区(0x30)/WR区(0xB1)/H区(0x32)/IR区(0x88)/LR区(0x98)/EM区(0xA0)");
         }
         if (config.getStartAddress() == null || config.getStartAddress() < 0) {
             return AjaxResult.error("起始地址 startAddress 不能为负数");

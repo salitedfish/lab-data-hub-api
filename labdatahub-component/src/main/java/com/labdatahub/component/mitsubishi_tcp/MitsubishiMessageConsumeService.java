@@ -39,6 +39,11 @@ public class MitsubishiMessageConsumeService implements MitsubishiMessageConsume
             return;
         }
         List<Integer> dataList = new ArrayList<>();
+        // 配置字段空值兜底：areaCode/startAddress/length 任一为空直接跳过，避免自动拆箱 NPE 触发无谓重连
+        if (message.getAreaCode() == null || message.getStartAddress() == null || message.getLength() == null) {
+            log.warn("componentId={} 读取code={}配置不完整（areaCode/startAddress/length 为空），跳过本次", componentId, message.getCode());
+            return;
+        }
         try {
         	dataList = MitsubishiDataReader.readMemoryArea(componentId, message.getAreaCode(), message.getStartAddress(), message.getLength());
         }catch (Exception e){

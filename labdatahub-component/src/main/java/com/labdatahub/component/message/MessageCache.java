@@ -1,10 +1,11 @@
+//由AI修改
 package com.labdatahub.component.message;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.labdatahub.common.utils.StringUtils;
 
 import java.util.Date;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
 /**
@@ -15,7 +16,8 @@ public class MessageCache {
      * key：设备sn
      * value：数据json
      */
-    public final static Map<String, DecodeMessage> DEVICE_LAST_DATA = new HashMap<>();
+    // 多协议消费线程（Modbus/S7/Fins/Brother/Mitsubishi/Fanuc...）并发写不同设备，用 ConcurrentHashMap 防并发读写 HashMap 导致死循环/数据错乱
+    public final static Map<String, DecodeMessage> DEVICE_LAST_DATA = new ConcurrentHashMap<>();
 
     /**
      * 获取设备属性最新状态数据（全部属性,可能不同属性上传时间不同）

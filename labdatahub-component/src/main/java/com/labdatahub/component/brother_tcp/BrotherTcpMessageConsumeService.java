@@ -56,6 +56,10 @@ public class BrotherTcpMessageConsumeService implements BrotherTcpMessageConsume
             // 行或字段越界（如机型无该点位），跳过本次
             return;
         }
+        //读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
+        if (message.getDelayTime() != null && message.getDelayTime() > 0) {
+            Thread.sleep(message.getDelayTime());
+        }
         JSONObject objecotData = new JSONObject();
         objecotData.put("deviceSn", message.getDeviceSn());
         objecotData.put("code", message.getCode());

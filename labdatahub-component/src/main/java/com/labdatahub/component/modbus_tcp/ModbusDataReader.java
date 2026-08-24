@@ -29,7 +29,7 @@ public class ModbusDataReader {
 	        throw new Exception("componentId=" + componentId + " 无法获取有效连接");
 	    }
 	    // 原有读取逻辑，但使用传入的 connection
-	    return readHoldingRegisters(componentId,connection, slaveId, startAddr, count);
+	    return readHoldingRegisters(componentId,connection, slaveId, startAddr, count, 1);
 	}
 
 	/**
@@ -56,13 +56,13 @@ public class ModbusDataReader {
 		if (connection == null) {
 			throw new Exception("componentId=" + componentId + " 无法获取有效连接");
 		}
-		return readByFunctionWithConn(componentId, connection, slaveId, functionCode, startAddr, count);
+		return readByFunctionWithConn(componentId, connection, slaveId, functionCode, startAddr, count, 1);
 	}
 
 	/**
 	 * 带连接的按功能码读取（含连接异常自动重建重试一次，镜像 readHoldingRegisters 自愈）
 	 */
-	private static List<Integer> readByFunctionWithConn(String componentId, TCPMasterConnection connection, Integer slaveId, Integer functionCode, int startAddr, int count) throws Exception {
+	private static List<Integer> readByFunctionWithConn(String componentId, TCPMasterConnection connection, Integer slaveId, Integer functionCode, int startAddr, int count, int retryLeft) throws Exception {
 		try {
 			ModbusTCPTransaction transaction = new ModbusTCPTransaction(connection);
 			List<Integer> result = new ArrayList<>();
@@ -122,12 +122,13 @@ public class ModbusDataReader {
 					throw new Exception("不支持的功能码：" + functionCode + "，仅支持 01线圈/02离散输入/03保持寄存器/04输入寄存器");
 			}
 		} catch (Exception e) {
-			if (e instanceof ModbusIOException || e instanceof IOException) {
+			//重试上限1次，防止"连接异常→重建→再异常→再重建"无限递归耗尽栈
+			if ((e instanceof ModbusIOException || e instanceof IOException) && retryLeft > 0) {
 				log.warn("[Modbus读取] 连接异常，自动重建：componentId={}", componentId);
 				ModbusConnectionManager.connections.remove(componentId); // 清理旧连接
 				TCPMasterConnection newConn = ModbusConnectionManager.getValidConnection(componentId);
 				if (newConn != null) {
-					return readByFunctionWithConn(componentId, newConn, slaveId, functionCode, startAddr, count);
+					return readByFunctionWithConn(componentId, newConn, slaveId, functionCode, startAddr, count, retryLeft - 1);
 				}
 			}
 			throw e;
@@ -137,7 +138,7 @@ public class ModbusDataReader {
     /**
      * 读取保持寄存器
      */
-    public static List<Integer> readHoldingRegisters(String componentId,TCPMasterConnection connection, Integer slaveId, int startAddr, int count) throws Exception {
+    public static List<Integer> readHoldingRegisters(String componentId,TCPMasterConnection connection, Integer slaveId, int startAddr, int count, int retryLeft) throws Exception {
         ModbusTCPTransaction transaction = null;
 
         try {
@@ -173,12 +174,13 @@ public class ModbusDataReader {
 //            }
 //            e.printStackTrace();
 //            throw e;
-        	if (e instanceof ModbusIOException || e instanceof IOException) {
+        	//重试上限1次，防止"连接异常→重建→再异常→再重建"无限递归耗尽栈
+        	if ((e instanceof ModbusIOException || e instanceof IOException) && retryLeft > 0) {
                 log.warn("[Modbus读取] 连接异常，自动重建：componentId={}", componentId);
                 ModbusConnectionManager.connections.remove(componentId); // 清理旧连接
                 TCPMasterConnection newConn = ModbusConnectionManager.getValidConnection(componentId);
                 if (newConn != null) {
-                    return readHoldingRegisters(componentId, newConn, slaveId, startAddr, count);
+                    return readHoldingRegisters(componentId, newConn, slaveId, startAddr, count, retryLeft - 1);
                 }
             }
         	e.printStackTrace();

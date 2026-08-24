@@ -508,8 +508,8 @@ public class TimerTask {
                     BrotherTcpReadConfig config = new BrotherTcpReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
-                    config.setDelayTime(o.getDelayTime().intValue());
-                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setDataArea(o.getDataArea());
                     config.setRowNumber(o.getRowNumber());
                     config.setFieldIndex(o.getFieldIndex());

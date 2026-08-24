@@ -76,7 +76,10 @@ public class BrotherTcpConnectionManager {
             connections.put(componentId, socket);
             System.out.printf("[Brother连接] componentId=%s 首次连接成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
-            BrotherTcpLoopConsumer.startConsume(componentId, SpringUtils.getBean(BrotherTcpMessageConsumeService.class));
+            // 幂等启动消费线程：重复 addConnection（如重复开启读取开关）不重复启动，避免 IllegalStateException 静默失败
+            if (!BrotherTcpLoopConsumer.isConsuming(componentId)) {
+                BrotherTcpLoopConsumer.startConsume(componentId, SpringUtils.getBean(BrotherTcpMessageConsumeService.class));
+            }
             return true;
         } catch (Exception e) {
             System.err.printf("[Brother连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());

@@ -47,9 +47,15 @@ public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
             if(queue!=null){
                 queue.removeIf(o->o.getCode().equals(message.getCode()));
             }
-            //读失败强制重连：半开连接本地状态检测不出来，靠读超时触发自愈（与S7的forceReconnect对齐）
-            log.warn("componentId={} 读取code={}失败，触发强制重连", componentId, message.getCode());
-            FinsConnectionManager.forceReconnect(componentId);
+            if (e instanceof FinsResponseException) {
+                // FINS 协议层错误（结束码非0/响应格式异常）：PLC已正常响应，说明连接是好的，
+                // 只是命令被拒绝（区码/地址/数量配置错误），只记日志、不触发强制重连，避免连接抖动
+                log.warn("componentId={} 读取code={}被PLC拒绝（FINS错误）：{}", componentId, message.getCode(), e.getMessage());
+            } else {
+                //传输层异常（超时/断流/EOF）：半开连接本地状态检测不出来，靠读超时触发自愈（与S7的forceReconnect对齐）
+                log.warn("componentId={} 读取code={}失败，触发强制重连", componentId, message.getCode());
+                FinsConnectionManager.forceReconnect(componentId);
+            }
             throw e;
         }
         //读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
