@@ -1,4 +1,4 @@
-package com.labdatahub.component.fins_tcp;
+package com.labdatahub.component.mitsubishi_tcp;
 
 import org.apache.commons.lang3.StringUtils;
 import java.util.Map;
@@ -6,20 +6,20 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * FINS循环消费工具类
+ * 三菱 MC 循环消费工具类
  * 功能：单独管理指定componentId的循环消费，支持启动/停止消费，线程安全
  */
-public class FinsLoopConsumer {
+public class MitsubishiLoopConsumer {
     // 存储已启动的消费线程：key=componentId，value=消费线程（避免重复启动）
     private static final Map<String, ConsumeThread> CONSUME_THREAD_MAP = new ConcurrentHashMap<>();
     // 消费线程前缀（便于日志排查）
-    private static final String CONSUME_THREAD_NAME_PREFIX = "fins-loop-consumer-";
+    private static final String CONSUME_THREAD_NAME_PREFIX = "mitsubishi-loop-consumer-";
     // ========== 内部消费线程类（封装循环逻辑+停止标志） ==========
     private static class ConsumeThread extends Thread {
         private final String componentId; // 目标组件ID
-        private final FinsMessageConsumeHandler consumeHandler; // 消费回调
+        private final MitsubishiMessageConsumeHandler consumeHandler; // 消费回调
         private final AtomicBoolean isRunning = new AtomicBoolean(true); // 运行标志
-        public ConsumeThread(String componentId, FinsMessageConsumeHandler consumeHandler) {
+        public ConsumeThread(String componentId, MitsubishiMessageConsumeHandler consumeHandler) {
             super(CONSUME_THREAD_NAME_PREFIX + componentId);
             this.componentId = componentId;
             this.consumeHandler = consumeHandler;
@@ -31,7 +31,7 @@ public class FinsLoopConsumer {
             while (isRunning.get()) {
                 try {
                     // 阻塞获取指定componentId的消息（无消息时等待，不耗CPU）
-                    FinsMessage message = FinsMessageScheduler.takeMessage(componentId);
+                    MitsubishiMessage message = MitsubishiMessageScheduler.takeMessage(componentId);
                     // 调用业务侧的消费逻辑
                     consumeHandler.handle(componentId,message);
                 } catch (InterruptedException e) {
@@ -69,7 +69,7 @@ public class FinsLoopConsumer {
      * @throws IllegalArgumentException 参数非法时抛出
      * @throws IllegalStateException 该componentId已启动消费时抛出
      */
-    public static void startConsume(String componentId, FinsMessageConsumeHandler consumeHandler) {
+    public static void startConsume(String componentId, MitsubishiMessageConsumeHandler consumeHandler) {
         // 1. 参数校验
         if (StringUtils.isBlank(componentId)) {
             throw new IllegalArgumentException("componentId 不能为空");
@@ -124,6 +124,6 @@ public class FinsLoopConsumer {
             stopConsume(componentId);
         }
         CONSUME_THREAD_MAP.clear();
-        System.out.println("所有FINS循环消费线程已停止");
+        System.out.println("所有MC循环消费线程已停止");
     }
 }

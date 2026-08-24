@@ -43,7 +43,12 @@ public class DatabaseMessageScheduler {
      * @param readConfig 读取配置
      */
     public static void addReadConfig(String datasourceId, DatabaseReadConfig readConfig) {
-        if (StringUtils.isBlank(datasourceId) || readConfig == null) {
+        if (StringUtils.isBlank(datasourceId)) {
+            // datasourceId为空表示设备未绑定网络组件，无需调度，直接跳过（避免readSwitch等路径抛异常）
+            System.err.println("datasourceId为空，跳过定时配置处理");
+            return;
+        }
+        if (readConfig == null) {
             throw new IllegalArgumentException("参数不能为空");
         }
 //        if (readConfig.getSql() == null || readConfig.getSql().trim().isEmpty()) {

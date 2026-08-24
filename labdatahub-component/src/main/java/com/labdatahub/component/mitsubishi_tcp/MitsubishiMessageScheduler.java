@@ -1,4 +1,4 @@
-package com.labdatahub.component.fins_tcp;
+package com.labdatahub.component.mitsubishi_tcp;
 
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -14,13 +14,13 @@ import org.apache.commons.lang3.StringUtils;
 import cn.hutool.core.bean.BeanUtil;
 
 /**
- * FINS消息定时生产-消费工具类（静态版+多组件隔离队列）
- * 功能：根据FinsReadConfig的intervalTime定时生成FinsMessage，按componentId存入不同队列供消费
+ * 三菱 MC 消息定时生产-消费工具类（静态版+多组件隔离队列）
+ * 功能：根据MitsubishiReadConfig的intervalTime定时生成MitsubishiMessage，按componentId存入不同队列供消费
  */
-public class FinsMessageScheduler {
+public class MitsubishiMessageScheduler {
     // ========== 静态变量（全局唯一） ==========
     // 多组件隔离的消息队列：key=componentId，value=对应组件的阻塞队列
-    public static final Map<String, BlockingQueue<FinsMessage>> messageQueueMap = new ConcurrentHashMap<>();
+    public static final Map<String, BlockingQueue<MitsubishiMessage>> messageQueueMap = new ConcurrentHashMap<>();
     // 调度器：用于执行定时生成消息的任务（静态初始化，全局唯一）
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(5);
     // 存储配置与对应定时任务的映射（避免重复调度，支持动态移除）
@@ -31,15 +31,15 @@ public class FinsMessageScheduler {
     //单个网络组件最大的消息堆积值
     private static final Integer MAX_QUEUE_SIZE = 1000;
     // ========== 私有构造器（禁止实例化） ==========
-    private FinsMessageScheduler() {
+    private MitsubishiMessageScheduler() {
         throw new UnsupportedOperationException("该类为静态工具类，禁止实例化");
     }
     /**
-     * 【静态方法】添加FINS读取配置，启动定时生成消息任务
+     * 【静态方法】添加 MC 读取配置，启动定时生成消息任务
      * @param componentId 组件ID（标识消息队列所属类型，不能为空）
      * @param readConfig 读取配置（必须包含deviceSn、code、intervalTime）
      */
-    public static void addReadConfig(String componentId, FinsReadConfig readConfig) {
+    public static void addReadConfig(String componentId, MitsubishiReadConfig readConfig) {
         // 1. 核心参数校验（componentId+基础配置）
         if (StringUtils.isBlank(componentId)) {
             // componentId为空表示设备未绑定网络组件，无需调度，直接跳过（避免readSwitch等路径抛异常）
@@ -47,7 +47,7 @@ public class FinsMessageScheduler {
             return;
         }
         if (readConfig == null) {
-            throw new IllegalArgumentException("FinsReadConfig 不能为null");
+            throw new IllegalArgumentException("MitsubishiReadConfig 不能为null");
         }
         if (StringUtils.isBlank(readConfig.getDeviceSn())) {
             throw new IllegalArgumentException("deviceSn 不能为空");
@@ -64,13 +64,13 @@ public class FinsMessageScheduler {
         if (configTaskMap.containsKey(configKey)) {
             removeReadConfig(componentId, readConfig.getDeviceSn(), readConfig.getCode());
         }
-        // 3. 创建定时任务：按intervalTime（秒）循环生成FinsMessage
+        // 3. 创建定时任务：按intervalTime（秒）循环生成MitsubishiMessage
         ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(
                 () -> {
                     // 配置转消息（核心映射逻辑）
-                    FinsMessage message = convertToFinsMessage(readConfig);
+                    MitsubishiMessage message = convertToMitsubishiMessage(readConfig);
                     // 根据componentId获取/创建对应的队列（原子操作，线程安全）
-                    BlockingQueue<FinsMessage> targetQueue = messageQueueMap.computeIfAbsent(
+                    BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.computeIfAbsent(
                             componentId,
                             k -> new LinkedBlockingQueue<>() // 每个componentId对应一个独立队列
                     );
@@ -91,11 +91,11 @@ public class FinsMessageScheduler {
         );
         // 4. 记录配置与任务的映射
         configTaskMap.put(configKey, future);
-        System.out.printf("已添加FINS定时配置：componentId=%s, deviceSn=%s, code=%s, 间隔=%d秒%n",
+        System.out.printf("已添加MC定时配置：componentId=%s, deviceSn=%s, code=%s, 间隔=%d秒%n",
                 componentId, readConfig.getDeviceSn(), readConfig.getCode(), readConfig.getIntervalTime());
     }
     /**
-     * 【静态方法】移除指定的FINS读取配置，停止定时生成消息
+     * 【静态方法】移除指定的 MC 读取配置，停止定时生成消息
      * @param componentId 组件ID（不能为空）
      * @param deviceSn 设备SN
      * @param code 指令编码
@@ -114,7 +114,7 @@ public class FinsMessageScheduler {
         if (future != null) {
             future.cancel(true); // 取消定时任务
             configTaskMap.remove(configKey);
-            System.out.printf("已移除FINS定时配置：componentId=%s, deviceSn=%s, code=%s%n",
+            System.out.printf("已移除MC定时配置：componentId=%s, deviceSn=%s, code=%s%n",
                     componentId, deviceSn, code);
         }
     }
@@ -135,17 +135,17 @@ public class FinsMessageScheduler {
     /**
      * 【静态方法】消费者获取指定组件的消息（阻塞式，无消息时等待）
      * @param componentId 组件ID（标识要读取的队列）
-     * @return FinsMessage
+     * @return MitsubishiMessage
      * @throws InterruptedException 线程中断异常
      * @throws IllegalArgumentException componentId为空或无对应队列时抛出
      */
-    public static FinsMessage takeMessage(String componentId) throws InterruptedException {
+    public static MitsubishiMessage takeMessage(String componentId) throws InterruptedException {
         // 参数校验
         if (StringUtils.isBlank(componentId)) {
             throw new IllegalArgumentException("componentId 不能为空");
         }
         // 获取对应组件的队列（不存在则抛异常）
-        BlockingQueue<FinsMessage> targetQueue = messageQueueMap.get(componentId);
+        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.get(componentId);
         if (targetQueue == null) {
             throw new IllegalArgumentException("componentId=" + componentId + " 无对应的消息队列");
         }
@@ -155,16 +155,16 @@ public class FinsMessageScheduler {
     /**
      * 【静态方法】消费者获取指定组件的消息（非阻塞式，无消息时返回null）
      * @param componentId 组件ID（标识要读取的队列）
-     * @return FinsMessage 或 null
+     * @return MitsubishiMessage 或 null
      * @throws IllegalArgumentException componentId为空时抛出
      */
-    public static FinsMessage pollMessage(String componentId) {
+    public static MitsubishiMessage pollMessage(String componentId) {
         // 参数校验
         if (StringUtils.isBlank(componentId)) {
             throw new IllegalArgumentException("componentId 不能为空");
         }
         // 获取对应组件的队列（不存在则返回null）
-        BlockingQueue<FinsMessage> targetQueue = messageQueueMap.get(componentId);
+        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.get(componentId);
         if (targetQueue == null) {
             return null;
         }
@@ -189,13 +189,13 @@ public class FinsMessageScheduler {
         } catch (InterruptedException e) {
             scheduler.shutdownNow();
         }
-        System.out.println("FINS消息调度器已关闭，所有组件队列已清空");
+        System.out.println("MC消息调度器已关闭，所有组件队列已清空");
     }
     /**
-     * 【静态方法】FinsReadConfig 转 FinsMessage（字段映射）
+     * 【静态方法】MitsubishiReadConfig 转 MitsubishiMessage（字段映射）
      */
-    private static FinsMessage convertToFinsMessage(FinsReadConfig readConfig) {
-        FinsMessage message = new FinsMessage();
+    private static MitsubishiMessage convertToMitsubishiMessage(MitsubishiReadConfig readConfig) {
+        MitsubishiMessage message = new MitsubishiMessage();
         BeanUtil.copyProperties(readConfig, message);
         return message;
     }
@@ -208,7 +208,7 @@ public class FinsMessageScheduler {
         if (StringUtils.isBlank(componentId)) {
             return 0;
         }
-        BlockingQueue<FinsMessage> targetQueue = messageQueueMap.get(componentId);
+        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.get(componentId);
         return targetQueue == null ? 0 : targetQueue.size();
     }
     /**
@@ -231,7 +231,7 @@ public class FinsMessageScheduler {
             }
             return false;
         });
-        BlockingQueue<FinsMessage> targetQueue = messageQueueMap.remove(componentId);
+        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.remove(componentId);
         if (targetQueue != null) {
             System.out.printf("已移除componentId=%s 的消息队列，清空消息数：%d%n", componentId, targetQueue.size());
             targetQueue.clear();

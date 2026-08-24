@@ -212,6 +212,9 @@ public class LabdatahubFanucConfigController extends BaseController
     public AjaxResult readSwitchByDevice(@RequestParam String deviceSn,@RequestParam String isOpen){
         LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getDeviceSn,deviceSn));
+        if (device == null) {
+            return AjaxResult.error("设备不存在：" + deviceSn);
+        }
         List<LabdatahubFanucConfig> list = labdatahubFanucConfigService.list(new LambdaQueryWrapper<LabdatahubFanucConfig>()
                 .eq(LabdatahubFanucConfig::getBelongSn,device.getDeviceSn()));
         if("1".equals(isOpen)){

@@ -159,8 +159,8 @@ public class LabdatahubDbConfigController extends BaseController
             		DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);
                     DatabaseReadConfig config = new DatabaseReadConfig();
                     config.setDeviceSn(device.getDeviceSn());
-                    config.setDelayTime(databaseConfigList.get(0).getDelayTime().intValue());
-                    config.setIntervalTime(databaseConfigList.get(0).getIntervalTime().intValue());;
+                    config.setDelayTime(databaseConfigList.get(0).getDelayTime() == null ? 0 : databaseConfigList.get(0).getDelayTime().intValue());
+                    config.setIntervalTime(databaseConfigList.get(0).getIntervalTime() == null ? 1 : databaseConfigList.get(0).getIntervalTime().intValue());
                     DatabaseMessageScheduler.addReadConfig(device.getComponentId(),config);
                 }else {
                 	DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);
@@ -195,6 +195,9 @@ public class LabdatahubDbConfigController extends BaseController
     public AjaxResult readSwitchByDevice(@RequestParam String deviceSn,@RequestParam String isOpen){
         LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getDeviceSn,deviceSn));
+        if (device == null) {
+            return AjaxResult.error("设备不存在：" + deviceSn);
+        }
         List<LabdatahubDbConfig> databaseConfigList = labdatahubDbConfigService.list(new LambdaQueryWrapper<LabdatahubDbConfig>()
                 .eq(LabdatahubDbConfig::getBelongSn,device.getDeviceSn()));
         if(CollectionUtils.isNotEmpty(databaseConfigList)) {
@@ -202,8 +205,8 @@ public class LabdatahubDbConfigController extends BaseController
         		DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);
                 DatabaseReadConfig config = new DatabaseReadConfig();
                 config.setDeviceSn(device.getDeviceSn());
-                config.setDelayTime(databaseConfigList.get(0).getDelayTime().intValue());
-                config.setIntervalTime(databaseConfigList.get(0).getIntervalTime().intValue());;
+                config.setDelayTime(databaseConfigList.get(0).getDelayTime() == null ? 0 : databaseConfigList.get(0).getDelayTime().intValue());
+                config.setIntervalTime(databaseConfigList.get(0).getIntervalTime() == null ? 1 : databaseConfigList.get(0).getIntervalTime().intValue());
                 DatabaseMessageScheduler.addReadConfig(device.getComponentId(),config);
             }else {
             	DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);
@@ -247,8 +250,8 @@ public class LabdatahubDbConfigController extends BaseController
             		DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);
                     DatabaseReadConfig config = new DatabaseReadConfig();
                     config.setDeviceSn(device.getDeviceSn());
-                    config.setDelayTime(databaseConfigList.get(0).getDelayTime().intValue());
-                    config.setIntervalTime(databaseConfigList.get(0).getIntervalTime().intValue());;
+                    config.setDelayTime(databaseConfigList.get(0).getDelayTime() == null ? 0 : databaseConfigList.get(0).getDelayTime().intValue());
+                    config.setIntervalTime(databaseConfigList.get(0).getIntervalTime() == null ? 1 : databaseConfigList.get(0).getIntervalTime().intValue());
                     DatabaseMessageScheduler.addReadConfig(device.getComponentId(),config);
                 }else {
                 	DatabaseMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),null);

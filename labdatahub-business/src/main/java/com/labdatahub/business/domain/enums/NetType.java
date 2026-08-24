@@ -43,5 +43,9 @@ public enum NetType {
     /**
      * S71200_TCP
      */
-    S71200_TCP;
+    S71200_TCP,
+    /**
+     * MITSUBISHI_TCP
+     */
+    MITSUBISHI_TCP;
 }

@@ -27,7 +27,12 @@ public class S7MessageScheduler {
     }
 
     public static void addReadConfig(String componentId, S7ReadConfig readConfig) {
-        if (StringUtils.isBlank(componentId) || readConfig == null) {
+        if (StringUtils.isBlank(componentId)) {
+            // componentId为空表示设备未绑定网络组件，无需调度，直接跳过（避免readSwitch等路径抛异常）
+            System.err.println("componentId为空，跳过定时配置处理");
+            return;
+        }
+        if (readConfig == null) {
             throw new IllegalArgumentException("参数不能为空");
         }
         if (StringUtils.isBlank(readConfig.getDeviceSn())) {

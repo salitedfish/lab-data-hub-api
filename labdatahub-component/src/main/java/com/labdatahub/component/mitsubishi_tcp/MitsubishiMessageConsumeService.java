@@ -1,5 +1,5 @@
 //由AI修改
-package com.labdatahub.component.fins_tcp;
+package com.labdatahub.component.mitsubishi_tcp;
 
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -23,61 +23,42 @@ import java.util.List;
 import java.util.concurrent.BlockingQueue;
 
 /**
- * FINS消息消费服务
+ * 三菱 MC 消息消费服务
  */
 @Slf4j
 @Component
-public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
+public class MitsubishiMessageConsumeService implements MitsubishiMessageConsumeHandler{
     @Autowired
     private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     @Autowired
     private EventBus eventBus;
     @Override
-    public void handle(String componentId, FinsMessage message) throws Exception {
-        Socket connection = FinsConnectionManager.connections.get(componentId);
+    public void handle(String componentId, MitsubishiMessage message) throws Exception {
+        Socket connection = MitsubishiConnectionManager.connections.get(componentId);
         if(connection==null||!connection.isConnected()||connection.isClosed()){
             return;
         }
         List<Integer> dataList = new ArrayList<>();
         try {
-        	dataList = FinsDataReader.readMemoryArea(componentId, message.getAreaCode(), message.getStartAddress(), message.getLength());          
+        	dataList = MitsubishiDataReader.readMemoryArea(componentId, message.getAreaCode(), message.getStartAddress(), message.getLength());
         }catch (Exception e){
             //处理恢复后避免脏数据过多
-            BlockingQueue<FinsMessage> queue = FinsMessageScheduler.messageQueueMap.get(componentId);
+            BlockingQueue<MitsubishiMessage> queue = MitsubishiMessageScheduler.messageQueueMap.get(componentId);
             if(queue!=null){
                 queue.removeIf(o->o.getCode().equals(message.getCode()));
             }
             //读失败强制重连：半开连接本地状态检测不出来，靠读超时触发自愈（与S7的forceReconnect对齐）
             log.warn("componentId={} 读取code={}失败，触发强制重连", componentId, message.getCode());
-            FinsConnectionManager.forceReconnect(componentId);
+            MitsubishiConnectionManager.forceReconnect(componentId);
             throw e;
         }
         //读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
         if (message.getDelayTime() != null && message.getDelayTime() > 0) {
             Thread.sleep(message.getDelayTime());
         }
-//        List<FinsRangeParserUtil.RangeItem> list = FinsRangeParserUtil.parse(message.getAddressRange());
-//        if(list.size()>0){
-//            for (int i = 0; i < list.size(); i++) {
-//                FinsRangeParserUtil.RangeItem item = list.get(i);
-//                try {
-//                    List<Integer> dataList = FinsDataReader.readMemoryArea(componentId, item.getAreaCode(), item.getStart(), item.getCount());
-//                    item.setRegisterList(dataList);
-//                }catch (Exception e){
-//                    //处理恢复后避免脏数据过多
-//                    BlockingQueue<FinsMessage> queue = FinsMessageScheduler.messageQueueMap.get(componentId);
-//                    if(queue!=null){
-//                        queue.removeIf(o->o.getCode().equals(message.getCode())&& o.getFinsNodeAddress().equals(message.getFinsNodeAddress()));
-//                    }
-//                    throw e;
-//                }
-//            }
-//        }
         JSONObject objecotData = new JSONObject();
     	objecotData.put("deviceSn", message.getDeviceSn());
-    	//objecotData.put("finsNodeAddress", message.getFinsNodeAddress());
     	objecotData.put("code", message.getCode());
-    	//objecotData.put("addressRange", message.getAddressRange());
     	objecotData.put("jsonArray", JSONArray.from(dataList));
         objecotData.put("dataType", message.getDataType());
         objecotData.put("byteOrder", message.getByteOrder());

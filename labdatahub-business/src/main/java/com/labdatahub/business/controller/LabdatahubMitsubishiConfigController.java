@@ -21,9 +21,9 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.labdatahub.business.domain.LabdatahubDevice;
-import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
+import com.labdatahub.business.domain.LabdatahubMitsubishiConfig;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
-import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
+import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.business.utils.ParseMetaUtils;
 import com.labdatahub.common.annotation.Log;
@@ -33,82 +33,92 @@ import com.labdatahub.common.core.page.TableDataInfo;
 import com.labdatahub.common.enums.BusinessType;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
-import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
-import com.labdatahub.component.fins_tcp.FinsReadConfig;
+import com.labdatahub.component.mitsubishi_tcp.MitsubishiMessageScheduler;
+import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
 
 /**
- * 
-* @ClassName: LabdatahubOmronFinsConfigController  
-* @Description: omronFins协议读取配置Controller
-* @author xwb  
-* @date 2026年4月1日
+ *
+* @ClassName: LabdatahubMitsubishiConfigController
+* @Description: 三菱MC协议读取配置Controller
+* @author xwb
+* @date 2026年8月24日
  */
 @RestController
-@RequestMapping("/business/omronFins")
-public class LabdatahubOmronFinsConfigController extends BaseController
+@RequestMapping("/business/mitsubishiTcp")
+public class LabdatahubMitsubishiConfigController extends BaseController
 {
     @Autowired
-    private ILabdatahubOmronFinsConfigService labdatahubOmronFinsConfigService;
+    private ILabdatahubMitsubishiConfigService labdatahubMitsubishiConfigService;
     @Autowired
     private ILabdatahubDeviceService labdatahubDeviceService;
+
+    // 字设备软元件代码（按字读取）
+    private static final List<Integer> WORD_DEVICE_CODES = Arrays.asList(0xA8, 0xB4, 0xAF, 0xB0, 0xA9);
+    // 位设备软元件代码（按位读取）
+    private static final List<Integer> BIT_DEVICE_CODES = Arrays.asList(0x90, 0x92, 0xA0, 0x9C, 0x9D, 0x98, 0x91, 0x93);
+
     /**
-     * 查询omronFins协议读取配置列表
+     * 判断软元件是否为字设备
+     */
+    private boolean isWordDevice(Integer areaCode) {
+        return WORD_DEVICE_CODES.contains(areaCode);
+    }
+
+    /**
+     * 查询三菱MC协议读取配置列表
      */
     @GetMapping("/list")
-    public TableDataInfo list(LabdatahubOmronFinsConfig labdatahubOmronFinsConfig)
+    public TableDataInfo list(LabdatahubMitsubishiConfig labdatahubMitsubishiConfig)
     {
-        LambdaQueryWrapper<LabdatahubOmronFinsConfig> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.orderByAsc(LabdatahubOmronFinsConfig::getCreateTime);
-        if (StringUtils.isNotEmpty(labdatahubOmronFinsConfig.getBelongSn())) {
-            queryWrapper.eq(LabdatahubOmronFinsConfig::getBelongSn, labdatahubOmronFinsConfig.getBelongSn());
+        LambdaQueryWrapper<LabdatahubMitsubishiConfig> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.orderByAsc(LabdatahubMitsubishiConfig::getCreateTime);
+        if (StringUtils.isNotEmpty(labdatahubMitsubishiConfig.getBelongSn())) {
+            queryWrapper.eq(LabdatahubMitsubishiConfig::getBelongSn, labdatahubMitsubishiConfig.getBelongSn());
         }
-        if (StringUtils.isNotEmpty(labdatahubOmronFinsConfig.getCode())) {
-            queryWrapper.like(LabdatahubOmronFinsConfig::getCode, labdatahubOmronFinsConfig.getCode());
+        if (StringUtils.isNotEmpty(labdatahubMitsubishiConfig.getCode())) {
+            queryWrapper.like(LabdatahubMitsubishiConfig::getCode, labdatahubMitsubishiConfig.getCode());
         }
-        Page<LabdatahubOmronFinsConfig> page = new Page<>(PageUtils.getPageNum(), PageUtils.getPageSize());
-        Page<LabdatahubOmronFinsConfig> pageList = labdatahubOmronFinsConfigService.page(page, queryWrapper);
+        Page<LabdatahubMitsubishiConfig> page = new Page<>(PageUtils.getPageNum(), PageUtils.getPageSize());
+        Page<LabdatahubMitsubishiConfig> pageList = labdatahubMitsubishiConfigService.page(page, queryWrapper);
         return getDataTable(pageList);
     }
 
-//    /**
-//     * 导出modbus协议读取配置列表
-//     */
-//    @Log(title = "modbus协议读取配置", businessType = BusinessType.EXPORT)
-//    @PostMapping("/export")
-//    public void export(HttpServletResponse response, LabdatahubOmronFinsConfig labdatahubOmronFinsConfig)
-//    {
-//        List<LabdatahubOmronFinsConfig> list = labdatahubOmronFinsConfigService.selectLabdatahubOmronFinsConfigList(labdatahubOmronFinsConfig);
-//        ExcelUtil<LabdatahubOmronFinsConfig> util = new ExcelUtil<LabdatahubOmronFinsConfig>(LabdatahubOmronFinsConfig.class);
-//        util.exportExcel(response, list, "modbus协议读取配置数据");
-//    }
-
     /**
-     * 获取modbus协议读取配置详细信息
+     * 获取三菱MC协议读取配置详细信息
      */
     @GetMapping(value = "/{id}")
     public AjaxResult getInfo(@PathVariable("id") String id)
     {
-        return success(labdatahubOmronFinsConfigService.getById(id));
+        return success(labdatahubMitsubishiConfigService.getById(id));
     }
 
     /**
-     * 校验 FINS 读取配置字段（存储区白名单 + 地址/长度/间隔）
+     * 校验三菱MC读取配置字段（软元件白名单 + 字/位长度上限 + 地址/间隔）
      *
      * @return null-校验通过，否则返回错误信息
      */
-    private AjaxResult checkConfig(LabdatahubOmronFinsConfig config) {
+    private AjaxResult checkConfig(LabdatahubMitsubishiConfig config) {
         if (config.getAreaCode() == null) {
-            return AjaxResult.error("存储区 areaCode 不能为空");
+            return AjaxResult.error("软元件代码 areaCode 不能为空");
         }
-        // 存储区白名单：DM区/CIO区/WR区/H区/IR区/LR区/EM区
-        if (!Arrays.asList(0x82, 0x30, 0xB1, 0x31, 0x80, 0x98, 0xA0).contains(config.getAreaCode())) {
-            return AjaxResult.error("存储区 areaCode 只能是 DM区(0x82)/CIO区(0x30)/WR区(0xB1)/H区(0x31)/IR区(0x80)/LR区(0x98)/EM区(0xA0)");
+        // 软元件白名单：字设备 D/W/R/ZR/SD；位设备 M/L/B/X/Y/S/SM/F
+        if (!WORD_DEVICE_CODES.contains(config.getAreaCode()) && !BIT_DEVICE_CODES.contains(config.getAreaCode())) {
+            return AjaxResult.error("软元件代码 areaCode 只能是 D(0xA8)/W(0xB4)/R(0xAF)/ZR(0xB0)/SD(0xA9)/M(0x90)/L(0x92)/B(0xA0)/X(0x9C)/Y(0x9D)/S(0x98)/SM(0x91)/F(0x93)");
         }
         if (config.getStartAddress() == null || config.getStartAddress() < 0) {
             return AjaxResult.error("起始地址 startAddress 不能为负数");
         }
-        if (config.getLength() == null || config.getLength() < 1 || config.getLength() > 1000) {
-            return AjaxResult.error("读取长度 length 必须在 1-1000 之间");
+        if (config.getLength() == null || config.getLength() < 1) {
+            return AjaxResult.error("读取数量 length 不能小于1");
+        }
+        if (isWordDevice(config.getAreaCode())) {
+            if (config.getLength() > 960) {
+                return AjaxResult.error("字设备单次读取数量 length 不能超过 960");
+            }
+        } else {
+            if (config.getLength() > 2000) {
+                return AjaxResult.error("位设备单次读取数量 length 不能超过 2000");
+            }
         }
         if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
             return AjaxResult.error("读取间隔 intervalTime 必须为正整数（单位：秒）");
@@ -117,42 +127,42 @@ public class LabdatahubOmronFinsConfigController extends BaseController
     }
 
     /**
-     * 新增modbus协议读取配置
+     * 新增三菱MC协议读取配置
      */
-    @Log(title = "modbus协议读取配置", businessType = BusinessType.INSERT)
+    @Log(title = "三菱MC协议读取配置", businessType = BusinessType.INSERT)
     @PostMapping
-    public AjaxResult add(@RequestBody LabdatahubOmronFinsConfig labdatahubOmronFinsConfig)
+    public AjaxResult add(@RequestBody LabdatahubMitsubishiConfig labdatahubMitsubishiConfig)
     {
-        AjaxResult check = checkConfig(labdatahubOmronFinsConfig);
+        AjaxResult check = checkConfig(labdatahubMitsubishiConfig);
         if (check != null) {
             return check;
         }
-        labdatahubOmronFinsConfig.setCreateTime(new Date());
-        return toAjax(labdatahubOmronFinsConfigService.save(labdatahubOmronFinsConfig));
+        labdatahubMitsubishiConfig.setCreateTime(new Date());
+        return toAjax(labdatahubMitsubishiConfigService.save(labdatahubMitsubishiConfig));
     }
 
     /**
-     * 修改modbus协议读取配置
+     * 修改三菱MC协议读取配置
      */
-    @Log(title = "modbus协议读取配置", businessType = BusinessType.UPDATE)
+    @Log(title = "三菱MC协议读取配置", businessType = BusinessType.UPDATE)
     @PutMapping
-    public AjaxResult edit(@RequestBody LabdatahubOmronFinsConfig labdatahubOmronFinsConfig)
+    public AjaxResult edit(@RequestBody LabdatahubMitsubishiConfig labdatahubMitsubishiConfig)
     {
-        AjaxResult check = checkConfig(labdatahubOmronFinsConfig);
+        AjaxResult check = checkConfig(labdatahubMitsubishiConfig);
         if (check != null) {
             return check;
         }
-        return toAjax(labdatahubOmronFinsConfigService.updateById(labdatahubOmronFinsConfig));
+        return toAjax(labdatahubMitsubishiConfigService.updateById(labdatahubMitsubishiConfig));
     }
 
     /**
-     * 删除modbus协议读取配置
+     * 删除三菱MC协议读取配置
      */
-    @Log(title = "modbus协议读取配置", businessType = BusinessType.DELETE)
-	@DeleteMapping("/{ids}")
+    @Log(title = "三菱MC协议读取配置", businessType = BusinessType.DELETE)
+    @DeleteMapping("/{ids}")
     public AjaxResult remove(@PathVariable String[] ids)
     {
-        return toAjax(labdatahubOmronFinsConfigService.removeBatchByIds(Arrays.asList(ids)));
+        return toAjax(labdatahubMitsubishiConfigService.removeBatchByIds(Arrays.asList(ids)));
     }
 
     /**
@@ -160,15 +170,15 @@ public class LabdatahubOmronFinsConfigController extends BaseController
      */
     @PostMapping("/syncConfigToDevice")
     public AjaxResult syncConfigToDevice(@RequestParam String productSn){
-        List<LabdatahubOmronFinsConfig> configList = labdatahubOmronFinsConfigService.list(new LambdaQueryWrapper<LabdatahubOmronFinsConfig>()
-                .eq(LabdatahubOmronFinsConfig::getBelongSn,productSn));
+        List<LabdatahubMitsubishiConfig> configList = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiConfig>()
+                .eq(LabdatahubMitsubishiConfig::getBelongSn,productSn));
         List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getProductSn,productSn));
         deviceList.forEach(device->{
             //删除设备所有规则
-            labdatahubOmronFinsConfigService.remove(new LambdaUpdateWrapper<LabdatahubOmronFinsConfig>()
-                    .eq(LabdatahubOmronFinsConfig::getBelongSn,device.getDeviceSn())
-                    .eq(LabdatahubOmronFinsConfig::getBelongType,"1"));
+            labdatahubMitsubishiConfigService.remove(new LambdaUpdateWrapper<LabdatahubMitsubishiConfig>()
+                    .eq(LabdatahubMitsubishiConfig::getBelongSn,device.getDeviceSn())
+                    .eq(LabdatahubMitsubishiConfig::getBelongType,"1"));
             //添加新的规则
             configList.forEach(config->{
                 config.setId(IdWorker.getIdStr());
@@ -182,11 +192,11 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                 config.setStartAddress(config.getStartAddress());
                 config.setLength(config.getLength());
             });
-            labdatahubOmronFinsConfigService.saveBatch(configList);
+            labdatahubMitsubishiConfigService.saveBatch(configList);
             if("1".equals(device.getModbusRead())){
                 configList.forEach(o->{
-                    FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                    FinsReadConfig config = new FinsReadConfig();
+                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiReadConfig config = new MitsubishiReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
                     config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
@@ -195,11 +205,11 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
-                    FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
+                    MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {
                 configList.forEach(o->{
-                    FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
                 });
             }
             CacheUtils.updateDeviceWarnRule(device.getDeviceSn());
@@ -219,12 +229,12 @@ public class LabdatahubOmronFinsConfigController extends BaseController
         if (device == null) {
             return AjaxResult.error("设备不存在：" + deviceSn);
         }
-        List<LabdatahubOmronFinsConfig> list = labdatahubOmronFinsConfigService.list(new LambdaQueryWrapper<LabdatahubOmronFinsConfig>()
-                .eq(LabdatahubOmronFinsConfig::getBelongSn,device.getDeviceSn()));
+        List<LabdatahubMitsubishiConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiConfig>()
+                .eq(LabdatahubMitsubishiConfig::getBelongSn,device.getDeviceSn()));
         if("1".equals(isOpen)){
             list.forEach(o->{
-                FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                FinsReadConfig config = new FinsReadConfig();
+                MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                MitsubishiReadConfig config = new MitsubishiReadConfig();
                 config.setDeviceSn(o.getBelongSn());
                 config.setCode(o.getCode());
                 config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
@@ -233,11 +243,11 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                 config.setStartAddress(o.getStartAddress());
                 config.setLength(o.getLength());
                 ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
-                FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
+                MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
             });
         }else {
             list.forEach(o->{
-                FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
             });
         }
         // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致
@@ -256,12 +266,12 @@ public class LabdatahubOmronFinsConfigController extends BaseController
         List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getProductSn,productSn));
         deviceList.forEach(device->{
-            List<LabdatahubOmronFinsConfig> list = labdatahubOmronFinsConfigService.list(new LambdaQueryWrapper<LabdatahubOmronFinsConfig>()
-                    .eq(LabdatahubOmronFinsConfig::getBelongSn,device.getDeviceSn()));
+            List<LabdatahubMitsubishiConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiConfig>()
+                    .eq(LabdatahubMitsubishiConfig::getBelongSn,device.getDeviceSn()));
             if("1".equals(isOpen)){
                 list.forEach(o->{
-                    FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                    FinsReadConfig config = new FinsReadConfig();
+                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiReadConfig config = new MitsubishiReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
                     config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
@@ -270,11 +280,11 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
-                    FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
+                    MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {
                 list.forEach(o->{
-                    FinsMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
                 });
             }
             // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致

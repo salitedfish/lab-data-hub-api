@@ -207,6 +207,9 @@ public class LabdatahubBrotherConfigController extends BaseController
     public AjaxResult readSwitchByDevice(@RequestParam String deviceSn,@RequestParam String isOpen){
         LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getDeviceSn,deviceSn));
+        if (device == null) {
+            return AjaxResult.error("设备不存在：" + deviceSn);
+        }
         List<LabdatahubBrotherConfig> list = labdatahubBrotherConfigService.list(new LambdaQueryWrapper<LabdatahubBrotherConfig>()
                 .eq(LabdatahubBrotherConfig::getBelongSn,device.getDeviceSn()));
         if("1".equals(isOpen)){

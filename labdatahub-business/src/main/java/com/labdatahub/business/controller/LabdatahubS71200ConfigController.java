@@ -211,8 +211,8 @@ public class LabdatahubS71200ConfigController extends BaseController
                     S7ReadConfig config = new S7ReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
-                    config.setDelayTime(o.getDelayTime().intValue());
-                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setDbNumber(o.getDbNumber());
                     config.setBlockType(o.getBlockType());
                     config.setAreaType(o.getAreaType());
@@ -241,6 +241,9 @@ public class LabdatahubS71200ConfigController extends BaseController
     public AjaxResult readSwitchByDevice(@RequestParam String deviceSn,@RequestParam String isOpen){
         LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getDeviceSn,deviceSn));
+        if (device == null) {
+            return AjaxResult.error("设备不存在：" + deviceSn);
+        }
         List<LabdatahubS71200Config> list = labdatahubS71200ConfigService.list(new LambdaQueryWrapper<LabdatahubS71200Config>()
                 .eq(LabdatahubS71200Config::getBelongSn,device.getDeviceSn()));
         if("1".equals(isOpen)){
@@ -249,8 +252,8 @@ public class LabdatahubS71200ConfigController extends BaseController
                 S7ReadConfig config = new S7ReadConfig();
                 config.setDeviceSn(o.getBelongSn());
                 config.setCode(o.getCode());
-                config.setDelayTime(o.getDelayTime().intValue());
-                config.setIntervalTime(o.getIntervalTime().intValue());
+                config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                 config.setDbNumber(o.getDbNumber());
                 config.setBlockType(o.getBlockType());
                 config.setAreaType(o.getAreaType());
@@ -289,8 +292,8 @@ public class LabdatahubS71200ConfigController extends BaseController
                     S7ReadConfig config = new S7ReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
-                    config.setDelayTime(o.getDelayTime().intValue());
-                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setDbNumber(o.getDbNumber());
                     config.setBlockType(o.getBlockType());
                     config.setAreaType(o.getAreaType());

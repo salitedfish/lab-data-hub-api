@@ -222,8 +222,8 @@ public class LabdatahubModbusConfigController extends BaseController
                     ModbusReadConfig config = new ModbusReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
-                    config.setDelayTime(o.getDelayTime().intValue());
-                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setSlaveId(device.getSlaveId());
                     config.setRegisterRange(o.getRegisterRange());
                     config.setFunctionCode(o.getFunctionCode());
@@ -249,6 +249,9 @@ public class LabdatahubModbusConfigController extends BaseController
     public AjaxResult readSwitchByDevice(@RequestParam String deviceSn,@RequestParam String isOpen){
         LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getDeviceSn,deviceSn));
+        if (device == null) {
+            return AjaxResult.error("设备不存在：" + deviceSn);
+        }
         List<LabdatahubModbusConfig> list = labdatahubModbusConfigService.list(new LambdaQueryWrapper<LabdatahubModbusConfig>()
                 .eq(LabdatahubModbusConfig::getBelongSn,device.getDeviceSn()));
         if("1".equals(isOpen)){
@@ -257,8 +260,8 @@ public class LabdatahubModbusConfigController extends BaseController
                 ModbusReadConfig config = new ModbusReadConfig();
                 config.setDeviceSn(o.getBelongSn());
                 config.setCode(o.getCode());
-                config.setDelayTime(o.getDelayTime().intValue());
-                config.setIntervalTime(o.getIntervalTime().intValue());
+                config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                 config.setSlaveId(device.getSlaveId());
                 config.setRegisterRange(o.getRegisterRange());
                 config.setFunctionCode(o.getFunctionCode());
@@ -294,8 +297,8 @@ public class LabdatahubModbusConfigController extends BaseController
                     ModbusReadConfig config = new ModbusReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
-                    config.setDelayTime(o.getDelayTime().intValue());
-                    config.setIntervalTime(o.getIntervalTime().intValue());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setSlaveId(device.getSlaveId());
                     config.setRegisterRange(o.getRegisterRange());
                     config.setFunctionCode(o.getFunctionCode());

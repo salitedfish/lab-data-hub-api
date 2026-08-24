@@ -102,6 +102,26 @@ public class DeviceDownUtils {
                     isOk = modbusTcpDown(deviceSn,device.getSlaveId(), functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
                     break;
                 }
+                case "S71200_TCP":{
+                    isOk = s71200TcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                    break;
+                }
+                case "OMRONFINS_TCP":{
+                    isOk = omronFinsTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                    break;
+                }
+                case "BROTHER_TCP":{
+                    isOk = brotherTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                    break;
+                }
+                case "FANUC_TCP":{
+                    isOk = fanucFocasDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                    break;
+                }
+                case "MITSUBISHI_TCP":{
+                    isOk = mitsubishiTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                    break;
+                }
                 default:
             }
         }catch (Exception ignore){}
@@ -196,6 +216,10 @@ public class DeviceDownUtils {
                 }
                 case "FANUC_TCP": {
                     isOk = fanucFocasDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
+                    break;
+                }
+                case "MITSUBISHI_TCP": {
+                    isOk = mitsubishiTcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
                 default:
@@ -388,6 +412,20 @@ public class DeviceDownUtils {
         }
         return true;
         //return FinsDataReader.writeMultipleHoldingRegisters(componentId,slaveId,encodeMessage.getModbusWriteJson());
+    }
+
+    /**
+     * MITSUBISHI_TCP功能下发（三菱 MC 协议只读采集，encode 返回 isSend=false，直接返回成功）
+     */
+    public static boolean mitsubishiTcpDown(String deviceSn,String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
+        Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
+        Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
+        EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
+        if(!encodeMessage.getIsSend()){
+            return true;
+        }
+        return true;
     }
 
     /**

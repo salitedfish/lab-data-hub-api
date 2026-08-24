@@ -30,6 +30,7 @@ import com.labdatahub.business.domain.LabdatahubFunction;
 import com.labdatahub.business.domain.LabdatahubBrotherConfig;
 import com.labdatahub.business.domain.LabdatahubFanucConfig;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
+import com.labdatahub.business.domain.LabdatahubMitsubishiConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubProduct;
 import com.labdatahub.business.domain.LabdatahubProtocol;
@@ -60,6 +61,7 @@ import com.labdatahub.business.service.ILabdatahubLinkageWarnRecordService;
 import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
 import com.labdatahub.business.service.ILabdatahubFanucConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
+import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubProductService;
 import com.labdatahub.business.service.ILabdatahubProtocolService;
@@ -80,6 +82,8 @@ import com.labdatahub.component.db.DatabaseMessageScheduler;
 import com.labdatahub.component.db.DatabaseReadConfig;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
+import com.labdatahub.component.mitsubishi_tcp.MitsubishiMessageScheduler;
+import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
 import com.labdatahub.component.message.DecodeMessage;
 import com.labdatahub.component.message.MessageCache;
 import com.labdatahub.component.modbus_tcp.ModbusMessageScheduler;
@@ -133,6 +137,8 @@ public class TimerTask {
     private ILabdatahubS71200ConfigService labdatahubS71200ConfigService;
     @Autowired
     private ILabdatahubOmronFinsConfigService labdatahubOmronFinsConfigService;
+    @Autowired
+    private ILabdatahubMitsubishiConfigService labdatahubMitsubishiConfigService;
     @Autowired
     private ILabdatahubBrotherConfigService labdatahubBrotherConfigService;
     @Autowired
@@ -437,6 +443,42 @@ public class TimerTask {
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
+                });
+            });
+        });
+    }
+
+    /**
+     * 初始化三菱MC定时读取（仅拉起 netType=MITSUBISHI_TCP 组件的设备，避免对其它协议组件误调度）
+     */
+    @PostConstruct
+    public void initMitsubishiTcpRead(){
+        threadPoolTaskExecutor.execute(()->{
+            List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getModbusRead,"1"));
+            deviceList.forEach(device->{
+                // 只拉起 MITSUBISHI 网络组件下设备的轮询
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"MITSUBISHI_TCP".equals(component.getNetType())){
+                    return;
+                }
+                List<LabdatahubMitsubishiConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiConfig>()
+                        .eq(LabdatahubMitsubishiConfig::getBelongSn,device.getDeviceSn()));
+                list.forEach(o->{
+                	MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                	MitsubishiReadConfig config = new MitsubishiReadConfig();
+                    config.setDeviceSn(o.getBelongSn());
+                    config.setCode(o.getCode());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
+                    config.setAreaCode(o.getAreaCode());
+                    config.setStartAddress(o.getStartAddress());
+                    config.setLength(o.getLength());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+                    MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             });
         });

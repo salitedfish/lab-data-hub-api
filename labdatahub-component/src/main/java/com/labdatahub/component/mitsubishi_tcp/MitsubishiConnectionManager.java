@@ -1,7 +1,6 @@
-package com.labdatahub.component.fins_tcp;
+//由AI修改
+package com.labdatahub.component.mitsubishi_tcp;
 
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.util.Map;
@@ -15,90 +14,43 @@ import com.labdatahub.common.utils.spring.SpringUtils;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * FINS连接管理器，维护多个设备的连接（新增自动检查+定时重连）
+ * 三菱 MC 连接管理器，维护多个设备的连接（新增自动检查+定时重连，MC 3E 帧无需握手）
  */
 @Slf4j
-public class FinsConnectionManager {
+public class MitsubishiConnectionManager {
     // 存储设备连接：key为componentId（线程安全）
     public static Map<String, Socket> connections = new ConcurrentHashMap<>();
     // 存储每个componentId对应的连接配置（用于重连）
-    public static final Map<String, FinsTcpConfig> configMap = new ConcurrentHashMap<>();
+    public static final Map<String, MitsubishiTcpConfig> configMap = new ConcurrentHashMap<>();
     // 连接健康检查调度器（全局单例，定时检查连接状态）
     private static final ScheduledExecutorService healthCheckScheduler = Executors.newScheduledThreadPool(
             1,
             r -> {
-                Thread t = new Thread(r, "fins-connection-health-check");
+                Thread t = new Thread(r, "mitsubishi-connection-health-check");
                 t.setDaemon(true); // 守护线程，应用退出时自动销毁
                 return t;
             }
     );
-    
+
     private static final int HEALTH_CHECK_INTERVAL = 10;
     // 静态初始化：启动全局连接健康检查（每10秒检查一次）
     static {
         healthCheckScheduler.scheduleAtFixedRate(
-                FinsConnectionManager::checkAllConnections,
+                MitsubishiConnectionManager::checkAllConnections,
                 0,
                 HEALTH_CHECK_INTERVAL,
                 TimeUnit.SECONDS
         );
-        log.info("FINS 连接健康检查任务已启动，检查间隔={}秒", HEALTH_CHECK_INTERVAL);
-    }
-    
-    /**
-     * 从输入流中读取指定长度的数据，直到读满
-     */
-    private static void readFully(InputStream in, byte[] buffer) throws Exception {
-        int totalRead = 0;
-        int len;
-        while (totalRead < buffer.length) {
-            len = in.read(buffer, totalRead, buffer.length - totalRead);
-            if (len == -1) {
-                throw new Exception("流已结束，无法读取足够的数据，预期" + buffer.length + "字节，已读取" + totalRead + "字节");
-            }
-            totalRead += len;
-        }
-    }
-    
-    /**
-     * FINS/TCP握手，获取PLC节点地址
-     */
-    private static int doHandshake(Socket socket, int clientNodeAddr) throws Exception {
-        OutputStream out = socket.getOutputStream();
-        InputStream in = socket.getInputStream();
-        
-        // 构建握手请求报文
-        byte[] handshakeReq = new byte[] {
-            'F', 'I', 'N', 'S', // FINS头
-            0x00, 0x00, 0x00, 0x0C, // 后续数据长度：12字节
-            0x00, 0x00, 0x00, 0x00, // 命令：节点地址发送
-            0x00, 0x00, 0x00, 0x00, // 错误码
-            0x00, 0x00, 0x00, (byte) clientNodeAddr // 客户端节点地址
-        };
-        
-        out.write(handshakeReq);
-        out.flush();
-        
-        // 读取握手响应，共24字节（使用readFully确保读满）
-        byte[] handshakeResp = new byte[24];
-        readFully(in, handshakeResp);
-        
-        // 解析PLC节点地址，最后4字节，大端
-        int plcNodeAddr = ((handshakeResp[20] & 0xFF) << 24) |
-                          ((handshakeResp[21] & 0xFF) << 16) |
-                          ((handshakeResp[22] & 0xFF) << 8) |
-                          (handshakeResp[23] & 0xFF);
-        
-        return plcNodeAddr;
+        log.info("MITSUBISHI 连接健康检查任务已启动，检查间隔={}秒", HEALTH_CHECK_INTERVAL);
     }
 
     /**
-     * 创建连接（兼容原有逻辑，新增配置存储）
+     * 创建连接（MC 3E 帧无需握手，建连即用）
      * @param componentId 组件唯一标识
      * @param config 连接配置
      * @return 首次连接是否成功
      */
-    public static boolean addConnection(String componentId, FinsTcpConfig config) {
+    public static boolean addConnection(String componentId, MitsubishiTcpConfig config) {
         try {
             // 1. 校验参数
             if (componentId == null || config == null || config.getIpAddr() == null) {
@@ -115,32 +67,24 @@ public class FinsConnectionManager {
             Socket socket = new Socket(address, config.getPort());
             socket.setSoTimeout(config.getTimeout());
             socket.setTcpNoDelay(true); // 禁用Nagle算法，降低延迟
-                        
-            // 建立连接后执行握手
-            int plcNodeAddr = doHandshake(socket, config.getClientNodeAddress());
-            config.setPlcNodeAddress(plcNodeAddr);
-            System.out.printf("[FINS握手] componentId=%s 获取PLC节点地址：%d%n", componentId, plcNodeAddr);
-            
-            // 3. 存储配置（用于后续重连）
-            configMap.put(componentId, config);
-            
-            // 4. 更新连接映射
+
+            // 3. 更新连接映射
             connections.put(componentId, socket);
-            System.out.printf("[FINS连接] componentId=%s 首次连接成功（%s:%d）%n",
+            System.out.printf("[MITSUBISHI连接] componentId=%s 首次连接成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
         } catch (Exception e) {
-            System.err.printf("[FINS连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
+            System.err.printf("[MITSUBISHI连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
             // 连接失败时移除无效配置/连接，避免空转
             connections.remove(componentId);
             configMap.remove(componentId);
             return false;
         }
-        // 5. 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
+        // 4. 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
         //    应复用已有消费线程，而不是回滚刚建立的有效连接）
         try {
-            FinsLoopConsumer.startConsume(componentId, SpringUtils.getBean(FinsMessageConsumeService.class));
+            MitsubishiLoopConsumer.startConsume(componentId, SpringUtils.getBean(MitsubishiMessageConsumeService.class));
         } catch (IllegalStateException e) {
-            System.out.printf("[FINS连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);
+            System.out.printf("[MITSUBISHI连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);
         }
         return true;
     }
@@ -157,15 +101,15 @@ public class FinsConnectionManager {
                     socket.close();
                 }
             } catch (Exception e) {
-                System.err.printf("[FINS连接] componentId=%s 关闭失败：%s%n", componentId, e.getMessage());
+                System.err.printf("[MITSUBISHI连接] componentId=%s 关闭失败：%s%n", componentId, e.getMessage());
             }
         }
         // 2. 清理配置（停止该组件的重连检查）
         configMap.remove(componentId);
         // 3. 清理消息队列和消费线程（原有逻辑保留）
-        FinsMessageScheduler.removeMessageQueue(componentId);
-        FinsLoopConsumer.stopConsume(componentId);
-        System.out.printf("[FINS连接] componentId=%s 连接已关闭，配置已清理%n", componentId);
+        MitsubishiMessageScheduler.removeMessageQueue(componentId);
+        MitsubishiLoopConsumer.stopConsume(componentId);
+        System.out.printf("[MITSUBISHI连接] componentId=%s 连接已关闭，配置已清理%n", componentId);
     }
 
     /**
@@ -179,7 +123,7 @@ public class FinsConnectionManager {
                     conn.close();
                 }
             } catch (Exception e) {
-                System.err.printf("[FINS连接] componentId=%s 关闭失败：%s%n", id, e.getMessage());
+                System.err.printf("[MITSUBISHI连接] componentId=%s 关闭失败：%s%n", id, e.getMessage());
             }
         });
         // 2. 清理所有映射
@@ -194,7 +138,7 @@ public class FinsConnectionManager {
         } catch (InterruptedException e) {
             healthCheckScheduler.shutdownNow();
         }
-        System.out.println("[FINS连接] 所有连接已关闭，健康检查调度器已停止");
+        System.out.println("[MITSUBISHI连接] 所有连接已关闭，健康检查调度器已停止");
     }
 
     // ========== 核心新增：连接健康检查与重连逻辑 ==========
@@ -213,7 +157,7 @@ public class FinsConnectionManager {
      * @param componentId 组件唯一标识
      */
     private static void checkAndReconnect(String componentId) {
-        FinsTcpConfig config = configMap.get(componentId);
+        MitsubishiTcpConfig config = configMap.get(componentId);
         if (config == null) {
             return;
         }
@@ -221,7 +165,7 @@ public class FinsConnectionManager {
         // 校验连接是否有效
         boolean isConnectionValid = isConnectionValid(socket);
         if (!isConnectionValid) {
-            System.out.printf("[FINS重连] componentId=%s 连接失效，开始重连（%s:%d）%n",
+            System.out.printf("[MITSUBISHI重连] componentId=%s 连接失效，开始重连（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
             // 执行重连逻辑
             reconnect(componentId, config);
@@ -230,7 +174,7 @@ public class FinsConnectionManager {
 
     /**
      * 精准校验连接是否有效
-     * @param socket FINS TCP连接
+     * @param socket MC TCP连接
      * @return true=有效，false=失效
      */
     private static boolean isConnectionValid(Socket socket) {
@@ -256,14 +200,14 @@ public class FinsConnectionManager {
      * @param config 连接配置
      * @return 重连是否成功
      */
-    private static boolean reconnect(String componentId, FinsTcpConfig config) {
+    private static boolean reconnect(String componentId, MitsubishiTcpConfig config) {
         try {
             // 1. 创建新连接
             InetAddress address = InetAddress.getByName(config.getIpAddr());
             Socket newSocket = new Socket(address, config.getPort());
             newSocket.setSoTimeout(config.getTimeout());
             newSocket.setTcpNoDelay(true);
-            
+
             // 2. 关闭旧连接（释放资源）
             Socket oldConn = connections.get(componentId);
             if (oldConn != null) {
@@ -271,22 +215,17 @@ public class FinsConnectionManager {
                     oldConn.close();
                 } catch (Exception e) {
                     // 旧连接关闭失败不影响新连接创建
-                    System.err.printf("[FINS重连] componentId=%s 旧连接关闭失败：%s%n", componentId, e.getMessage());
+                    System.err.printf("[MITSUBISHI重连] componentId=%s 旧连接关闭失败：%s%n", componentId, e.getMessage());
                 }
             }
-            
-            // 3. 执行握手
-            int plcNodeAddr = doHandshake(newSocket, config.getClientNodeAddress());
-            config.setPlcNodeAddress(plcNodeAddr);
-            System.out.printf("[FINS握手] componentId=%s 重连后获取PLC节点地址：%d%n", componentId, plcNodeAddr);
-            
-            // 4. 更新连接映射
+
+            // 3. 更新连接映射
             connections.put(componentId, newSocket);
-            System.out.printf("[FINS重连] componentId=%s 重连成功（%s:%d）%n",
+            System.out.printf("[MITSUBISHI重连] componentId=%s 重连成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
             return true;
         } catch (Exception e) {
-            System.err.printf("[FINS重连] componentId=%s 重连失败：%s%n", componentId, e.getMessage());
+            System.err.printf("[MITSUBISHI重连] componentId=%s 重连失败：%s%n", componentId, e.getMessage());
             // 重连失败时移除无效连接（避免下次检查重复处理）
             connections.remove(componentId);
             return false;
@@ -298,9 +237,9 @@ public class FinsConnectionManager {
      * @param componentId 组件唯一标识
      */
     public static void forceReconnect(String componentId) {
-        FinsTcpConfig config = configMap.get(componentId);
+        MitsubishiTcpConfig config = configMap.get(componentId);
         if (config == null) {
-            System.err.printf("[FINS重连] componentId=%s 无连接配置，无法重连%n", componentId);
+            System.err.printf("[MITSUBISHI重连] componentId=%s 无连接配置，无法重连%n", componentId);
             return;
         }
         reconnect(componentId, config);

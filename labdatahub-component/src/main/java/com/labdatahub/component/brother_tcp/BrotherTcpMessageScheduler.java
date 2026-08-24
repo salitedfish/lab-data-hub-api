@@ -43,7 +43,9 @@ public class BrotherTcpMessageScheduler {
     public static void addReadConfig(String componentId, BrotherTcpReadConfig readConfig) {
         // 1. 核心参数校验（componentId+基础配置）
         if (StringUtils.isBlank(componentId)) {
-            throw new IllegalArgumentException("componentId 不能为空");
+            // componentId为空表示设备未绑定网络组件，无需调度，直接跳过（避免readSwitch等路径抛异常）
+            System.err.println("componentId为空，跳过定时配置处理");
+            return;
         }
         if (readConfig == null) {
             throw new IllegalArgumentException("BrotherTcpReadConfig 不能为null");
@@ -101,7 +103,9 @@ public class BrotherTcpMessageScheduler {
      */
     public static void removeReadConfig(String componentId, String deviceSn, String code) {
         if (StringUtils.isBlank(componentId)) {
-            throw new IllegalArgumentException("componentId 不能为空");
+            // componentId为空表示设备未绑定网络组件，无需调度，直接跳过（避免readSwitch等路径抛异常）
+            System.err.println("componentId为空，跳过定时配置处理");
+            return;
         }
         if (StringUtils.isBlank(deviceSn) || StringUtils.isBlank(code)) {
             throw new IllegalArgumentException("deviceSn和code不能为空");
