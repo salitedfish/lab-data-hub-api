@@ -26,6 +26,8 @@ import com.labdatahub.component.coap.CoapServerConfig;
 import com.labdatahub.component.coap.CoapServerManager;
 import com.labdatahub.component.brother_tcp.BrotherTcpConfig;
 import com.labdatahub.component.brother_tcp.BrotherTcpConnectionManager;
+import com.labdatahub.component.fanuc_focas.FanucFocasConfig;
+import com.labdatahub.component.fanuc_focas.FanucFocasConnectionManager;
 import com.labdatahub.component.db.DatabaseConfig;
 import com.labdatahub.component.db.DatabaseConnectionManager;
 import com.labdatahub.component.fins_tcp.FinsConnectionManager;
@@ -397,6 +399,27 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                     return false;
                 }
             }
+            case "FANUC_TCP" : {
+                if(StringUtils.isNotEmpty(component.getOtherConfig())){
+                	FanucFocasConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(FanucFocasConfig.class);
+                    boolean isOk = FanucFocasConnectionManager.addConnection(component.getId(), config);
+                    if(!isOk){
+                        throw new CommonWarnException("开启失败，请检查配置信息是否正确");
+                    }
+                    component.setStatus("1");
+                    if(StringUtils.isNotEmpty(component.getProtocolId())){
+                        initProtocol(component.getProtocolId());
+                        ProtocolManager.PROTOCOL_MAP.put(component.getId(),component.getProtocolId());
+                    }
+                    component.setIpAddr(config.getIpAddr());
+                    component.setPort(String.valueOf(config.getPort()));
+                    labdatahubComponentMapper.updateById(component);
+                    CacheUtils.setComponentCache(component.getId(),component);
+                    return true;
+                }else {
+                    return false;
+                }
+            }
             case "DATABASE_TCP" : {
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	DatabaseConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(DatabaseConfig.class);
@@ -511,6 +534,13 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "BROTHER_TCP" : {
             	BrotherTcpConnectionManager.closeConnection(component.getId());
+                component.setStatus("0");
+                labdatahubComponentMapper.updateById(component);
+                CacheUtils.setComponentCache(component.getId(),component);
+                return true;
+            }
+            case "FANUC_TCP" : {
+            	FanucFocasConnectionManager.closeConnection(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);

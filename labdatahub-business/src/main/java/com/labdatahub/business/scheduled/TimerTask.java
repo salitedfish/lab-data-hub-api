@@ -28,6 +28,7 @@ import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.domain.LabdatahubDeviceLogs;
 import com.labdatahub.business.domain.LabdatahubFunction;
 import com.labdatahub.business.domain.LabdatahubBrotherConfig;
+import com.labdatahub.business.domain.LabdatahubFanucConfig;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubProduct;
@@ -57,6 +58,7 @@ import com.labdatahub.business.service.ILabdatahubFunctionRecordService;
 import com.labdatahub.business.service.ILabdatahubFunctionService;
 import com.labdatahub.business.service.ILabdatahubLinkageWarnRecordService;
 import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
+import com.labdatahub.business.service.ILabdatahubFanucConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubProductService;
@@ -72,6 +74,8 @@ import com.labdatahub.common.core.redis.RedisCache;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.component.brother_tcp.BrotherTcpMessageScheduler;
 import com.labdatahub.component.brother_tcp.BrotherTcpReadConfig;
+import com.labdatahub.component.fanuc_focas.FanucFocasMessageScheduler;
+import com.labdatahub.component.fanuc_focas.FanucFocasReadConfig;
 import com.labdatahub.component.db.DatabaseMessageScheduler;
 import com.labdatahub.component.db.DatabaseReadConfig;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
@@ -131,6 +135,8 @@ public class TimerTask {
     private ILabdatahubOmronFinsConfigService labdatahubOmronFinsConfigService;
     @Autowired
     private ILabdatahubBrotherConfigService labdatahubBrotherConfigService;
+    @Autowired
+    private ILabdatahubFanucConfigService labdatahubFanucConfigService;
     @Autowired
     private ILabdatahubDbConfigService labdatahubDbConfigService;
     /**
@@ -444,6 +450,42 @@ public class TimerTask {
                     config.setFieldIndex(o.getFieldIndex());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     BrotherTcpMessageScheduler.addReadConfig(device.getComponentId(),config);
+                });
+            });
+        });
+    }
+
+    /**
+     * 初始化FANUC定时读取（仅拉起 netType=FANUC_TCP 组件的设备，避免对其它协议组件误调度）
+     */
+    @PostConstruct
+    public void initFanucTcpRead(){
+        threadPoolTaskExecutor.execute(()->{
+            List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getModbusRead,"1"));
+            deviceList.forEach(device->{
+                // 只拉起 FANUC 网络组件下设备的轮询
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"FANUC_TCP".equals(component.getNetType())){
+                    return;
+                }
+                List<LabdatahubFanucConfig> list = labdatahubFanucConfigService.list(new LambdaQueryWrapper<LabdatahubFanucConfig>()
+                        .eq(LabdatahubFanucConfig::getBelongSn,device.getDeviceSn()));
+                list.forEach(o->{
+                    FanucFocasMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    FanucFocasReadConfig config = new FanucFocasReadConfig();
+                    config.setDeviceSn(o.getBelongSn());
+                    config.setCode(o.getCode());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
+                    config.setReadType(o.getReadType());
+                    config.setParam1(o.getParam1());
+                    config.setParam2(o.getParam2());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+                    FanucFocasMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             });
         });

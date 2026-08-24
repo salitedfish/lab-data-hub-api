@@ -6,11 +6,13 @@ import java.util.List;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.labdatahub.business.domain.LabdatahubBrotherConfig;
 import com.labdatahub.business.domain.LabdatahubDevice;
+import com.labdatahub.business.domain.LabdatahubFanucConfig;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubS71200Config;
 import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
+import com.labdatahub.business.service.ILabdatahubFanucConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
@@ -18,6 +20,8 @@ import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.brother_tcp.BrotherTcpMessageScheduler;
 import com.labdatahub.component.brother_tcp.BrotherTcpReadConfig;
+import com.labdatahub.component.fanuc_focas.FanucFocasMessageScheduler;
+import com.labdatahub.component.fanuc_focas.FanucFocasReadConfig;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
 import com.labdatahub.component.modbus_tcp.ModbusMessageScheduler;
@@ -80,6 +84,7 @@ public class ProtocolReadConfigRebuilder {
         rebuildS7(device);
         rebuildFins(device);
         rebuildBrother(device);
+        rebuildFanuc(device);
     }
 
     /**
@@ -192,6 +197,34 @@ public class ProtocolReadConfigRebuilder {
             config.setFieldIndex(o.getFieldIndex());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
             BrotherTcpMessageScheduler.addReadConfig(componentId, config);
+        }
+    }
+
+    /**
+     * 重建 FANUC FOCAS2 读取配置（构建逻辑与 LabdatahubFanucConfigController 保持一致）
+     */
+    private static void rebuildFanuc(LabdatahubDevice device) {
+        String componentId = device.getComponentId();
+        String deviceSn = device.getDeviceSn();
+        List<LabdatahubFanucConfig> list = SpringUtils.getBean(ILabdatahubFanucConfigService.class).list(
+                new LambdaQueryWrapper<LabdatahubFanucConfig>().eq(LabdatahubFanucConfig::getBelongSn, deviceSn));
+        for (LabdatahubFanucConfig o : list) {
+            if (o.getDelayTime() == null || o.getIntervalTime() == null) {
+                continue;
+            }
+            if (!FanucFocasMessageScheduler.isReadConfigRunning(componentId, deviceSn, o.getCode())) {
+                continue;
+            }
+            FanucFocasReadConfig config = new FanucFocasReadConfig();
+            config.setDeviceSn(o.getBelongSn());
+            config.setCode(o.getCode());
+            config.setDelayTime(o.getDelayTime().intValue());
+            config.setIntervalTime(o.getIntervalTime().intValue());
+            config.setReadType(o.getReadType());
+            config.setParam1(o.getParam1());
+            config.setParam2(o.getParam2());
+            ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+            FanucFocasMessageScheduler.addReadConfig(componentId, config);
         }
     }
 }

@@ -194,6 +194,10 @@ public class DeviceDownUtils {
                     isOk = brotherTcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
+                case "FANUC_TCP": {
+                    isOk = fanucFocasDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
+                    break;
+                }
                 default:
             }
         }catch (Exception ignore){}
@@ -390,6 +394,20 @@ public class DeviceDownUtils {
      * BROTHER_TCP功能下发（Brother NC 协议只读采集，encode 返回 isSend=false，直接返回成功）
      */
     public static boolean brotherTcpDown(String deviceSn,String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
+        Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
+        Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
+        Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);
+        EncodeMessage encodeMessage = JSONObject.parseObject(JSONObject.toJSONString(result), EncodeMessage.class);
+        if(!encodeMessage.getIsSend()){
+            return true;
+        }
+        return true;
+    }
+
+    /**
+     * FANUC_TCP功能下发（FANUC FOCAS2 协议只读采集，encode 返回 isSend=false，直接返回成功）
+     */
+    public static boolean fanucFocasDown(String deviceSn,String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
         Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);

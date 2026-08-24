@@ -1,65 +1,67 @@
 # 数据源配置
 spring:
-    datasource:
-        type: com.alibaba.druid.pool.DruidDataSource
-        driverClassName: org.postgresql.Driver  # 只改这个
-        druid:
-            # 主库数据源
-            master:
-#                url: jdbc:postgresql://122.112.239.186:5432/sc_1.0.0
-                url: jdbc:postgresql://172.20.10.2:5432/sc_1.0.0
-                username: sc_1.0.0
-                password: sc_1.0.0
-            # 从库数据源
-            slave:
-                # 从数据源开关/默认关闭
-                enabled: false
-                url:
-                username:
-                password:
-            # 初始连接数
-            initialSize: 5
-            # 最小连接池数量
-            minIdle: 10
-            # 最大连接池数量
-            maxActive: 20
-            # 配置获取连接等待超时的时间
-            maxWait: 60000
-            # 配置连接超时时间
-            connectTimeout: 30000
-            # 配置网络超时时间
-            socketTimeout: 60000
-            # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
-            timeBetweenEvictionRunsMillis: 60000
-            # 配置一个连接在池中最小生存的时间，单位是毫秒
-            minEvictableIdleTimeMillis: 300000
-            # 配置一个连接在池中最大生存的时间，单位是毫秒
-            maxEvictableIdleTimeMillis: 900000
-            # 配置检测连接是否有效
-            validationQuery: SELECT 1  # 去掉 FROM DUAL
-            testWhileIdle: true
-            testOnBorrow: false
-            testOnReturn: false
-            webStatFilter:
-                enabled: true
-            statViewServlet:
-                enabled: true
-                # 设置白名单，不填则允许所有访问
-                allow:
-                url-pattern: /druid/*
-                # 控制台管理用户名和密码
-                login-username: ruoyi
-                login-password: 123456
-            filter:
-                stat:
-                    enabled: true
-                    # 慢SQL记录
-                    log-slow-sql: true
-                    slow-sql-millis: 1000
-                    merge-sql: true
-                wall:
-                    config:
-                        multi-statement-allow: true
+  datasource:
+    type: com.alibaba.druid.pool.DruidDataSource
+    driverClassName: org.postgresql.Driver # 只改这个
+    druid:
+      # 主库数据源
+      master:
+        #                url: jdbc:postgresql://122.112.239.186:5432/sc_1.0.0
+#        url: jdbc:postgresql://172.22.2.167:5432/sc_1.0.0
+        url: jdbc:postgresql://172.20.10.2:5432/sc_1.0.0
+#        url: jdbc:postgresql://192.168.191.37:5432/sc_1.0.0
+        username: sc_1.0.0
+        password: sc_1.0.0
+      # 从库数据源
+      slave:
+        # 从数据源开关/默认关闭
+        enabled: false
+        url:
+        username:
+        password:
+      # 初始连接数
+      initialSize: 5
+      # 最小连接池数量
+      minIdle: 10
+      # 最大连接池数量
+      maxActive: 20
+      # 配置获取连接等待超时的时间
+      maxWait: 60000
+      # 配置连接超时时间
+      connectTimeout: 30000
+      # 配置网络超时时间
+      socketTimeout: 60000
+      # 配置间隔多久才进行一次检测，检测需要关闭的空闲连接，单位是毫秒
+      timeBetweenEvictionRunsMillis: 60000
+      # 配置一个连接在池中最小生存的时间，单位是毫秒
+      minEvictableIdleTimeMillis: 300000
+      # 配置一个连接在池中最大生存的时间，单位是毫秒
+      maxEvictableIdleTimeMillis: 900000
+      # 配置检测连接是否有效
+      validationQuery: SELECT 1 # 去掉 FROM DUAL
+      testWhileIdle: true
+      testOnBorrow: false
+      testOnReturn: false
+      webStatFilter:
+        enabled: true
+      statViewServlet:
+        enabled: true
+        # 设置白名单，不填则允许所有访问
+        allow:
+        url-pattern: /druid/*
+        # 控制台管理用户名和密码
+        login-username: ruoyi
+        login-password: 123456
+      filter:
+        stat:
+          enabled: true
+          # 慢SQL记录
+          log-slow-sql: true
+          slow-sql-millis: 1000
+          merge-sql: true
+        wall:
+          config:
+            multi-statement-allow: true
 
 # ===================== TimescaleDB 自动化配置 =====================
 # 与 TimescaleDbProperties.java 完全绑定
@@ -70,39 +72,39 @@ timescaledb:
 
   # 1. 超表配置（支持多表，当前仅配置设备日志表）
   hypertables:
-    - tableName: labdatahub_device_logs          # 表名
-      timeColumn: create_time                    # 时间分区列
-      partitioningColumn: device_sn              # 空间分区列
-      numberPartitions: 4                        # 分区数量
-      chunkTimeInterval: 1 day                   # 分片时间间隔
-      compressionEnabled: true                   # 开启自动压缩
-      compressionInterval: 7 days                 # 7天前数据自动压缩
+    - tableName: labdatahub_device_logs # 表名
+      timeColumn: create_time # 时间分区列
+      partitioningColumn: device_sn # 空间分区列
+      numberPartitions: 4 # 分区数量
+      chunkTimeInterval: 1 day # 分片时间间隔
+      compressionEnabled: true # 开启自动压缩
+      compressionInterval: 7 days # 7天前数据自动压缩
 
   # 2. 数据保留策略
   retention-policies:
-    - tableName: labdatahub_device_logs          # 表名
-      retentionInterval: 90 days                 # 数据保留90天
+    - tableName: labdatahub_device_logs # 表名
+      retentionInterval: 90 days # 数据保留90天
 
   # 3. 连续聚合视图配置
   continuous-aggregates:
     # 小时级聚合视图
-    - viewName: device_logs_hourly_mat           # 视图名
-      sourceTable: labdatahub_device_logs        # 源表
-      timeColumn: create_time                    # 时间列
-      partitioningColumn: device_sn              # 分组列
-      bucketInterval: 1 hour                     # 聚合时间窗口
+    - viewName: device_logs_hourly_mat # 视图名
+      sourceTable: labdatahub_device_logs # 源表
+      timeColumn: create_time # 时间列
+      partitioningColumn: device_sn # 分组列
+      bucketInterval: 1 hour # 聚合时间窗口
       # 👇 新增：刷新策略配置
-      refreshStartOffset: 3 hours     # 刷新 3小时前 的数据
-      refreshEndOffset: 1 minute      # 刷新到 1分钟前（避免未入库数据）
-      refreshInterval: 10 minutes     # 每10分钟自动刷新一次
+      refreshStartOffset: 3 hours # 刷新 3小时前 的数据
+      refreshEndOffset: 1 minute # 刷新到 1分钟前（避免未入库数据）
+      refreshInterval: 10 minutes # 每10分钟自动刷新一次
 
     # 天级聚合视图
-    - viewName: device_logs_daily_mat            # 视图名
-      sourceTable: labdatahub_device_logs        # 源表
-      timeColumn: create_time                    # 时间列
-      partitioningColumn: device_sn              # 分组列
-      bucketInterval: 1 day                      # 聚合时间窗口         
+    - viewName: device_logs_daily_mat # 视图名
+      sourceTable: labdatahub_device_logs # 源表
+      timeColumn: create_time # 时间列
+      partitioningColumn: device_sn # 分组列
+      bucketInterval: 1 day # 聚合时间窗口
       # 👇 新增：刷新策略配置
       refreshStartOffset: 3 days
       refreshEndOffset: 1 hour
-      refreshInterval: 30 minutes               
+      refreshInterval: 30 minutes
