@@ -9,6 +9,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
+import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.sun.jna.NativeLong;
 import com.sun.jna.ptr.ShortByReference;
 
@@ -18,6 +19,12 @@ import lombok.extern.slf4j.Slf4j;
  * FANUC FOCAS2 连接管理器，维护多个组件的连接句柄（新增自动检查+定时重连）
  * FOCAS2 用 fwlib32 库建立连接，句柄（unsigned short）即连接，需保持有效；
  * 每 component 一把读锁，避免并发 fwlib 调用同一句柄冲突
+ *
+ * 由AI修改（根因修复）：FOCAS2 fwlib 连接"绑定创建线程"——cnc_allclibhndl3 在哪个线程建立连接，
+ * 就只有该线程能读（其它线程读同一句柄返回 EW_BUSY -8，实测验证：addConnection 线程读=0，
+ * 消费线程/健康检查线程读=-8）。故连接必须由消费线程在其本线程建立（establishConnection），
+ * addConnection 只保存配置并启动消费线程，同步等待建连结果。健康检查线程不能读/建共享句柄，
+ * 改为建立临时探测连接自查（建连→statinfo→释放都在健康检查线程），重连统一由消费线程自愈。
  */
 @Slf4j
 public class FanucFocasConnectionManager {
@@ -39,18 +46,22 @@ public class FanucFocasConnectionManager {
 
     private static final int HEALTH_CHECK_INTERVAL = 10;
     // 静态初始化：启动全局连接健康检查（每10秒检查一次）
+    // 首次延迟 HEALTH_CHECK_INTERVAL 秒再执行：若延迟0立即执行，会与启动期的 addConnection 并发建连，
+    // 产生"健康检查建连 + addConnection建连"的双连接竞态，其中一个句柄未被释放而泄漏
     static {
         healthCheckScheduler.scheduleAtFixedRate(
                 FanucFocasConnectionManager::checkAllConnections,
-                0,
+                HEALTH_CHECK_INTERVAL,
                 HEALTH_CHECK_INTERVAL,
                 TimeUnit.SECONDS
         );
-        log.info("FANUC FOCAS2 连接健康检查任务已启动，检查间隔={}秒", HEALTH_CHECK_INTERVAL);
+        log.info("FANUC FOCAS2 连接健康检查任务已启动，检查间隔={}秒（首次延迟{}秒，避免与启动期建连竞态）", HEALTH_CHECK_INTERVAL, HEALTH_CHECK_INTERVAL);
     }
 
     /**
      * 创建连接（FOCAS2 无握手，cnc_allclibhndl3 返回句柄即建连成功）
+     * 由AI修改：fwlib 连接绑定创建线程，连接必须由消费线程在其本线程建立（establishConnection），
+     * 本方法只保存配置并启动消费线程，然后同步等待消费线程建连完成，保持"开启成功/失败"的返回语义。
      * @param componentId 组件唯一标识
      * @param config 连接配置
      * @return 首次连接是否成功
@@ -61,40 +72,85 @@ public class FanucFocasConnectionManager {
         }
         try {
             configMap.put(componentId, config);
-            // 先关闭旧连接（避免资源泄漏）
-            closeHandle(componentId);
-            // 加载 fwlib32 库并建立连接
-            Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
-            ShortByReference handleRef = new ShortByReference();
-            short ret = lib.cnc_allclibhndl3(config.getIpAddr(), config.getPort().shortValue(),
-                    new NativeLong(config.getTimeout() == null ? 3000 : config.getTimeout()), handleRef);
-            if (ret != Fwlib32.EW_OK) {
-                System.err.printf("[FOCAS2连接] componentId=%s 建连失败（返回码=%d），请确认机床 FOCAS2 选项已开启（端口8193）%n",
-                        componentId, ret);
-                configMap.remove(componentId);
-                return false;
+            // 已有消费线程且句柄有效（该句柄由消费线程建立，绑定其线程）：复用现有连接，仅更新配置
+            if (FanucFocasLoopConsumer.isConsuming(componentId) && handleMap.get(componentId) != null) {
+                System.out.printf("[FOCAS2连接] componentId=%s 已连接且消费线程运行中，复用现有连接（仅更新配置）%n", componentId);
+                return true;
             }
-            // 存储句柄与读锁
-            handleMap.put(componentId, handleRef.getValue());
-            readLockMap.put(componentId, new ReentrantLock());
-            System.out.printf("[FOCAS2连接] componentId=%s 首次连接成功（%s:%d, 句柄=%d）%n",
-                    componentId, config.getIpAddr(), config.getPort(), handleRef.getValue());
+            // 否则：关闭旧连接，启动消费线程（线程内部先 establishConnection 建连）
+            closeHandle(componentId);
+            try {
+                FanucFocasLoopConsumer.startConsume(componentId, SpringUtils.getBean(FanucFocasMessageConsumeService.class));
+            } catch (IllegalStateException e) {
+                // 已存在消费线程（但句柄缺失）：其循环顶部检测到句柄缺失会自行在本线程重建连接
+                System.out.printf("[FOCAS2连接] componentId=%s 已存在消费线程，跳过重复启动，等待其重建连接%n", componentId);
+            }
+            // 同步等待消费线程建连完成（最多 8 秒，覆盖 cnc_allclibhndl3 的 3 秒超时）
+            for (int i = 0; i < 80; i++) {
+                if (handleMap.get(componentId) != null) {
+                    return true;
+                }
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            System.err.printf("[FOCAS2连接] componentId=%s 等待消费线程建连超时（8秒），连接可能失败%n", componentId);
+            return handleMap.get(componentId) != null;
         } catch (Exception e) {
             System.err.printf("[FOCAS2连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
             // 连接失败时释放已建立句柄并移除无效配置，避免空转/泄漏
             closeHandle(componentId);
             configMap.remove(componentId);
             readLockMap.remove(componentId);
+            // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
         }
-        // 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
-        //    应复用已有消费线程，而不是回滚刚建立的有效连接）
-        try {
-            FanucFocasLoopConsumer.startConsume(componentId, SpringUtils.getBean(FanucFocasMessageConsumeService.class));
-        } catch (IllegalStateException e) {
-            System.out.printf("[FOCAS2连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);
+    }
+
+    /**
+     * 由AI修改：在调用线程上建立 FOCAS2 连接并存入句柄。
+     * fwlib 连接绑定创建线程，本方法必须由消费线程在其本线程调用（循环顶部、重连自愈场景）。
+     * 已有旧句柄时先关闭（旧句柄也是本线程建立的，关闭安全）。
+     * @param componentId 组件唯一标识
+     */
+    public static void establishConnection(String componentId) {
+        FanucFocasConfig config = configMap.get(componentId);
+        if (config == null) {
+            return;
         }
-        return true;
+        ReentrantLock lock = getReadLock(componentId);
+        lock.lock();
+        try {
+            // 已有句柄（重连/重开场景）：先关闭旧句柄，避免泄漏
+            closeHandle(componentId);
+            Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
+            ShortByReference handleRef = new ShortByReference();
+            short ret = lib.cnc_allclibhndl3(config.getIpAddr(), config.getPort().shortValue(),
+                    new NativeLong(toTimeoutSeconds(config.getTimeout())), handleRef);
+            if (ret != Fwlib32.EW_OK) {
+                System.err.printf("[FOCAS2连接] componentId=%s 建连失败（返回码=%d），请确认机床 FOCAS2 选项已开启（端口8193）%n",
+                        componentId, ret);
+                handleMap.remove(componentId);
+                // 建连失败视为组件离线，通知设备下线（节流，仅在在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(componentId);
+                return;
+            }
+            handleMap.put(componentId, handleRef.getValue());
+            System.out.printf("[FOCAS2连接] componentId=%s 连接成功（%s:%d, 句柄=%d, 线程=%s）%n",
+                    componentId, config.getIpAddr(), config.getPort(), handleRef.getValue(), Thread.currentThread().getName());
+            // 连接成功，清除离线节流标记
+            ComponentOnlineNotifier.markOnline(componentId);
+        } catch (Exception e) {
+            System.err.printf("[FOCAS2连接] componentId=%s 建连失败：%s%n", componentId, e.getMessage());
+            closeHandle(componentId);
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -148,8 +204,12 @@ public class FanucFocasConnectionManager {
     }
 
     /**
-     * 检查单个componentId的连接状态，失效则重连
-     * FOCAS2 无本地 socket 可查，用 cnc_statinfo 探测句柄有效性（EW_OK=存活，其它返回码=失效）
+     * 检查单个componentId的连接状态，失效则标记离线（由消费线程自愈重连）。
+     * 由AI修改：fwlib 连接绑定创建线程，健康检查线程不能读消费线程建立的共享句柄（跨线程读返回EW_BUSY -8），
+     * 也不能在健康检查线程重连（否则新句柄绑定健康检查线程，消费线程永远读不了）。
+     * 故本方法改为在本线程建立临时探测连接：建连→statinfo→释放（都在健康检查线程），
+     * 只用于判断机床可达性并刷新在线/离线状态；真正的重连统一由消费线程自愈
+     * （读失败触发 forceReconnect / 句柄缺失时 establishConnection，均在消费线程执行）。
      * @param componentId 组件唯一标识
      */
     private static void checkAndReconnect(String componentId) {
@@ -160,62 +220,37 @@ public class FanucFocasConnectionManager {
         ReentrantLock lock = getReadLock(componentId);
         lock.lock();
         try {
-            Short handle = handleMap.get(componentId);
-            if (handle == null) {
-                // 句柄缺失，直接重连
-                reconnect(componentId, config);
+            Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
+            ShortByReference probeHandleRef = new ShortByReference();
+            short ret = lib.cnc_allclibhndl3(config.getIpAddr(), config.getPort().shortValue(),
+                    new NativeLong(toTimeoutSeconds(config.getTimeout())), probeHandleRef);
+            if (ret != Fwlib32.EW_OK) {
+                // 探测建连失败：机床不可达，标记离线（消费线程会在下次读取时自愈重连）
+                System.out.printf("[FOCAS2重连] componentId=%s 探测建连失败（返回码=%d），机床可能不可达，标记离线（由消费线程自愈）%n",
+                        componentId, ret);
+                ComponentOnlineNotifier.markOfflineAndNotify(componentId);
                 return;
             }
-            Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
-            short ret = lib.cnc_statinfo(handle, new Fwlib32.ODBST());
-            if (ret != Fwlib32.EW_OK) {
-                System.out.printf("[FOCAS2重连] componentId=%s 连接失效（返回码=%d），开始重连（%s:%d）%n",
-                        componentId, ret, config.getIpAddr(), config.getPort());
-                // 执行重连逻辑（先关旧句柄再建新）
-                reconnect(componentId, config);
+            // 探测连接建立成功：读一次状态确认机床可用，随后立即释放（都在本线程，符合线程绑定）
+            short sret = lib.cnc_statinfo(probeHandleRef.getValue(), new Fwlib32.ODBST());
+            lib.cnc_freelibhndl(probeHandleRef.getValue());
+            if (sret == Fwlib32.EW_OK || sret == Fwlib32.EW_BUSY) {
+                // 机床可达（EW_BUSY 表示机床忙但连接有效，不视为故障）
+                ComponentOnlineNotifier.markOnline(componentId);
+            } else {
+                System.out.printf("[FOCAS2重连] componentId=%s 探测 statinfo 异常（返回码=%d），机床可能不可达，标记离线（由消费线程自愈）%n",
+                        componentId, sret);
+                ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             }
         } catch (Exception e) {
             System.err.printf("[FOCAS2重连] componentId=%s 健康检查异常：%s%n", componentId, e.getMessage());
-            // 健康检查异常（如库未加载）时，尝试清理死句柄，避免残留
-            handleMap.remove(componentId);
         } finally {
             lock.unlock();
         }
     }
 
     /**
-     * 执行重连逻辑
-     * @param componentId 组件唯一标识
-     * @param config 连接配置
-     * @return 重连是否成功
-     */
-    private static boolean reconnect(String componentId, FanucFocasConfig config) {
-        // 先关闭旧句柄（FOCAS2 同一连接对象句柄会互相占用，旧句柄必须先 close）
-        closeHandle(componentId);
-        try {
-            Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
-            ShortByReference handleRef = new ShortByReference();
-            short ret = lib.cnc_allclibhndl3(config.getIpAddr(), config.getPort().shortValue(),
-                    new NativeLong(config.getTimeout() == null ? 3000 : config.getTimeout()), handleRef);
-            if (ret != Fwlib32.EW_OK) {
-                System.err.printf("[FOCAS2重连] componentId=%s 重连失败（返回码=%d）%n", componentId, ret);
-                handleMap.remove(componentId);
-                return false;
-            }
-            handleMap.put(componentId, handleRef.getValue());
-            System.out.printf("[FOCAS2重连] componentId=%s 重连成功（%s:%d, 句柄=%d）%n",
-                    componentId, config.getIpAddr(), config.getPort(), handleRef.getValue());
-            return true;
-        } catch (Exception e) {
-            System.err.printf("[FOCAS2重连] componentId=%s 重连失败：%s%n", componentId, e.getMessage());
-            // 重连失败时移除无效句柄（避免下次检查重复处理）
-            handleMap.remove(componentId);
-            return false;
-        }
-    }
-
-    /**
-     * 主动强制重连（读取失败时由读取器触发）：关闭死句柄并建立新句柄
+     * 主动强制重连（读取失败时由读取器触发，在消费线程执行）：关闭死句柄并建立新句柄
      * @param componentId 组件唯一标识
      */
     public static void forceReconnect(String componentId) {
@@ -228,7 +263,7 @@ public class FanucFocasConnectionManager {
         ReentrantLock lock = getReadLock(componentId);
         lock.lock();
         try {
-            reconnect(componentId, config);
+            establishConnection(componentId);
         } finally {
             lock.unlock();
         }
@@ -251,11 +286,24 @@ public class FanucFocasConnectionManager {
         if (handle != null) {
             try {
                 Fwlib32 lib = Fwlib32Loader.get();
-                lib.cnc_close(handle);
+                // FOCAS2 断开连接用 cnc_freelibhndl（fwlib 无 cnc_close 函数）
+                lib.cnc_freelibhndl(handle);
             } catch (Exception e) {
                 // 句柄关闭失败不影响后续
                 System.err.printf("[FOCAS2连接] componentId=%s 句柄关闭失败：%s%n", componentId, e.getMessage());
             }
         }
+    }
+
+    /**
+     * 由AI修改：FOCAS2 cnc_allclibhndl3 的 timeout 参数单位为秒（官方 Fwlib64.h 注释），
+     * 而前端 otherConfig 的 timeout 按毫秒填写（默认3000），需换算成秒（最小1秒）。
+     * 此前直接传 3000 会被 fwlib 当作 3000 秒，机床不响应时建连挂起约50分钟，导致开启接口超时。
+     */
+    private static int toTimeoutSeconds(Integer timeoutMs) {
+        if (timeoutMs == null || timeoutMs <= 0) {
+            return 3;
+        }
+        return Math.max(1, timeoutMs / 1000);
     }
 }

@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.db;
 
 import java.sql.Connection;
@@ -11,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 import javax.sql.DataSource;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
+import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 
@@ -70,6 +72,8 @@ public class DatabaseConnectionManager {
             HikariDataSource dataSource = createDataSource(config);
             connections.put(componentId, dataSource);
             log.info("[DB] 数据源注册成功: {} -> {}", componentId, config.getJdbcUrl());
+            // 连接成功，清除离线节流标记（允许后续断连再次通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
             // 启动消费线程
             DatabaseLoopConsumer.startConsume(componentId, SpringUtils.getBean(DatabaseMessageConsumeService.class));
             return true;
@@ -77,6 +81,8 @@ public class DatabaseConnectionManager {
             log.error("[DB] 数据源注册失败: {}", componentId, e);
             closeConnection(componentId);
             configMap.remove(componentId);
+            // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
         }
     }
@@ -153,6 +159,9 @@ public class DatabaseConnectionManager {
         if (!isValid) {
             log.warn("[DB重连] 数据源 {} 连接失效，启动重连流程", componentId);
             reconnectWithRetry(componentId, config);
+        } else {
+            // 连接有效，清除离线节流标记（连接已恢复，允许再次断连时通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
         }
     }
 
@@ -172,6 +181,8 @@ public class DatabaseConnectionManager {
             log.info("[DB重连] 数据源 {} 第{}次尝试重连", componentId, attempt);
             if (doReconnect(componentId, config)) {
                 log.info("[DB重连] 数据源 {} 重连成功", componentId);
+                // 重连成功，清除离线节流标记
+                ComponentOnlineNotifier.markOnline(componentId);
                 return;
             }
             if (attempt < MAX_RECONNECT_ATTEMPTS) {
@@ -188,6 +199,8 @@ public class DatabaseConnectionManager {
         }
         log.error("[DB重连] 数据源 {} 重连失败，已达到最大重试次数 {}", componentId, MAX_RECONNECT_ATTEMPTS);
         closeConnection(componentId);
+        // 重连失败视为组件离线，通知设备下线（节流，仅在在线→离线转变时发一次）
+        ComponentOnlineNotifier.markOfflineAndNotify(componentId);
     }
 
     private static boolean doReconnect(String componentId, DatabaseConfig config) {

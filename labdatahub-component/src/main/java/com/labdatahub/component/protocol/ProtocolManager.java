@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.component.protocol;
 
 import com.alibaba.fastjson2.JSONArray;
@@ -45,7 +46,12 @@ public class ProtocolManager {
         File file = new File(path);
         URL url = file.toURI().toURL();
         URL[] urls = new URL[]{url};
-        URLClassLoader classLoader = new URLClassLoader(urls, Thread.currentThread().getContextClassLoader());
+        // 由AI修改：URLClassLoader 的 parent 改用 ProtocolManager 自身的加载器，而非线程上下文加载器。
+        // devtools（RestartClassLoader）与 Tomcat 线程池下，线程上下文加载器可能与 ProtocolManager 的加载器不同，
+        // 导致 fastjson2.JSONObject 被两个加载器各加载一份，Class.getMethod 按 class identity 比较失败，
+        // 上传协议时抛 NoSuchMethodException: ...decode(com.alibaba.fastjson2.JSONObject)。改为自身加载器后，
+        // 协议 jar 内的依赖解析（fastjson2 等）与后端一致，getMethod/invoke 全链路类一致。
+        URLClassLoader classLoader = new URLClassLoader(urls, ProtocolManager.class.getClassLoader());
         Class<?> interfaceClass = classLoader.loadClass(mainClass);
         List<Class<?>> implementations = findImplementations(file, interfaceClass, classLoader);
         RedisTemplate<String, Object> redisTemplate = SpringUtils.getBean("redisTemplate");
@@ -65,7 +71,14 @@ public class ProtocolManager {
             Object instance = implementationClass.getDeclaredConstructor().newInstance();
             Method decodeMethod = null;
             Method encodeMethod = null;
-            decodeMethod = implementationClass.getMethod("decode",JSONObject.class);
+            try {
+                decodeMethod = implementationClass.getMethod("decode", JSONObject.class);
+            } catch (NoSuchMethodException e) {
+                // 由AI修改：改为自身加载器后协议 jar 与后端共用同一份 fastjson2，正常应直接匹配；
+                // 仍失败则抛明确异常，便于排查协议包依赖版本不兼容
+                throw new RuntimeException("反射获取 decode 方法失败，implementationClass=" + implementationClass
+                        + "，请检查协议包内依赖（fastjson2 等）是否与后端版本冲突", e);
+            }
             encodeMethod = implementationClass.getMethod("encode",String.class,String.class,Map.class,String.class,String.class,Map.class);
 //            // 反射调用方法
 //            switch (protocolType){

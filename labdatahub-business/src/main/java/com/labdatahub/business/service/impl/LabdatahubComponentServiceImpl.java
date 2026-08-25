@@ -17,6 +17,7 @@ import com.labdatahub.business.domain.LabdatahubComponent;
 import com.labdatahub.business.domain.LabdatahubProtocol;
 import com.labdatahub.business.mapper.LabdatahubComponentMapper;
 import com.labdatahub.business.mapper.LabdatahubProtocolMapper;
+import com.labdatahub.business.scheduled.TimerTask;
 import com.labdatahub.business.service.ILabdatahubComponentService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.common.exception.CommonWarnException;
@@ -30,6 +31,7 @@ import com.labdatahub.component.fanuc_focas.FanucFocasConfig;
 import com.labdatahub.component.fanuc_focas.FanucFocasConnectionManager;
 import com.labdatahub.component.db.DatabaseConfig;
 import com.labdatahub.component.db.DatabaseConnectionManager;
+import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.labdatahub.component.fins_tcp.FinsConnectionManager;
 import com.labdatahub.component.fins_tcp.FinsTcpConfig;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiConnectionManager;
@@ -67,6 +69,12 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
     private LabdatahubComponentMapper labdatahubComponentMapper;
     @Autowired
     private LabdatahubProtocolMapper labdatahubProtocolMapper;
+    /**
+     * 定时任务调度（组件开启后重建该协议下已开读开关设备的读取调度，
+     * 修复后配点位/后绑组件时调度缺失、设备不读取的问题）
+     */
+    @Autowired
+    private TimerTask timerTask;
     /**
      * 查询网络组件
      *
@@ -321,6 +329,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                     ModbusTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(ModbusTcpConfig.class);
                     boolean isOk = ModbusConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initModbusTcpRead();
                     if(!isOk){
                         throw new CommonWarnException("开启失败，请检查配置信息是否正确");
                     }
@@ -342,6 +352,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	S7TcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(S7TcpConfig.class);
                     boolean isOk = S7ConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initS71200TcpRead();
                     if(!isOk){
                         throw new CommonWarnException("开启失败，请检查配置信息是否正确");
                     }
@@ -363,6 +375,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	FinsTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(FinsTcpConfig.class);
                     boolean isOk = FinsConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initOmronFinsTcpRead();
                     if(!isOk){
                         throw new CommonWarnException("开启失败，请检查配置信息是否正确");
                     }
@@ -384,6 +398,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	BrotherTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(BrotherTcpConfig.class);
                     boolean isOk = BrotherTcpConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initBrotherTcpRead();
                     if(!isOk){
                         throw new CommonWarnException("开启失败，请检查配置信息是否正确");
                     }
@@ -405,6 +421,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	FanucFocasConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(FanucFocasConfig.class);
                     boolean isOk = FanucFocasConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initFanucTcpRead();
                     if(!isOk){
                         throw new CommonWarnException("开启失败，请检查配置信息是否正确");
                     }
@@ -426,6 +444,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	MitsubishiTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(MitsubishiTcpConfig.class);
                     boolean isOk = MitsubishiConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initMitsubishiTcpRead();
                     if(!isOk){
                         throw new CommonWarnException("开启失败，请检查配置信息是否正确");
                     }
@@ -447,6 +467,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	DatabaseConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(DatabaseConfig.class);
                     boolean isOk = DatabaseConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initDatabaseTcpRead();
                     if(!isOk){
                         throw new CommonWarnException("开启失败，请检查配置信息是否正确");
                     }
@@ -536,6 +558,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             //MODBUS连接
             case "MODBUS_TCP" : {
                 ModbusConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);
@@ -543,6 +567,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "S71200_TCP" : {
             	S7ConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);
@@ -550,6 +576,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "OMRONFINS_TCP" : {
             	FinsConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);
@@ -557,6 +585,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "BROTHER_TCP" : {
             	BrotherTcpConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);
@@ -564,6 +594,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "FANUC_TCP" : {
             	FanucFocasConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);
@@ -571,6 +603,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "MITSUBISHI_TCP" : {
             	MitsubishiConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);
@@ -578,6 +612,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "DATABASE_TCP" : {
             	DatabaseConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");
                 labdatahubComponentMapper.updateById(component);
                 CacheUtils.setComponentCache(component.getId(),component);

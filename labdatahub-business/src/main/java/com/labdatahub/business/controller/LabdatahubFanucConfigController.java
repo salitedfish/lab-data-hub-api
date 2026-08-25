@@ -91,7 +91,10 @@ public class LabdatahubFanucConfigController extends BaseController
             return AjaxResult.error(error);
         }
         labdatahubFanucConfig.setCreateTime(new Date());
-        return toAjax(labdatahubFanucConfigService.save(labdatahubFanucConfig));
+        AjaxResult result = toAjax(labdatahubFanucConfigService.save(labdatahubFanucConfig));
+        // 由AI修改：保存成功后立即同步调度器（新增点位无需重启服务或重开关读取即生效）
+        syncConfigToScheduler(labdatahubFanucConfig.getBelongSn(), labdatahubFanucConfig, false);
+        return result;
     }
 
     /**
@@ -105,7 +108,10 @@ public class LabdatahubFanucConfigController extends BaseController
         if (StringUtils.isNotEmpty(error)) {
             return AjaxResult.error(error);
         }
-        return toAjax(labdatahubFanucConfigService.updateById(labdatahubFanucConfig));
+        AjaxResult result = toAjax(labdatahubFanucConfigService.updateById(labdatahubFanucConfig));
+        // 由AI修改：修改成功后立即同步调度器（改地址/间隔无需重启服务即生效）
+        syncConfigToScheduler(labdatahubFanucConfig.getBelongSn(), labdatahubFanucConfig, false);
+        return result;
     }
 
     /**
@@ -127,7 +133,7 @@ public class LabdatahubFanucConfigController extends BaseController
             return "采集项类型不能为空";
         }
         String readType = config.getReadType().trim().toLowerCase();
-        // 参数1：除 mode 外均必填（mode 无参数概念，cnc_rdopmode 直接读取）
+        // 参数1：除 mode 外均必填（mode 由 cnc_statinfo 的 ODBST.aut 直接读取，无需参数）
         if (!"mode".equals(readType) && (config.getParam1() == null || config.getParam1() <= 0)) {
             return "参数1必须大于0";
         }
@@ -148,7 +154,50 @@ public class LabdatahubFanucConfigController extends BaseController
 	@DeleteMapping("/{ids}")
     public AjaxResult remove(@PathVariable String[] ids)
     {
-        return toAjax(labdatahubFanucConfigService.removeBatchByIds(Arrays.asList(ids)));
+        // 由AI修改：删除前先取出配置，删除后逐个同步移除调度器，避免停服前残留调度
+        List<LabdatahubFanucConfig> configList = labdatahubFanucConfigService.listByIds(Arrays.asList(ids));
+        AjaxResult result = toAjax(labdatahubFanucConfigService.removeBatchByIds(Arrays.asList(ids)));
+        for (LabdatahubFanucConfig config : configList) {
+            syncConfigToScheduler(config.getBelongSn(), config, true);
+        }
+        return result;
+    }
+
+    /**
+     * 由AI修改：配置保存/删除后，若设备读取开关已开启且已绑定网络组件，立即同步到调度器
+     * （新增/修改/删除点位无需重启服务或重开关读取即生效）。
+     * 设备级配置按 belongSn（=设备SN）查找设备；产品模板等非设备归属自动跳过（由 syncConfigToDevice 下发）。
+     * @param belongSn 归属（设备SN；非设备归属自动跳过）
+     * @param config 读取配置
+     * @param removeOnly true=仅从调度器移除（删除场景），false=移除后重建（新增/修改场景）
+     */
+    private void syncConfigToScheduler(String belongSn, LabdatahubFanucConfig config, boolean removeOnly)
+    {
+        if (StringUtils.isBlank(belongSn)) {
+            return;
+        }
+        LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
+                .eq(LabdatahubDevice::getDeviceSn, belongSn), false);
+        if (device == null || device.getComponentId() == null) {
+            return; // 非设备级配置或设备未绑定网络组件：不直接调度
+        }
+        if (!"1".equals(device.getModbusRead())) {
+            return; // 读取开关未开启：无需同步调度
+        }
+        FanucFocasMessageScheduler.removeReadConfig(device.getComponentId(), device.getDeviceSn(), config.getCode());
+        if (removeOnly) {
+            return;
+        }
+        FanucFocasReadConfig readConfig = new FanucFocasReadConfig();
+        readConfig.setDeviceSn(config.getBelongSn());
+        readConfig.setCode(config.getCode());
+        readConfig.setDelayTime(config.getDelayTime() == null ? 0 : config.getDelayTime().intValue());
+        readConfig.setIntervalTime(config.getIntervalTime() == null ? 1 : config.getIntervalTime().intValue());
+        readConfig.setReadType(config.getReadType());
+        readConfig.setParam1(config.getParam1());
+        readConfig.setParam2(config.getParam2());
+        ParseMetaUtils.applyTo(readConfig, device.getDeviceSn(), device.getProductSn(), config.getCode());
+        FanucFocasMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
     }
 
     /**

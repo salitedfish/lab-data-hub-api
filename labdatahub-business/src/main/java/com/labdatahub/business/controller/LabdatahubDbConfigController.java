@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.controller;
 
 import java.util.Arrays;
@@ -99,7 +100,10 @@ public class LabdatahubDbConfigController extends BaseController
     	labdatahubDbConfigService.update(updateEntity, updateWrapper);
     	
         labdatahubDbConfig.setCreateTime(new Date());
-        return toAjax(labdatahubDbConfigService.save(labdatahubDbConfig));
+        AjaxResult result = toAjax(labdatahubDbConfigService.save(labdatahubDbConfig));
+        // 由AI修改：保存成功后立即同步调度器（新增/修改间隔无需重启服务或重开关读取即生效）
+        syncConfigToScheduler(labdatahubDbConfig.getBelongSn(), labdatahubDbConfig, false);
+        return result;
     }
 
     /**
@@ -116,7 +120,10 @@ public class LabdatahubDbConfigController extends BaseController
     	LambdaUpdateWrapper<LabdatahubDbConfig> updateWrapper = new LambdaUpdateWrapper<>();
     	updateWrapper.eq(LabdatahubDbConfig::getBelongSn, labdatahubDbConfig.getBelongSn());
     	labdatahubDbConfigService.update(updateEntity, updateWrapper);
-        return toAjax(labdatahubDbConfigService.updateById(labdatahubDbConfig));
+        AjaxResult result = toAjax(labdatahubDbConfigService.updateById(labdatahubDbConfig));
+        // 由AI修改：修改成功后立即同步调度器（改间隔/延迟无需重启服务即生效）
+        syncConfigToScheduler(labdatahubDbConfig.getBelongSn(), labdatahubDbConfig, false);
+        return result;
     }
 
     /**
@@ -126,7 +133,58 @@ public class LabdatahubDbConfigController extends BaseController
 	@DeleteMapping("/{ids}")
     public AjaxResult remove(@PathVariable String[] ids)
     {
-        return toAjax(labdatahubDbConfigService.removeBatchByIds(Arrays.asList(ids)));
+        // 由AI修改：删除前先取出配置，删除后按 belongSn 剩余配置重建或移除调度器（DB协议每设备单调度）
+        List<LabdatahubDbConfig> configList = labdatahubDbConfigService.listByIds(Arrays.asList(ids));
+        AjaxResult result = toAjax(labdatahubDbConfigService.removeBatchByIds(Arrays.asList(ids)));
+        for (LabdatahubDbConfig config : configList) {
+            String belongSn = config.getBelongSn();
+            if (StringUtils.isBlank(belongSn)) {
+                continue;
+            }
+            List<LabdatahubDbConfig> remainList = labdatahubDbConfigService.list(new LambdaQueryWrapper<LabdatahubDbConfig>()
+                    .eq(LabdatahubDbConfig::getBelongSn, belongSn));
+            if (CollectionUtils.isEmpty(remainList)) {
+                // 该设备配置已清空：移除调度器
+                syncConfigToScheduler(belongSn, config, true);
+            } else {
+                // 仍有配置：按剩余第一条重建调度（DB协议每设备一个读取任务）
+                syncConfigToScheduler(belongSn, remainList.get(0), false);
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 由AI修改：配置保存/删除后，若设备读取开关已开启且已绑定网络组件，立即同步到调度器
+     * （新增/修改/删除点位无需重启服务或重开关读取即生效）。
+     * DB协议为每设备单调度（code 为 null），add/edit 已把同 belongSn 所有配置的间隔/延迟统一，
+     * 故按当前配置的间隔/延迟重建即可；产品模板等非设备归属自动跳过。
+     * @param belongSn 归属（设备SN；非设备归属自动跳过）
+     * @param config 读取配置
+     * @param removeOnly true=仅从调度器移除（删除场景），false=移除后重建（新增/修改场景）
+     */
+    private void syncConfigToScheduler(String belongSn, LabdatahubDbConfig config, boolean removeOnly)
+    {
+        if (StringUtils.isBlank(belongSn)) {
+            return;
+        }
+        LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
+                .eq(LabdatahubDevice::getDeviceSn, belongSn), false);
+        if (device == null || device.getComponentId() == null) {
+            return; // 非设备级配置或设备未绑定网络组件：不直接调度
+        }
+        if (!"1".equals(device.getModbusRead())) {
+            return; // 读取开关未开启：无需同步调度
+        }
+        DatabaseMessageScheduler.removeReadConfig(device.getComponentId(), device.getDeviceSn(), null);
+        if (removeOnly) {
+            return;
+        }
+        DatabaseReadConfig readConfig = new DatabaseReadConfig();
+        readConfig.setDeviceSn(device.getDeviceSn());
+        readConfig.setDelayTime(config.getDelayTime() == null ? 0 : config.getDelayTime().intValue());
+        readConfig.setIntervalTime(config.getIntervalTime() == null ? 1 : config.getIntervalTime().intValue());
+        DatabaseMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
     }
 
     /**

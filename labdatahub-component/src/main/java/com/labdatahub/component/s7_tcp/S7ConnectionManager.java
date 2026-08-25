@@ -5,6 +5,7 @@ package com.labdatahub.component.s7_tcp;
 import com.github.s7connector.api.S7Connector;
 import com.github.s7connector.api.factory.S7ConnectorFactory;
 import com.labdatahub.common.utils.spring.SpringUtils;
+import com.labdatahub.component.event.ComponentOnlineNotifier;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
@@ -65,6 +66,8 @@ public class S7ConnectionManager {
             connection = buildConnector(config);
             connections.put(componentId, connection);
             log.info("[S7连接] componentId={} 首次连接成功 ({}:{})", componentId, config.getIpAddr(), config.getPort());
+            // 连接成功，清除离线节流标记（允许后续断连再次通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
         } catch (Exception e) {
         	log.error("[S7连接] componentId={} 首次连接失败: {}", componentId, e.getMessage(), e);
             connections.remove(componentId);
@@ -77,6 +80,8 @@ public class S7ConnectionManager {
                     log.warn("[S7连接] componentId={} 关闭失败连接异常：{}", componentId, closeEx.getMessage());
                 }
             }
+            // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
         }
         // 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
@@ -150,6 +155,9 @@ public class S7ConnectionManager {
         if (!isValid) {
         	log.warn("[S7重连] componentId={} 连接失效，启动重连流程 ({}:{})", componentId, config.getIpAddr(), config.getPort());
         	reconnectWithRetry(componentId, config);
+        } else {
+            // 连接有效，清除离线节流标记（连接已恢复，允许再次断连时通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
         }
     }
 
@@ -187,6 +195,8 @@ public class S7ConnectionManager {
             log.info("[S7重连] componentId={} 第{}次尝试重连", componentId, attempt);
             if (doReconnect(componentId, config)) {
                 log.info("[S7重连] componentId={} 重连成功", componentId);
+                // 重连成功，清除离线节流标记
+                ComponentOnlineNotifier.markOnline(componentId);
                 return;
             }
             if (attempt < MAX_RECONNECT_ATTEMPTS) {
@@ -203,6 +213,8 @@ public class S7ConnectionManager {
         }
         log.error("[S7重连] componentId={} 重连失败，已达到最大重试次数 {}", componentId, MAX_RECONNECT_ATTEMPTS);
         connections.remove(componentId);
+        // 重连失败视为组件离线，通知设备下线（节流，仅在在线→离线转变时发一次）
+        ComponentOnlineNotifier.markOfflineAndNotify(componentId);
     }
     
     private static boolean doReconnect(String componentId, S7TcpConfig config) {
@@ -240,17 +252,4 @@ public class S7ConnectionManager {
             	.withTimeout(config.getTimeout()) // 连接/读写超时（毫秒），默认5000
             	.build();
     }
-    public static void main(String[] args) throws Exception {
-    	S7TcpConfig config = new S7TcpConfig();
-    	config.setIpAddr("192.168.0.6");
-    	config.setPort(102);
-    	S7Connector connector = buildConnector(config);
-//    	byte[] data = connector.read(DaveArea.DB, 1, 2, 0);
-//    	int value = new IntegerConverter().extract(Integer.class, data, 0, 0);
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBW","DB","int", 0, null,null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBX","DB","bool", 2, null,0,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","float", 260, null,null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBD","DB","int", 264, null,null,null));
-    	System.out.println(S7DataReader.readDB(connector, 1,"DBB","DB","string", 6, 8,null,null));
-	}
 }

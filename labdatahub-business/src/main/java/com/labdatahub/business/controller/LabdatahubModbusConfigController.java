@@ -159,7 +159,10 @@ public class LabdatahubModbusConfigController extends BaseController
             return checkConfig;
         }
         labdatahubModbusConfig.setCreateTime(new Date());
-        return toAjax(labdatahubModbusConfigService.save(labdatahubModbusConfig));
+        AjaxResult result = toAjax(labdatahubModbusConfigService.save(labdatahubModbusConfig));
+        // 由AI修改：保存成功后立即同步调度器（新增点位无需重启服务或重开关读取即生效）
+        syncConfigToScheduler(labdatahubModbusConfig.getBelongSn(), labdatahubModbusConfig, false);
+        return result;
     }
 
     /**
@@ -177,7 +180,10 @@ public class LabdatahubModbusConfigController extends BaseController
         if (checkConfig != null) {
             return checkConfig;
         }
-        return toAjax(labdatahubModbusConfigService.updateById(labdatahubModbusConfig));
+        AjaxResult result = toAjax(labdatahubModbusConfigService.updateById(labdatahubModbusConfig));
+        // 由AI修改：修改成功后立即同步调度器（改地址/间隔无需重启服务即生效）
+        syncConfigToScheduler(labdatahubModbusConfig.getBelongSn(), labdatahubModbusConfig, false);
+        return result;
     }
 
     /**
@@ -187,7 +193,50 @@ public class LabdatahubModbusConfigController extends BaseController
 	@DeleteMapping("/{ids}")
     public AjaxResult remove(@PathVariable String[] ids)
     {
-        return toAjax(labdatahubModbusConfigService.removeBatchByIds(Arrays.asList(ids)));
+        // 由AI修改：删除前先取出配置，删除后逐个同步移除调度器，避免停服前残留调度
+        List<LabdatahubModbusConfig> configList = labdatahubModbusConfigService.listByIds(Arrays.asList(ids));
+        AjaxResult result = toAjax(labdatahubModbusConfigService.removeBatchByIds(Arrays.asList(ids)));
+        for (LabdatahubModbusConfig config : configList) {
+            syncConfigToScheduler(config.getBelongSn(), config, true);
+        }
+        return result;
+    }
+
+    /**
+     * 由AI修改：配置保存/删除后，若设备读取开关已开启且已绑定网络组件，立即同步到调度器
+     * （新增/修改/删除点位无需重启服务或重开关读取即生效）。
+     * 设备级配置按 belongSn（=设备SN）查找设备；产品模板等非设备归属自动跳过（由 syncConfigToDevice 下发）。
+     * @param belongSn 归属（设备SN；非设备归属自动跳过）
+     * @param config 读取配置
+     * @param removeOnly true=仅从调度器移除（删除场景），false=移除后重建（新增/修改场景）
+     */
+    private void syncConfigToScheduler(String belongSn, LabdatahubModbusConfig config, boolean removeOnly)
+    {
+        if (StringUtils.isBlank(belongSn)) {
+            return;
+        }
+        LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
+                .eq(LabdatahubDevice::getDeviceSn, belongSn), false);
+        if (device == null || device.getComponentId() == null) {
+            return; // 非设备级配置或设备未绑定网络组件：不直接调度
+        }
+        if (!"1".equals(device.getModbusRead())) {
+            return; // 读取开关未开启：无需同步调度
+        }
+        ModbusMessageScheduler.removeReadConfig(device.getComponentId(), device.getDeviceSn(), config.getCode());
+        if (removeOnly) {
+            return;
+        }
+        ModbusReadConfig readConfig = new ModbusReadConfig();
+        readConfig.setDeviceSn(config.getBelongSn());
+        readConfig.setCode(config.getCode());
+        readConfig.setDelayTime(config.getDelayTime() == null ? 0 : config.getDelayTime().intValue());
+        readConfig.setIntervalTime(config.getIntervalTime() == null ? 1 : config.getIntervalTime().intValue());
+        readConfig.setSlaveId(device.getSlaveId());
+        readConfig.setRegisterRange(config.getRegisterRange());
+        readConfig.setFunctionCode(config.getFunctionCode());
+        ParseMetaUtils.applyTo(readConfig, device.getDeviceSn(), device.getProductSn(), config.getCode());
+        ModbusMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
     }
 
     /**

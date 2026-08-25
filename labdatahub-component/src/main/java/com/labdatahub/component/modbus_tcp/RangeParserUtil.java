@@ -105,40 +105,4 @@ public class RangeParserUtil {
         return result;
     }
 
-    // 测试示例
-    public static void main(String[] args) {
-        // 测试用例1：正常格式
-        String testStr1 = "1,2-5,6,7-9";
-        List<RangeItem> result1 = parse(testStr1);
-        System.out.println("解析结果1：");
-        result1.forEach(System.out::println);
-        // 输出：
-        // RangeItem{start=1, count=1}
-        // RangeItem{start=2, count=4}
-        // RangeItem{start=6, count=1}
-        // RangeItem{start=7, count=3}
-
-        // 测试用例2：单数字
-        String testStr2 = "8";
-        List<RangeItem> result2 = parse(testStr2);
-        System.out.println("\n解析结果2：");
-        result2.forEach(System.out::println);
-        // 输出：RangeItem{start=8, count=1}
-
-        // 测试用例3：非法格式（2-1）
-        try {
-            parse("2-1");
-        } catch (IllegalArgumentException e) {
-            System.out.println("\n解析异常3：" + e.getMessage());
-            // 输出：范围格式非法：结束值(1) < 开始值(2)，片段：2-1
-        }
-
-        // 测试用例4：非法格式（a-5）
-        try {
-            parse("a-5");
-        } catch (IllegalArgumentException e) {
-            System.out.println("\n解析异常4：" + e.getMessage());
-            // 输出：格式非法，不支持的片段：a-5
-        }
-    }
 }

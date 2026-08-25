@@ -141,12 +141,20 @@ public class Fwlib32Loader {
     }
 
     /**
-     * 当前操作系统下 fwlib32 库的可能文件名
+     * 当前操作系统下 fwlib 库的可能文件名
+     * 项目实际使用官方 FOCAS2 64 位库（Fwlib64.dll 可改名 fwlib32.dll 部署），
+     * 四种文件名都搜，JNA 接口（Fwlib32）的函数名与 Fwlib64.dll 导出名一致，可通用加载
      */
     private static List<String> libraryFileNames() {
         List<String> names = new ArrayList<>();
         if (isWindows()) {
-            // Windows：fwlib32.dll（大小写不敏感，列一种即可）
+            // 由AI修改：FOCAS2 以太网建连首选 Ethernet 专用库 fwlibe64.dll。
+            // 台丽 CNC（FANUC 0i-MF Plus）实测：fwlib32.dll（通用 Data Window Library x64）握手被机床拒
+            // （EW_SOCKET -15），fwlibe64.dll（Data Window Library for Ethernet）建连成功。
+            // fwlib30i64.dll 虽标注支持 0i-F，但其导出函数名与标准 fwlib 不同（无 cnc_allclibhndl3），JNA 加载必失败，故不再纳入候选。
+            names.add("fwlibe64.dll");
+            names.add("Fwlib64.dll");
+            names.add("fwlib64.dll");
             names.add("fwlib32.dll");
             names.add("Fwlib32.dll");
         } else if (isMac()) {

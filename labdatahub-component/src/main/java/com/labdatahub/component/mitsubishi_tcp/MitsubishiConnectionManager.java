@@ -11,6 +11,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
+import com.labdatahub.component.event.ComponentOnlineNotifier;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -75,6 +76,8 @@ public class MitsubishiConnectionManager {
             connections.put(componentId, socket);
             System.out.printf("[MITSUBISHI连接] componentId=%s 首次连接成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
+            // 连接成功，清除离线节流标记（允许后续断连再次通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
         } catch (Exception e) {
             System.err.printf("[MITSUBISHI连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
             // 连接失败时关闭刚创建的 socket，避免 socket 泄漏
@@ -88,6 +91,8 @@ public class MitsubishiConnectionManager {
             // 连接失败时移除无效配置/连接，避免空转
             connections.remove(componentId);
             configMap.remove(componentId);
+            // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
         }
         // 4. 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
@@ -180,6 +185,9 @@ public class MitsubishiConnectionManager {
                     componentId, config.getIpAddr(), config.getPort());
             // 执行重连逻辑
             reconnect(componentId, config);
+        } else {
+            // 连接有效，清除离线节流标记（连接已恢复，允许再次断连时通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
         }
     }
 
@@ -234,11 +242,15 @@ public class MitsubishiConnectionManager {
             connections.put(componentId, newSocket);
             System.out.printf("[MITSUBISHI重连] componentId=%s 重连成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
+            // 重连成功，清除离线节流标记
+            ComponentOnlineNotifier.markOnline(componentId);
             return true;
         } catch (Exception e) {
             System.err.printf("[MITSUBISHI重连] componentId=%s 重连失败：%s%n", componentId, e.getMessage());
             // 重连失败时移除无效连接（避免下次检查重复处理）
             connections.remove(componentId);
+            // 重连失败视为组件离线，通知设备下线（节流，仅在在线→离线转变时发一次）
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
         }
     }

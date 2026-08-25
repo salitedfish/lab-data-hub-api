@@ -16,11 +16,15 @@ public class FanucFocasLoopConsumer {
     private static final Map<String, ConsumeThread> CONSUME_THREAD_MAP = new ConcurrentHashMap<>();
     // 消费线程前缀（便于日志排查）
     private static final String CONSUME_THREAD_NAME_PREFIX = "fanuc-loop-consumer-";
+    // 由AI修改：句柄缺失（建连失败/连接被释放）时重建连接的退避间隔（毫秒），
+    // 避免机床不可达时消费线程高频 cnc_allclibhndl3 打爆机床
+    private static final long CONNECT_RETRY_INTERVAL_MS = 5000;
     // ========== 内部消费线程类（封装循环逻辑+停止标志） ==========
     private static class ConsumeThread extends Thread {
         private final String componentId; // 目标组件ID
         private final FanucFocasMessageConsumeHandler consumeHandler; // 消费回调
         private final AtomicBoolean isRunning = new AtomicBoolean(true); // 运行标志
+        private long lastConnectAttempt = 0; // 上次建连尝试时间戳（退避）
         public ConsumeThread(String componentId, FanucFocasMessageConsumeHandler consumeHandler) {
             super(CONSUME_THREAD_NAME_PREFIX + componentId);
             this.componentId = componentId;
@@ -31,6 +35,16 @@ public class FanucFocasLoopConsumer {
         public void run() {
             System.out.printf("启动componentId=%s的循环消费线程%n", componentId);
             while (isRunning.get()) {
+                // 由AI修改：FOCAS2 fwlib 连接"绑定创建线程"，连接必须在本线程（消费线程）建立。
+                // 句柄缺失（首次启动/连接被释放/建连失败）时在本线程重建连接，失败退避5秒再试，
+                // 成功与否由 establishConnection 内部的 markOnline/markOffline 刷新在线状态
+                if (FanucFocasConnectionManager.handleMap.get(componentId) == null) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastConnectAttempt >= CONNECT_RETRY_INTERVAL_MS) {
+                        lastConnectAttempt = now;
+                        FanucFocasConnectionManager.establishConnection(componentId);
+                    }
+                }
                 try {
                     // 阻塞获取指定componentId的消息（无消息时等待，不耗CPU）
                     FanucFocasMessage message = FanucFocasMessageScheduler.takeMessage(componentId);
@@ -41,6 +55,16 @@ public class FanucFocasLoopConsumer {
                     System.out.printf("componentId=%s的消费线程被中断，准备停止%n", componentId);
                     break;
                 } catch (Exception e) {
+                    if (e instanceof IllegalArgumentException) {
+                        // 读取调度尚未建立（组件刚开启/未配置点位）时静默等待调度就绪，避免空转刷屏
+                        try {
+                            Thread.sleep(1000);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                        continue;
+                    }
                     // 消费单条消息异常：打印日志，不中断整个消费循环
                     System.err.printf("componentId=%s消费消息失败：%s%n", componentId, e.getMessage());
                     e.printStackTrace();

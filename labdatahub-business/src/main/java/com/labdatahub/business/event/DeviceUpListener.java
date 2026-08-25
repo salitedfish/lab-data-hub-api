@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.event;
 
 import com.alibaba.fastjson2.JSONObject;
@@ -64,6 +65,8 @@ public class DeviceUpListener {
         eventBus.subscribe("device.up", this::dealDeviceUp);
         eventBus.subscribe("device.offline", this::directlyConnectedOffline);
         eventBus.subscribe("device.warn", this::warnEngine);
+        // 订阅主动轮询协议组件离线事件（FANUC/Brother/Modbus 等连接断开时由连接管理器发布）
+        eventBus.subscribe("component.offline", this::componentOffline);
     }
 
     public void dealDeviceUp(Object event) {
@@ -491,6 +494,31 @@ public class DeviceUpListener {
                     MessageUpEvent event1 = new MessageUpEvent("deviceStatusWarn", null, deviceSn, decodeMessage);
                     ruleWarn(event1);
                 });
+            }
+        });
+    }
+
+    /**
+     * 组件离线处理：主动轮询协议（FANUC/Brother/Modbus/S7/FINS/Mitsubishi/数据库）连接断开时，
+     * 由各协议 ConnectionManager 发布 component.offline 事件（带节流），这里把组件下设备批量置离线。
+     * 心跳设备（deviceType=2）走自身心跳超时机制，跳过；已离线设备不重复处理。
+     */
+    public void componentOffline(Object event) {
+        threadPoolTaskExecutor.execute(() -> {
+            if (event instanceof String) {
+                String componentId = (String) event;
+                // 组件下当前在线的设备（心跳设备走自身超时机制，跳过）
+                Set<String> deviceSns = CacheUtils.DEVICE_MAP.values().stream()
+                        .filter(d -> componentId.equals(d.getComponentId()))
+                        .filter(d -> !"2".equals(d.getDeviceType()))
+                        .filter(d -> CacheUtils.getDeviceStatusBySn(d.getDeviceSn()))
+                        .map(LabdatahubDevice::getDeviceSn)
+                        .collect(Collectors.toSet());
+                if (deviceSns.isEmpty()) {
+                    return;
+                }
+                // 复用批量离线逻辑：置 DB 离线 + 更新缓存 + 保存离线日志 + 状态告警
+                directlyConnectedOffline(deviceSns);
             }
         });
     }

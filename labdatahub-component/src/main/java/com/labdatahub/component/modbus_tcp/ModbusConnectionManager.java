@@ -2,8 +2,6 @@
 package com.labdatahub.component.modbus_tcp;
 
 import java.net.InetAddress;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -13,13 +11,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
+import com.labdatahub.component.event.ComponentOnlineNotifier;
 
 import lombok.extern.slf4j.Slf4j;
-import net.wimpi.modbus.io.ModbusTCPTransaction;
-import net.wimpi.modbus.msg.ReadMultipleRegistersRequest;
-import net.wimpi.modbus.msg.ReadMultipleRegistersResponse;
 import net.wimpi.modbus.net.TCPMasterConnection;
-import net.wimpi.modbus.procimg.Register;
 
 /**
  * 连接管理器，维护多个设备的连接（支持自动重连+健康检查）
@@ -115,6 +110,8 @@ public class ModbusConnectionManager {
             connections.put(componentId, connection);
             log.info("[Modbus 连接] componentId={} 首次连接成功（{}:{}）",
                     componentId, config.getIpAddr(), config.getPort());
+            // 连接成功，清除离线节流标记（允许后续断连再次通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
         } catch (Exception e) {
             log.error("[Modbus 连接] componentId={} 首次连接失败：{}", componentId, e.getMessage(), e);
             connections.remove(componentId);
@@ -128,6 +125,8 @@ public class ModbusConnectionManager {
                     log.warn("[Modbus 连接] componentId={} 关闭失败连接异常：{}", componentId, closeEx.getMessage());
                 }
             }
+            // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
         }
         // 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
@@ -230,6 +229,9 @@ public class ModbusConnectionManager {
                     config.getIpAddr(), config.getPort());
             
             reconnectScheduler.submit(() -> reconnect(componentId, config, failCount));
+        } else {
+            // 连接有效，清除离线节流标记（连接已恢复，允许再次断连时通知离线）
+            ComponentOnlineNotifier.markOnline(componentId);
         }
     }
 
@@ -251,19 +253,6 @@ public class ModbusConnectionManager {
         else {
         	return true;
         }
-//        // 发送探测请求验证连接真正可用
-//        try {
-//            ReadMultipleRegistersRequest req = new ReadMultipleRegistersRequest(0, 1);
-//            req.setUnitID(1); // 使用一个常见的 slaveId，或者从配置中获取
-//            ModbusTCPTransaction tx = new ModbusTCPTransaction(connection);
-//            tx.setRequest(req);
-//            tx.execute();
-//            System.out.println(111111);
-//            return true;
-//        } catch (Exception e) {
-//            log.debug("连接探测失败，视为无效: {}", e.getMessage());
-//            return false;
-//        }
     }
 
     /**
@@ -289,21 +278,25 @@ public class ModbusConnectionManager {
 
             newConn.connect();
             connections.put(componentId, newConn);
-            
+
             failCount.set(0);
-            log.info("[Modbus 重连] componentId={} 重连成功（第{}次尝试，{}:{}）", 
+            log.info("[Modbus 重连] componentId={} 重连成功（第{}次尝试，{}:{}）",
                     componentId, retryCount, config.getIpAddr(), config.getPort());
+            // 重连成功，清除离线节流标记
+            ComponentOnlineNotifier.markOnline(componentId);
             return true;
-            
+
         } catch (Exception e) {
             int currentFailCount = failCount.get();
             long delayMs = calculateReconnectDelay(currentFailCount);
-            
-            log.error("[Modbus 重连] componentId={} 重连失败（第{}次），{}ms 后重试：{}", 
+
+            log.error("[Modbus 重连] componentId={} 重连失败（第{}次），{}ms 后重试：{}",
                     componentId, currentFailCount, delayMs, e.getMessage());
-            
+
             connections.remove(componentId);
-            
+            // 重连失败视为组件离线，通知设备下线（节流，仅在在线→离线转变时发一次）
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
+
             if (currentFailCount < MAX_RECONNECT_ATTEMPTS) {
                 reconnectScheduler.schedule(
                         () -> reconnect(componentId, config, failCount),
@@ -313,7 +306,7 @@ public class ModbusConnectionManager {
             } else {
                 log.error("[Modbus 重连] componentId={} 重连失败次数已达上限，停止重连", componentId);
             }
-            
+
             return false;
         }
     }
@@ -405,31 +398,4 @@ public class ModbusConnectionManager {
             return null;
         }
     }
-    
-    public static void main(String[] args) throws Exception {
-    	InetAddress address = InetAddress.getByName("10.6.1.184");
-        TCPMasterConnection newConn = new TCPMasterConnection(address);
-        newConn.setPort(502);
-        newConn.setTimeout(3000000);
-        newConn.connect();
-        
-        ReadMultipleRegistersRequest request = new ReadMultipleRegistersRequest();
-        request.setUnitID(1);
-        request.setReference(4040);
-        request.setWordCount(1);
-
-        // 创建并执行事务
-        ModbusTCPTransaction transaction = new ModbusTCPTransaction(newConn);
-        transaction.setRequest(request);
-        transaction.execute();
-
-        // 处理响应
-        ReadMultipleRegistersResponse response = (ReadMultipleRegistersResponse) transaction.getResponse();
-        Register[] registers = response.getRegisters();
-        List<Integer> result = new ArrayList<>();
-        for (Register reg : registers) {
-            result.add(reg.getValue());
-            System.out.println(reg.getValue());
-        }
-	}
 }

@@ -97,26 +97,4 @@ public class FinsRangeParserUtil {
         }
         return result;
     }
-    
-    // 测试示例
-    public static void main(String[] args) {
-        // 测试用例1：正常格式
-        String testStr1 = "D100,W20-30,CIO100-200";
-        List<RangeItem> result1 = parse(testStr1);
-        System.out.println("解析结果1：");
-        result1.forEach(item -> System.out.printf("Area:0x%X, Start:%d, Count:%d%n", item.getAreaCode(), item.getStart(), item.getCount()));
-        
-        // 测试用例2：单地址
-        String testStr2 = "D100";
-        List<RangeItem> result2 = parse(testStr2);
-        System.out.println("\n解析结果2：");
-        result2.forEach(item -> System.out.printf("Area:0x%X, Start:%d, Count:%d%n", item.getAreaCode(), item.getStart(), item.getCount()));
-        
-        // 测试用例3：非法格式
-        try {
-            parse("D2-1");
-        } catch (IllegalArgumentException e) {
-            System.out.println("\n解析异常3：" + e.getMessage());
-        }
-    }
 }
