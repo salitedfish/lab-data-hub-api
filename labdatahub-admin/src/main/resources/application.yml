@@ -138,4 +138,4 @@ xss:
   urlPatterns: /system/*,/monitor/*,/tool/*
 
 log:
-  path: D:/server/ruoyi/logs
+  path: ./logs

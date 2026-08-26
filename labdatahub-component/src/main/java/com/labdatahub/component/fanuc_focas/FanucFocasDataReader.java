@@ -172,7 +172,9 @@ public class FanucFocasDataReader {
                 if (ret != Fwlib32.EW_OK) {
                     return null;
                 }
-                return String.valueOf(data.data.longValue());
+                // 由AI修改：cnc_actf 官方单位 0.1mm/min（G94）/ 0.001mm/rev（G95），除以 10 换算成 mm/min / mm/rev。
+                // 此前返回原始值，实际进给显示放大 10 倍（真机待机 0 无法现场复核，运行时需核对面板）。
+                return String.valueOf(data.data.longValue() / 10.0);
             }
             case "mode": {
                 // 操作模式：cnc_statinfo → ODBST.aut（0i-D/F）
@@ -279,7 +281,12 @@ public class FanucFocasDataReader {
                 if (ret != Fwlib32.EW_OK) {
                     return null;
                 }
-                return String.valueOf(data.mcr_val.longValue());
+                // 由AI修改：宏变量值需按小数位换算（#3901 刀具号 dec_val=7，刀具 44 存为 440000000/10^7）。
+                // 此前直接返回原始 mcr_val，刀具号被放大 10^dec 倍（如 44 -> 440000000）。
+                if (data.dec_val <= 0) {
+                    return String.valueOf(data.mcr_val.longValue());
+                }
+                return String.valueOf(data.mcr_val.longValue() / Math.pow(10, data.dec_val));
             }
             case "macro": {
                 // 宏变量：param1=宏变量号（如 500、3901）；值 = mcr_val / 10^dec_val
