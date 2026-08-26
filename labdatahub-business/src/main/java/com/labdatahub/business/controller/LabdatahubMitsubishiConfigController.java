@@ -160,6 +160,18 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         if (check != null) {
             return check;
         }
+        // 由AI修改：修改前先取旧配置，标识(code)或归属(belongSn)变更时先移除旧调度，
+        // 避免旧 code 的调度以旧 key 残留在调度器，导致同一点位被新旧两套调度同时读取
+        if (labdatahubMitsubishiConfig.getId() != null) {
+            LabdatahubMitsubishiConfig oldConfig = labdatahubMitsubishiConfigService.getById(labdatahubMitsubishiConfig.getId());
+            if (oldConfig != null && StringUtils.isNotBlank(oldConfig.getBelongSn())) {
+                LabdatahubDevice oldDevice = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
+                        .eq(LabdatahubDevice::getDeviceSn, oldConfig.getBelongSn()), false);
+                if (oldDevice != null && oldDevice.getComponentId() != null) {
+                    MitsubishiMessageScheduler.removeReadConfig(oldDevice.getComponentId(), oldDevice.getDeviceSn(), oldConfig.getCode());
+                }
+            }
+        }
         AjaxResult result = toAjax(labdatahubMitsubishiConfigService.updateById(labdatahubMitsubishiConfig));
         // 由AI修改：修改成功后立即同步调度器（改地址/间隔无需重启服务即生效）
         syncConfigToScheduler(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig, false);

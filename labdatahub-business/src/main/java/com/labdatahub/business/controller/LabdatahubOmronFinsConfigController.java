@@ -147,6 +147,18 @@ public class LabdatahubOmronFinsConfigController extends BaseController
         if (check != null) {
             return check;
         }
+        // 由AI修改：修改前先取旧配置，标识(code)或归属(belongSn)变更时先移除旧调度，
+        // 避免旧 code 的调度以旧 key 残留在调度器，导致同一点位被新旧两套调度同时读取
+        if (labdatahubOmronFinsConfig.getId() != null) {
+            LabdatahubOmronFinsConfig oldConfig = labdatahubOmronFinsConfigService.getById(labdatahubOmronFinsConfig.getId());
+            if (oldConfig != null && StringUtils.isNotBlank(oldConfig.getBelongSn())) {
+                LabdatahubDevice oldDevice = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
+                        .eq(LabdatahubDevice::getDeviceSn, oldConfig.getBelongSn()), false);
+                if (oldDevice != null && oldDevice.getComponentId() != null) {
+                    FinsMessageScheduler.removeReadConfig(oldDevice.getComponentId(), oldDevice.getDeviceSn(), oldConfig.getCode());
+                }
+            }
+        }
         AjaxResult result = toAjax(labdatahubOmronFinsConfigService.updateById(labdatahubOmronFinsConfig));
         // 由AI修改：修改成功后立即同步调度器（改地址/间隔无需重启服务即生效）
         syncConfigToScheduler(labdatahubOmronFinsConfig.getBelongSn(), labdatahubOmronFinsConfig, false);
