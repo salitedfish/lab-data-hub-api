@@ -9,9 +9,14 @@ import java.util.concurrent.locks.ReentrantLock;
  * 数据读取器，负责按点位地址（readType.param1.param2）从 FANUC FOCAS2 设备读取单项数据
  * FOCAS2 通过 fwlib32 库按函数调用读取，一次读一个点；读失败自动重连重试一次
  * 所有读取函数均为官方 FOCAS2 函数族（cnc_rdaxisdata/cnc_acts/cnc_rdspload/cnc_actf/
- * cnc_statinfo/cnc_rdprgnum/cnc_rdalmmsg/cnc_rdmacro/cnc_rdtimer/pmc_rdpmcrng）：
+ * cnc_statinfo/cnc_rdprgnum/cnc_rdseqnum/cnc_exeprgname/cnc_rdalmmsg/cnc_rdmacro/cnc_rdtimer/
+ * cnc_rdcount/cnc_diagnoss/pmc_rdpmcrng）：
  *   - FOCAS2 无 cnc_rdspindle/cnc_rdact/cnc_rdtcode/pmc_rdpmc 等函数（旧代码误用）
- *   - 主轴倍率、顺序号无直接读取函数，返回 null（前端点表已标注）
+ *   - 主轴/进给/快速倍率按 FANUC 标准梯形图约定读 PMC G30/G12/G14（值即百分比，地址以机床梯形图为准）
+ *   - 加工数（产量）由AI修改：改用自研 FOCAS2 报文（FanucFocas2TcpClient）读系统参数
+ *     6711/6712/6713（fwlib cnc_rdcount 在 0i-MF Plus 实测返回错误码3、cnc_rdparam 返回错误码4，
+ *     读不到产量；自研报文长度字段置0即被接受，与树根同款协议）
+ *   - 主轴温度等机床特有数据用 cnc_diagnoss 读诊断号（号因机床而异，待真机确认）
  *   - 刀具号通过系统宏变量读取：#3901=当前刀具、#3902=下一把（程序指定）
  */
 public class FanucFocasDataReader {
@@ -24,7 +29,7 @@ public class FanucFocasDataReader {
      * 读取单个点位（带自动重连重试）
      * 连接被机床掐断或句柄失效时，自动清理死句柄、重连一次并重发，自愈后正常返回
      * @param componentId 组件ID，用于获取连接句柄
-     * @param readType 采集项类型：axis/spindle/feed/mode/status/prgnum/alarm/tcode/macro/timer/pmc
+     * @param readType 采集项类型：axis/spindle/feed/mode/status/prgnum/exeprgname/alarm/tcode/macro/timer/count/diag/override/pmc
      * @param param1 参数1（轴号/子项/宏变量号等）
      * @param param2 参数2（坐标类型/地址号等）
      * @return 原始值字符串；点位不支持或读取失败返回null
@@ -39,7 +44,7 @@ public class FanucFocasDataReader {
                 throw new IOException("FOCAS2连接已断开，请重新连接");
             }
             try {
-                return doReadPoint(handle, readType, param1, param2);
+                return doReadPoint(componentId, handle, readType, param1, param2);
             } catch (IOException e) {
                 // 连接级异常（socket错误/句柄失效）：重连一次后重发（ReentrantLock 可重入，forceReconnect 内部会再次加锁）
                 System.err.printf("[FOCAS2读取] componentId=%s 连接异常（%s），自动重连后重试%n", componentId, e.getMessage());
@@ -48,7 +53,7 @@ public class FanucFocasDataReader {
                 if (newHandle == null) {
                     throw e;
                 }
-                return doReadPoint(newHandle, readType, param1, param2);
+                return doReadPoint(componentId, newHandle, readType, param1, param2);
             }
         } finally {
             lock.unlock();
@@ -57,6 +62,7 @@ public class FanucFocasDataReader {
 
     /**
      * 单次读取点位（不含重试）
+     * @param componentId 组件ID（count 分支据此获取连接配置走自研 FOCAS2 报文读产量参数）
      * @param handle FOCAS2 连接句柄
      * @param readType 采集项类型
      * @param param1 参数1
@@ -64,7 +70,7 @@ public class FanucFocasDataReader {
      * @return 原始值字符串；点位不支持或读取失败返回null
      * @throws IOException socket级错误（可重试）
      */
-    private static String doReadPoint(Short handle, String readType, Integer param1, Integer param2) throws IOException {
+    private static String doReadPoint(String componentId, Short handle, String readType, Integer param1, Integer param2) throws IOException {
         if (handle == null || readType == null) {
             return null;
         }
@@ -129,9 +135,19 @@ public class FanucFocasDataReader {
                         }
                         return String.valueOf(data.data.longValue());
                     }
-                    case 2:
-                        // 主轴倍率：FOCAS2 无直接读取函数，需走 PMC 读取（G 区倍率地址），前端点表已标注
-                        return null;
+                    case 2: {
+                        // 主轴倍率：FOCAS2 无直接读取函数，按 FANUC 标准梯形图约定读 PMC G 区 G30 字节
+                        // （SOV0-SOV7，值即百分比，100=100%）；台丽 0i-MF Plus 真机实测 G30=100，地址以机床 PMC 梯形图为准
+                        Fwlib32.IODBPMC pmc = new Fwlib32.IODBPMC();
+                        short ret = lib.pmc_rdpmcrng(handle, (short) 0, (short) 0, (short) 30, (short) 30, (short) 9, pmc);
+                        if (ret == Fwlib32.EW_SOCKET) {
+                            throw new IOException("pmc_rdpmcrng socket错误(" + ret + ")");
+                        }
+                        if (ret != Fwlib32.EW_OK) {
+                            return null;
+                        }
+                        return String.valueOf(pmc.byteAt(0));
+                    }
                     case 3: {
                         // 主轴负载：cnc_rdspload，负载在 ODBSPN.data[0]
                         Fwlib32.ODBSPN data = new Fwlib32.ODBSPN();
@@ -224,12 +240,22 @@ public class FanucFocasDataReader {
                 }
             }
             case "prgnum": {
-                // 程序：param1=1 程序号；param1=2 顺序号（FOCAS2 无直接读取函数，返回null）
+                // 程序：param1=1 程序号（cnc_rdprgnum）；param1=2 顺序号（cnc_rdseqnum）
                 if (param1 == null) {
                     return null;
                 }
                 if (param1 == 2) {
-                    return null;
+                    // 由AI修改：当前执行段顺序号此前误以为无直接读取函数返回 null，
+                    // FOCAS2 官方有 cnc_rdseqnum，直接读取（值 = ODBSEQNUM.data）
+                    Fwlib32.ODBSEQNUM seq = new Fwlib32.ODBSEQNUM();
+                    short ret = lib.cnc_rdseqnum(handle, seq);
+                    if (ret == Fwlib32.EW_SOCKET) {
+                        throw new IOException("cnc_rdseqnum socket错误(" + ret + ")");
+                    }
+                    if (ret != Fwlib32.EW_OK) {
+                        return null;
+                    }
+                    return String.valueOf(seq.data.longValue());
                 }
                 Fwlib32.ODBPRO data = new Fwlib32.ODBPRO();
                 short ret = lib.cnc_rdprgnum(handle, data);
@@ -335,6 +361,73 @@ public class FanucFocasDataReader {
                     return null;
                 }
                 return String.valueOf(data.minute.longValue());
+            }
+            case "count": {
+                // 加工数/产量：param1=0 总加工数 1 当日产量(稼働程序加工数) 2 目标产量(特定加工数)
+                // 由AI修改：台丽 0i-MF Plus 实测 fwlib cnc_rdcount 返回错误码3、cnc_rdparam 返回错误码4，
+                // 读不到产量（树根平台能读是因为用自研 FOCAS2 报文客户端）。故本分支改为自研
+                // FOCAS2 报文（FanucFocas2TcpClient）直接读系统参数，与树根同款报文协议。
+                // 参数映射（树根 ReadMac* 语义）：0→6712(WorkPartAllCount 总产量) 1→6711(WorkPartCount 当日产量) 2→6713(RequiredPartCount 目标产量)
+                if (param1 == null || param1 < 0 || param1 > 2) {
+                    return null;
+                }
+                FanucFocasConfig config = FanucFocasConnectionManager.configMap.get(componentId);
+                if (config == null || config.getIpAddr() == null) {
+                    return null;
+                }
+                int paramNo = param1 == 0 ? 6712 : (param1 == 1 ? 6711 : 6713);
+                Long value = FanucFocas2TcpClient.readParam(config.getIpAddr(), config.getPort(), paramNo);
+                if (value == null) {
+                    return null;
+                }
+                return String.valueOf(value);
+            }
+            case "diag": {
+                // 诊断号：param1=诊断号（主轴温度等机床特有数据所在诊断号，号因机床而异，待真机确认）
+                // 由AI修改：新增，用官方 cnc_diagnoss 读诊断信息
+                if (param1 == null || param1 < 1) {
+                    return null;
+                }
+                Fwlib32.ODBDIAGNO data = new Fwlib32.ODBDIAGNO();
+                short ret = lib.cnc_diagnoss(handle, param1.shortValue(), data);
+                if (ret == Fwlib32.EW_SOCKET) {
+                    throw new IOException("cnc_diagnoss socket错误(" + ret + ")");
+                }
+                if (ret != Fwlib32.EW_OK) {
+                    return null;
+                }
+                return String.valueOf(data.data.longValue());
+            }
+            case "override": {
+                // 倍率：param1=1 进给倍率 2 快速倍率
+                // 由AI修改：FOCAS2 无直接读取函数，按 FANUC 标准梯形图约定读 PMC G 区
+                // G12=切削进给倍率(OV0-OV7) G14=早送/快速倍率(ROV1-ROV2)，值即百分比；地址以机床 PMC 梯形图为准
+                if (param1 == null || (param1 != 1 && param1 != 2)) {
+                    return null;
+                }
+                short gNo = param1 == 1 ? (short) 12 : (short) 14;
+                Fwlib32.IODBPMC pmc = new Fwlib32.IODBPMC();
+                short ret = lib.pmc_rdpmcrng(handle, (short) 0, (short) 0, gNo, gNo, (short) 9, pmc);
+                if (ret == Fwlib32.EW_SOCKET) {
+                    throw new IOException("pmc_rdpmcrng socket错误(" + ret + ")");
+                }
+                if (ret != Fwlib32.EW_OK) {
+                    return null;
+                }
+                return String.valueOf(pmc.byteAt(0));
+            }
+            case "exeprgname": {
+                // 主程序名：cnc_exeprgname（当前执行中的程序名，最长 32 字节；GBK 解码去末尾空字节）
+                // 由AI修改：新增，与树根 MainProgramName 对齐（我们此前只有程序号无程序名）
+                Fwlib32.ODBEXEPRGNAME data = new Fwlib32.ODBEXEPRGNAME();
+                short ret = lib.cnc_exeprgname(handle, data);
+                if (ret == Fwlib32.EW_SOCKET) {
+                    throw new IOException("cnc_exeprgname socket错误(" + ret + ")");
+                }
+                if (ret != Fwlib32.EW_OK) {
+                    return null;
+                }
+                return decodeCncString(data.name);
             }
             case "pmc": {
                 // PMC 信号：param1=1(F) 2(G) 3(X) 4(Y)，param2=字节地址号；读整字节，位需自行按位解析

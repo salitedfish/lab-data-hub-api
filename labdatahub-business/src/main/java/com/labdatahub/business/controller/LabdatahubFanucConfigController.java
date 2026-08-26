@@ -145,9 +145,13 @@ public class LabdatahubFanucConfigController extends BaseController
             return "采集项类型不能为空";
         }
         String readType = config.getReadType().trim().toLowerCase();
-        // 参数1：除 mode 外均必填（mode 由 cnc_statinfo 的 ODBST.aut 直接读取，无需参数）
-        if (!"mode".equals(readType) && (config.getParam1() == null || config.getParam1() <= 0)) {
-            return "参数1必须大于0";
+        // 参数1：mode/exeprgname 无需参数（mode 读 ODBST.aut、主程序名读 cnc_exeprgname）；
+        // count 的 param1 允许 0（0=总加工数 1=稼働程序加工数 2=特定加工数）；其余类型必须 >0
+        if (!"mode".equals(readType) && !"exeprgname".equals(readType)) {
+            Integer param1 = config.getParam1();
+            if (param1 == null || ("count".equals(readType) ? param1 < 0 : param1 <= 0)) {
+                return "count".equals(readType) ? "参数1必须大于等于0" : "参数1必须大于0";
+            }
         }
         // 参数2：axis=坐标类型(1机械 2绝对 3相对 4剩余)、pmc=PMC字节地址号，缺则无法定位数据
         if (("axis".equals(readType) || "pmc".equals(readType)) && config.getParam2() == null) {

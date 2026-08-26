@@ -26,7 +26,7 @@ COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."belong_sn" IS '归属sn';
 COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."belong_type" IS '归属类型 0-产品 1-设备';
 COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."code" IS '读取编码';
 COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."create_time" IS '创建时间';
-COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."read_type" IS '采集项类型（axis/spindle/feed/mode/status/prgnum/alarm/tcode/macro/timer/pmc）';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."read_type" IS '采集项类型（axis/spindle/feed/mode/status/prgnum/exeprgname/alarm/tcode/macro/timer/count/diag/override/pmc）';
 COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."param1" IS '参数1（轴号/子项/宏变量号等，各readType含义不同）';
 COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."param2" IS '参数2（坐标类型/地址号等，各readType含义不同）';
 COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."interval_time" IS '多少秒读取一次';

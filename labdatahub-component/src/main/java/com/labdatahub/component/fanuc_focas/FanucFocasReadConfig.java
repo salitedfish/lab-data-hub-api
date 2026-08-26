@@ -12,7 +12,7 @@ public class FanucFocasReadConfig {
     private String deviceSn;
     // 指令编码（物模型 identifier）
     private String code;
-    // 采集项类型：axis/spindle/feed/mode/status/prgnum/alarm/tcode/macro/timer/pmc
+    // 采集项类型：axis/spindle/feed/mode/status/prgnum/exeprgname/alarm/tcode/macro/timer/count/diag/override/pmc
     private String readType;
     // 参数1（轴号/子项/宏变量号等，各 readType 含义不同）
     private Integer param1;

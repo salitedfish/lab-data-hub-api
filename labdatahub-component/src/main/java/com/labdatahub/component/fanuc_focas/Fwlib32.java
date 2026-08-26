@@ -103,12 +103,49 @@ public interface Fwlib32 extends Library {
 
     // ==================== 程序 ====================
     /**
-     * 读取当前执行中的程序号（ODBPRO.data；顺序号 FOCAS2 无直接读取函数）
+     * 读取当前执行中的程序号（ODBPRO.data / mdata 主程序号）
      * @param flibhndl 句柄
      * @param programNo 返回的程序信息
      * @return 返回码
      */
     short cnc_rdprgnum(short flibhndl, ODBPRO programNo);
+
+    /**
+     * 读取当前执行段顺序号（ODBSEQNUM.data；此前误以为无此函数，实际 FOCAS2 官方支持）
+     * @param flibhndl 句柄
+     * @param seqNum 返回的顺序号
+     * @return 返回码
+     */
+    short cnc_rdseqnum(short flibhndl, ODBSEQNUM seqNum);
+
+    /**
+     * 读取当前执行中的程序名（ODBEXEPRGNAME.name，最长 32 字节）
+     * @param flibhndl 句柄
+     * @param exeprgname 返回的程序名
+     * @return 返回码
+     */
+    short cnc_exeprgname(short flibhndl, ODBEXEPRGNAME exeprgname);
+
+    // ==================== 加工数（产量） ====================
+    /**
+     * 读取加工数（ODBCOUNT.data/dec；比 cnc_rdparam 读系统参数更标准的官方函数）
+     * CntDataNo：0=总加工数（加工数1） 1=稼働程序加工数（加工数2） 2=特定加工数（加工数3）
+     * @param flibhndl 句柄
+     * @param cntDataNo 加工数类别（0/1/2）
+     * @param count 返回的加工数
+     * @return 返回码
+     */
+    short cnc_rdcount(short flibhndl, short cntDataNo, ODBCOUNT count);
+
+    // ==================== 诊断 ====================
+    /**
+     * 读取诊断信息（ODBDIAGNO.data；主轴温度等机床特有数据在诊断号中，号因机床而异）
+     * @param flibhndl 句柄
+     * @param number 诊断号
+     * @param diagno 返回的诊断值
+     * @return 返回码
+     */
+    short cnc_diagnoss(short flibhndl, short number, ODBDIAGNO diagno);
 
     // ==================== 报警 ====================
     /**
@@ -239,6 +276,56 @@ public interface Fwlib32 extends Library {
         @Override
         protected List<String> getFieldOrder() {
             return Arrays.asList("dummy", "data", "mdata");
+        }
+    }
+
+    /**
+     * 当前执行段顺序号（odbseqnum）：1 个 long
+     */
+    class ODBSEQNUM extends Structure {
+        public NativeLong data; // 顺序号（N 号）
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("data");
+        }
+    }
+
+    /**
+     * 执行中程序名（odbexeprgname）：char[33]（MAX_EXEPRGNAME_LEN=33）
+     */
+    class ODBEXEPRGNAME extends Structure {
+        public byte[] name = new byte[33]; // 执行中程序名（ASCII/编码随程序文件名）
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("name");
+        }
+    }
+
+    /**
+     * 加工数（odbcount）：long 加工数 + short 小数位数
+     * 值 = data / 10^dec
+     */
+    class ODBCOUNT extends Structure {
+        public NativeLong data; // 加工数
+        public short dec;       // 小数点以下位数
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("data", "dec");
+        }
+    }
+
+    /**
+     * 诊断信息（odbdiagno）：1 个 long
+     */
+    class ODBDIAGNO extends Structure {
+        public NativeLong data; // 诊断值
+
+        @Override
+        protected List<String> getFieldOrder() {
+            return Arrays.asList("data");
         }
     }
 

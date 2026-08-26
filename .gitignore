@@ -46,3 +46,6 @@ nbdist/
 !*/build/*.html
 !*/build/*.xml
 *.jar
+
+# Moquette MQTT 运行期数据（本机生成，勿提交）
+labdatahub-admin/data/

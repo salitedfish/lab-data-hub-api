@@ -46,7 +46,7 @@ private static final long serialVersionUID = 1L;
     @Excel(name = "同一网络组件读取属性延迟时间")
     private Long delayTime;
 
-    /** 采集项类型（axis/spindle/feed/mode/status/prgnum/alarm/tcode/macro/timer/pmc） */
+    /** 采集项类型（axis/spindle/feed/mode/status/prgnum/exeprgname/alarm/tcode/macro/timer/count/diag/override/pmc） */
     @Excel(name = "采集项类型")
     private String readType;
 
