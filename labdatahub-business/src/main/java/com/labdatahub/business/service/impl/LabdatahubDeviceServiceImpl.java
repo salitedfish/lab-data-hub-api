@@ -10,6 +10,7 @@ import com.labdatahub.business.domain.LabdatahubProperties;
 import com.labdatahub.business.service.*;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.business.utils.PropertyConverter;
+import com.labdatahub.business.utils.ProtocolPointCopyUtil;
 import com.labdatahub.common.core.domain.AjaxResult;
 import com.labdatahub.common.utils.SecurityUtils;
 import com.labdatahub.common.utils.StringUtils;
@@ -39,6 +40,22 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
     private ILabdatahubFunctionService labdatahubFunctionService;
     @Autowired
     private ILabdatahubWarnConfigService labdatahubWarnConfigService;
+    @Autowired
+    private ILabdatahubModbusConfigService labdatahubModbusConfigService;
+    @Autowired
+    private ILabdatahubFanucConfigService labdatahubFanucConfigService;
+    @Autowired
+    private ILabdatahubMitsubishiCncConfigService labdatahubMitsubishiCncConfigService;
+    @Autowired
+    private ILabdatahubMitsubishiConfigService labdatahubMitsubishiConfigService;
+    @Autowired
+    private ILabdatahubBrotherConfigService labdatahubBrotherConfigService;
+    @Autowired
+    private ILabdatahubOmronFinsConfigService labdatahubOmronFinsConfigService;
+    @Autowired
+    private ILabdatahubS71200ConfigService labdatahubS71200ConfigService;
+    @Autowired
+    private ProtocolPointCopyUtil protocolPointCopyUtil;
     /**
      * 查询设备
      *
@@ -179,6 +196,14 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
         labdatahubWarnConfigService.syncWarnConfigToDevice(labdatahubProduct.getProductSn(),labdatahubDevice.getDeviceSn());
         labdatahubProductService.syncDeviceCount(labdatahubProduct.getProductSn());
         syncProductToDevice(labdatahubDevice.getDeviceSn());
+        // 由AI修改：复制设备时连设备级点位一起复制（物模型设备自定义 + 各协议点位 + 设备级告警/功能），换产品即换组件（不改框架）
+        if (StringUtils.isNotEmpty(labdatahubDevice.getCopyFromId())) {
+            LabdatahubDevice sourceDevice = getById(labdatahubDevice.getCopyFromId());
+            if (sourceDevice != null) {
+                protocolPointCopyUtil.copyDevicePoints(sourceDevice.getDeviceSn(), labdatahubDevice.getDeviceSn());
+                cacheDeviceProperties(labdatahubDevice.getDeviceSn());
+            }
+        }
         CacheUtils.updateDeviceCache(labdatahubDevice.getDeviceSn());
         return AjaxResult.success();
     }
@@ -215,4 +240,5 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
         CacheUtils.updateDeviceCache(labdatahubDevice.getDeviceSn());
         return AjaxResult.success();
     }
+
 }

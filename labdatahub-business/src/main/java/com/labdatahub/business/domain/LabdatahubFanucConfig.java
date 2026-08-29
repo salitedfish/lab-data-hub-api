@@ -37,6 +37,9 @@ private static final long serialVersionUID = 1L;
     /** 读取编码 */
     @Excel(name = "读取编码")
     private String code;
+    /** 点位名称（物模型属性名用，null 用标识 code） */
+    @Excel(name = "点位名称")
+    private String name;
     /** 创建时间 */
     private Date createTime;
     /** 多少秒读取一次 */

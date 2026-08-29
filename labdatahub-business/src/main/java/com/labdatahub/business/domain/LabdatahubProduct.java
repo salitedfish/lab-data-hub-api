@@ -1,6 +1,7 @@
 package com.labdatahub.business.domain;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -129,4 +130,7 @@ public class LabdatahubProduct {
     private String groupCode;
     /**分组名称*/
     private String groupName;
+    /**复制来源产品id（复制产品时携带，复制产品级点位模板用，不落库）*/
+    @TableField(exist = false)
+    private String copyFromId;
 }

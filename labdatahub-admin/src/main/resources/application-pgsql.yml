@@ -8,8 +8,9 @@ spring:
       master:
         #                url: jdbc:postgresql://122.112.239.186:5432/sc_1.0.0
 #        url: jdbc:postgresql://172.22.2.167:5432/sc_1.0.0
-#        url: jdbc:postgresql://172.20.10.2:5432/sc_1.0.0
-        url: jdbc:postgresql://192.168.191.37:5432/sc_1.0.0
+        # url: jdbc:postgresql://172.20.10.2:5432/sc_1.0.0
+        url: jdbc:postgresql://127.0.0.1:5432/sc_1.0.0
+        # url: jdbc:postgresql://192.168.191.37:5432/sc_1.0.0
         username: sc_1.0.0
         password: sc_1.0.0
       # 从库数据源

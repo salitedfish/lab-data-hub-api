@@ -17,6 +17,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.labdatahub.business.domain.*;
 import com.labdatahub.business.service.*;
 import com.labdatahub.business.utils.CacheUtils;
+import com.labdatahub.business.utils.ProtocolPointCopyUtil;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
 import org.springframework.beans.BeanUtils;
@@ -54,6 +55,8 @@ public class LabdatahubProductController extends BaseController {
     private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     @Autowired
     private ILabdatahubDeviceLogsService labdatahubDeviceLogsService;
+    @Autowired
+    private ProtocolPointCopyUtil protocolPointCopyUtil;
 
 
     /**
@@ -108,6 +111,13 @@ public class LabdatahubProductController extends BaseController {
         }
         labdatahubProductService.save(labdatahubProduct);
         CacheUtils.PRODUCT_MAP.put(labdatahubProduct.getProductSn(),labdatahubProduct);
+        // 由AI修改：复制产品时把产品级点位模板一起复制（物模型 + 各协议点位 + 告警 + 功能），换组件即换产品（不改框架）
+        if (StringUtils.isNotEmpty(labdatahubProduct.getCopyFromId())) {
+            LabdatahubProduct sourceProduct = labdatahubProductService.getById(labdatahubProduct.getCopyFromId());
+            if (sourceProduct != null) {
+                protocolPointCopyUtil.copyProductPoints(sourceProduct.getProductSn(), labdatahubProduct.getProductSn());
+            }
+        }
         return AjaxResult.success();
     }
 

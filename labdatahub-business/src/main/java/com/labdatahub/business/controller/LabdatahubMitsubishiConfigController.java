@@ -26,6 +26,7 @@ import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.business.utils.ParseMetaUtils;
+import com.labdatahub.business.utils.ProtocolPointModelSync;
 import com.labdatahub.common.annotation.Log;
 import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
@@ -150,6 +151,8 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         AjaxResult result = toAjax(labdatahubMitsubishiConfigService.save(labdatahubMitsubishiConfig));
         // 由AI修改：保存成功后立即同步调度器（新增点位无需重启服务或重开关读取即生效）
         syncConfigToScheduler(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig, false);
+        // 由AI修改：自动生成对应物模型属性（identifier=code），无需再手动去物模型 tab 建同名属性
+        ProtocolPointModelSync.afterAdd(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig.getBelongType(), labdatahubMitsubishiConfig.getCode(), labdatahubMitsubishiConfig.getName());
         return result;
     }
 
@@ -166,9 +169,11 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         }
         // 由AI修改：修改前先取旧配置，标识(code)或归属(belongSn)变更时先移除旧调度，
         // 避免旧 code 的调度以旧 key 残留在调度器，导致同一点位被新旧两套调度同时读取
+        String oldCode = null;
         if (labdatahubMitsubishiConfig.getId() != null) {
             LabdatahubMitsubishiConfig oldConfig = labdatahubMitsubishiConfigService.getById(labdatahubMitsubishiConfig.getId());
             if (oldConfig != null && StringUtils.isNotBlank(oldConfig.getBelongSn())) {
+                oldCode = oldConfig.getCode();
                 LabdatahubDevice oldDevice = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                         .eq(LabdatahubDevice::getDeviceSn, oldConfig.getBelongSn()), false);
                 if (oldDevice != null && oldDevice.getComponentId() != null) {
@@ -179,6 +184,8 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         AjaxResult result = toAjax(labdatahubMitsubishiConfigService.updateById(labdatahubMitsubishiConfig));
         // 由AI修改：修改成功后立即同步调度器（改地址/间隔无需重启服务即生效）
         syncConfigToScheduler(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig, false);
+        // 由AI修改：点位标识(code)变更时同步修改对应物模型 identifier/name
+        ProtocolPointModelSync.afterEdit(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig.getBelongType(), oldCode, labdatahubMitsubishiConfig.getCode(), labdatahubMitsubishiConfig.getName());
         return result;
     }
 
@@ -194,6 +201,8 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         AjaxResult result = toAjax(labdatahubMitsubishiConfigService.removeBatchByIds(Arrays.asList(ids)));
         for (LabdatahubMitsubishiConfig config : configList) {
             syncConfigToScheduler(config.getBelongSn(), config, true);
+            // 由AI修改：删除点位同时删除自动生成的对应物模型属性（不误伤手动配置的同名属性）
+            ProtocolPointModelSync.afterRemove(config.getBelongSn(), config.getBelongType(), config.getCode());
         }
         return result;
     }
@@ -257,6 +266,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
                 config.setBelongType("1");
                 config.setCreateTime(new Date());
                 config.setCode(config.getCode());
+                config.setName(config.getName());
                 config.setDelayTime(config.getDelayTime());
                 config.setIntervalTime(config.getIntervalTime());
                 config.setAreaCode(config.getAreaCode());
