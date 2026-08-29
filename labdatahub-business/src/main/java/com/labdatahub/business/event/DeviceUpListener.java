@@ -14,6 +14,7 @@ import com.labdatahub.business.service.ILabdatahubDeviceLogsService;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubWarnRecordService;
 import com.labdatahub.business.utils.CacheUtils;
+import com.labdatahub.business.utils.MqttForwardThrottler;
 import com.labdatahub.business.warn.WarnRule;
 import com.labdatahub.business.warn.WarnRuleMatcher;
 import com.labdatahub.business.warn.link.WarnLinkUtils;
@@ -31,6 +32,7 @@ import com.labdatahub.component.utils.PropertyToJson;
 import lombok.extern.slf4j.Slf4j;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 
@@ -59,8 +61,14 @@ public class DeviceUpListener {
     @Autowired
     private ILabdatahubWarnRecordService labdatahubWarnRecordService;
 
+    /** MQTT 规则转发节流窗口（秒）：同一设备一个窗口内只向 MQTT 转发一次全量最新数据，application.yml 的 mqtt.forward.flush-interval-seconds 配置，默认 3 秒 */
+    @Value("${mqtt.forward.flush-interval-seconds:3}")
+    private int mqttForwardFlushIntervalSeconds;
+
     @PostConstruct
     public void subscribeToEvents() {
+        // 启动 MQTT 规则转发出口节流（同一设备一个窗口内只发一次全量数据）
+        MqttForwardThrottler.start(mqttForwardFlushIntervalSeconds);
         // 订阅所有设备消息
         eventBus.subscribe("device.up", this::dealDeviceUp);
         eventBus.subscribe("device.offline", this::directlyConnectedOffline);
@@ -124,13 +132,11 @@ public class DeviceUpListener {
         }
         List<String> mqttList = map.get(RuleEngineCache.TargetType.MQTT);
         if (mqttList != null && !mqttList.isEmpty()) {
-            // MQTT 规则转发：携带该设备全部点位最新数据（合并 MessageCache 累积缓存），而非仅当前点位
+            // MQTT 规则转发：出口节流——同一设备一个节流窗口内只发布一次该设备全量最新数据，
+            // 避免"每个点位每次采集就发一条消息"（100台×5点位/3秒=500条/3秒 → 节流后=100条/3秒）。
+            // 载荷仍是 buildFullDataPayload 的全量合并数据（含该设备全部点位最新值），只是条数被压成每设备每窗口一条。
             String mqttPayload = buildFullDataPayload(decodeMessage);
-            threadPoolTaskExecutor.execute(() -> {
-                mqttList.forEach(o -> {
-                    MqttBrokerUtils.publishMessage(o, mqttPayload);
-                });
-            });
+            MqttForwardThrottler.offer(decodeMessage.getDeviceSn(), mqttPayload, mqttList);
         }
     }
 

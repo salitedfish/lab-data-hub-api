@@ -139,3 +139,11 @@ xss:
 
 log:
   path: ./logs
+
+# MQTT 规则转发配置
+mqtt:
+  forward:
+    # 出口节流窗口（秒）：同一设备一个节流窗口内只向 MQTT 转发一次该设备全量最新数据
+    # 避免"每个点位每次采集就发一条消息"（100台×5点位/3秒=500条/3秒 → 节流后=100条/3秒）
+    # 只作用于规则转发 MQTT 出口；HTTP/RabbitMQ/Kafka/RocketMQ 等其它出口仍按原频率
+    flush-interval-seconds: 3
