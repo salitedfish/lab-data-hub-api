@@ -32,6 +32,7 @@ import com.labdatahub.business.domain.LabdatahubBrotherConfig;
 import com.labdatahub.business.domain.LabdatahubFanucConfig;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.domain.LabdatahubMitsubishiConfig;
+import com.labdatahub.business.domain.LabdatahubMitsubishiCncConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubProduct;
 import com.labdatahub.business.domain.LabdatahubProtocol;
@@ -61,6 +62,7 @@ import com.labdatahub.business.service.ILabdatahubFunctionService;
 import com.labdatahub.business.service.ILabdatahubLinkageWarnRecordService;
 import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
 import com.labdatahub.business.service.ILabdatahubFanucConfigService;
+import com.labdatahub.business.service.ILabdatahubMitsubishiCncConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
@@ -85,6 +87,8 @@ import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiMessageScheduler;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
+import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncMessageScheduler;
+import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncReadConfig;
 import com.labdatahub.component.message.DecodeMessage;
 import com.labdatahub.component.message.MessageCache;
 import com.labdatahub.component.modbus_tcp.ModbusMessageScheduler;
@@ -144,6 +148,8 @@ public class TimerTask {
     private ILabdatahubBrotherConfigService labdatahubBrotherConfigService;
     @Autowired
     private ILabdatahubFanucConfigService labdatahubFanucConfigService;
+    @Autowired
+    private ILabdatahubMitsubishiCncConfigService labdatahubMitsubishiCncConfigService;
     @Autowired
     private ILabdatahubDbConfigService labdatahubDbConfigService;
     /**
@@ -478,6 +484,7 @@ public class TimerTask {
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
+                    config.setProtocolMode(o.getProtocolMode());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
@@ -552,6 +559,41 @@ public class TimerTask {
                     config.setParam2(o.getParam2());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     FanucFocasMessageScheduler.addReadConfig(device.getComponentId(),config);
+                });
+            });
+        });
+    }
+
+    /**
+     * 初始化三菱CNC定时读取（仅拉起 netType=MITSUBISHI_CNC_TCP 组件的设备，避免对其它协议组件误调度）
+     */
+    @PostConstruct
+    public void initMitsubishiCncTcpRead(){
+        threadPoolTaskExecutor.execute(()->{
+            List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getModbusRead,"1"));
+            deviceList.forEach(device->{
+                // 只拉起 MITSUBISHI_CNC 网络组件下设备的轮询
+                if(StringUtils.isEmpty(device.getComponentId())){
+                    return;
+                }
+                LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
+                if(component == null || !"MITSUBISHI_CNC_TCP".equals(component.getNetType())){
+                    return;
+                }
+                List<LabdatahubMitsubishiCncConfig> list = labdatahubMitsubishiCncConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiCncConfig>()
+                        .eq(LabdatahubMitsubishiCncConfig::getBelongSn,device.getDeviceSn()));
+                list.forEach(o->{
+                    MitsubishiCncMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiCncReadConfig config = new MitsubishiCncReadConfig();
+                    config.setDeviceSn(o.getBelongSn());
+                    config.setCode(o.getCode());
+                    config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
+                    config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
+                    config.setReadType(o.getReadType());
+                    config.setAxisNo(o.getAxisNo());
+                    ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+                    MitsubishiCncMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             });
         });

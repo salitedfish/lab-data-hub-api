@@ -128,6 +128,10 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
             return AjaxResult.error("读取间隔 intervalTime 必须为正整数（单位：秒）");
         }
+        // 协议帧模式：为空默认 3E；非空仅允许 1E/3E
+        if (config.getProtocolMode() != null && !"1E".equals(config.getProtocolMode()) && !"3E".equals(config.getProtocolMode())) {
+            return AjaxResult.error("协议帧模式 protocolMode 只能是 1E(MC1E) / 3E(MC3E)");
+        }
         return null;
     }
 
@@ -227,6 +231,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         readConfig.setAreaCode(config.getAreaCode());
         readConfig.setStartAddress(config.getStartAddress());
         readConfig.setLength(config.getLength());
+        readConfig.setProtocolMode(config.getProtocolMode());
         ParseMetaUtils.applyTo(readConfig, device.getDeviceSn(), device.getProductSn(), config.getCode());
         MitsubishiMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
     }
@@ -270,6 +275,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
+                    config.setProtocolMode(o.getProtocolMode());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
@@ -345,6 +351,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
+                    config.setProtocolMode(o.getProtocolMode());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });

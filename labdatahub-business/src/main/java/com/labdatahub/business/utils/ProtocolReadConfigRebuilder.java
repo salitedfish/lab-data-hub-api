@@ -9,6 +9,7 @@ import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.domain.LabdatahubFanucConfig;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
 import com.labdatahub.business.domain.LabdatahubMitsubishiConfig;
+import com.labdatahub.business.domain.LabdatahubMitsubishiCncConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubS71200Config;
 import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
@@ -16,6 +17,7 @@ import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubFanucConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
+import com.labdatahub.business.service.ILabdatahubMitsubishiCncConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
 import com.labdatahub.common.utils.StringUtils;
@@ -25,6 +27,8 @@ import com.labdatahub.component.brother_tcp.BrotherTcpReadConfig;
 import com.labdatahub.component.fanuc_focas.FanucFocasMessageScheduler;
 import com.labdatahub.component.fanuc_focas.FanucFocasReadConfig;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
+import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncMessageScheduler;
+import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncReadConfig;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiMessageScheduler;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
@@ -90,6 +94,7 @@ public class ProtocolReadConfigRebuilder {
         rebuildBrother(device);
         rebuildFanuc(device);
         rebuildMitsubishi(device);
+        rebuildMitsubishiCnc(device);
     }
 
     /**
@@ -202,6 +207,7 @@ public class ProtocolReadConfigRebuilder {
             config.setAreaCode(o.getAreaCode());
             config.setStartAddress(o.getStartAddress());
             config.setLength(o.getLength());
+            config.setProtocolMode(o.getProtocolMode());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
             MitsubishiMessageScheduler.addReadConfig(componentId, config);
         }
@@ -260,6 +266,33 @@ public class ProtocolReadConfigRebuilder {
             config.setParam2(o.getParam2());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
             FanucFocasMessageScheduler.addReadConfig(componentId, config);
+        }
+    }
+
+    /**
+     * 重建三菱CNC TCP(MOCHA)读取配置（构建逻辑与 LabdatahubMitsubishiCncConfigController 保持一致）
+     */
+    private static void rebuildMitsubishiCnc(LabdatahubDevice device) {
+        String componentId = device.getComponentId();
+        String deviceSn = device.getDeviceSn();
+        List<LabdatahubMitsubishiCncConfig> list = SpringUtils.getBean(ILabdatahubMitsubishiCncConfigService.class).list(
+                new LambdaQueryWrapper<LabdatahubMitsubishiCncConfig>().eq(LabdatahubMitsubishiCncConfig::getBelongSn, deviceSn));
+        for (LabdatahubMitsubishiCncConfig o : list) {
+            if (o.getDelayTime() == null || o.getIntervalTime() == null) {
+                continue;
+            }
+            if (!MitsubishiCncMessageScheduler.isReadConfigRunning(componentId, deviceSn, o.getCode())) {
+                continue;
+            }
+            MitsubishiCncReadConfig config = new MitsubishiCncReadConfig();
+            config.setDeviceSn(o.getBelongSn());
+            config.setCode(o.getCode());
+            config.setDelayTime(o.getDelayTime().intValue());
+            config.setIntervalTime(o.getIntervalTime().intValue());
+            config.setReadType(o.getReadType());
+            config.setAxisNo(o.getAxisNo());
+            ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
+            MitsubishiCncMessageScheduler.addReadConfig(componentId, config);
         }
     }
 }

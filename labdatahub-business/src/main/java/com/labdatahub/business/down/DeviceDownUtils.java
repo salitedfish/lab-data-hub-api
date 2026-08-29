@@ -122,6 +122,10 @@ public class DeviceDownUtils {
                     isOk = mitsubishiTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
                     break;
                 }
+                case "MITSUBISHI_CNC_TCP":{
+                    isOk = mitsubishiTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                    break;
+                }
                 default:
             }
         }catch (Exception ignore){}
@@ -220,6 +224,10 @@ public class DeviceDownUtils {
                 }
                 case "MITSUBISHI_TCP": {
                     isOk = mitsubishiTcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
+                    break;
+                }
+                case "MITSUBISHI_CNC_TCP": {
+                    isOk = mitsubishiTcpDown(deviceSn, functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
                 default:

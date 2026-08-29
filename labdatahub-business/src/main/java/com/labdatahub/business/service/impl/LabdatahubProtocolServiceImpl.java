@@ -50,6 +50,7 @@ public class LabdatahubProtocolServiceImpl extends ServiceImpl<LabdatahubProtoco
         MAIN_CLASS_PATH.put("BROTHER_TCP","com.labdatahub.protocol.parent.BrotherTcpProtocol");
         MAIN_CLASS_PATH.put("FANUC_TCP","com.labdatahub.protocol.parent.FanucFocasProtocol");
         MAIN_CLASS_PATH.put("MITSUBISHI_TCP","com.labdatahub.protocol.parent.MitsubishiTcpProtocol");
+        MAIN_CLASS_PATH.put("MITSUBISHI_CNC_TCP","com.labdatahub.protocol.parent.MitsubishiCncTcpProtocol");
         MAIN_CLASS_PATH.put("DATABASE_TCP","com.labdatahub.protocol.parent.DataBaseTcpProtocol");
     }
     /**

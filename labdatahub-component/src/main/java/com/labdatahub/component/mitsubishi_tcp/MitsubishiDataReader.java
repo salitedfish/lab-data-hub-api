@@ -70,13 +70,14 @@ public class MitsubishiDataReader {
     /**
      * 读取三菱 MC 软元件数据
      * @param componentId 组件ID，用于获取连接
+     * @param protocolMode 协议帧模式：3E-QnA兼容3E帧（默认） 1E-MC1E标准二进制帧
      * @param areaCode 软元件代码（D/W/R/ZR/SD 字设备；M/L/B/X/Y/S/SM/F 位设备）
      * @param startAddr 起始地址（X/Y 为八进制写法，内部按八进制解析）
      * @param count 读取点数（字读上限960，位读上限2000）
      * @return 字设备返回各字值；位设备返回 0/1 列表
      * @throws Exception 通信异常
      */
-    public static List<Integer> readMemoryArea(String componentId, int areaCode, int startAddr, int count) throws Exception {
+    public static List<Integer> readMemoryArea(String componentId, String protocolMode, int areaCode, int startAddr, int count) throws Exception {
         // 1. 参数校验
         if (count <= 0) {
             throw new Exception("读取点数必须为正整数，当前：" + count);
@@ -111,37 +112,65 @@ public class MitsubishiDataReader {
         OutputStream out = socket.getOutputStream();
         InputStream in = socket.getInputStream();
 
-        // 3. 构建 MC QnA 兼容 3E 帧请求（7头 + 2长度 + 12请求数据 = 21 字节，帧内多字节字段均为小端）
+        // 3. 构建请求帧（MC1E 标准二进制帧 19B / MC3E QnA 兼容 3E 帧 21B，帧内多字节字段均为小端）
         //    对照 pymcprotocol 与 xingshuangs iot-communication：命令统一 0x0401，子命令区分字/位
-        byte[] request = new byte[21];
-        request[0] = (byte) 0xD0; // 副头部高字节（QnA 兼容 3E 二进制帧，响应副头部同为 D0 00）
-        request[1] = 0x00;        // 副头部低字节
-        request[2] = 0x00;        // 网络号
-        request[3] = (byte) 0xFF; // PC号（QnA）
-        request[4] = (byte) 0xFF; // 请求目标模块 I/O 号 0x03FF（低字节在前）
-        request[5] = 0x03;        // 请求目标模块 I/O 号（高字节）
-        request[6] = 0x00;        // 请求目标模块站号
-        // 请求数据长度：从监视定时器到末尾 = 2 + 10 = 12 字节（小端 0x0C 00）
-        request[7] = 0x0C;
-        request[8] = 0x00;
-        // 监视定时器 0x0010（16 × 250ms = 4 秒，小端 10 00）
-        request[9] = 0x10;
-        request[10] = 0x00;
-        // 命令：批量读 0x0401（字/位统一，小端 01 04）
-        request[11] = 0x01;
-        request[12] = 0x04;
-        // 子命令：字读 0x0000 / 位读 0x0001（小端 00 00 / 01 00）
-        request[13] = (byte) (wordDevice ? 0x00 : 0x01);
-        request[14] = 0x00;
-        // 起始地址 3 字节小端（X/Y 已按八进制解析为实际编号）
-        request[15] = (byte) (startAddr & 0xFF);
-        request[16] = (byte) ((startAddr >> 8) & 0xFF);
-        request[17] = (byte) ((startAddr >> 16) & 0xFF);
-        // 软元件代码 1 字节（D=0xA8 等）
-        request[18] = (byte) areaCode;
-        // 点数 2 字节小端
-        request[19] = (byte) (count & 0xFF);
-        request[20] = (byte) ((count >> 8) & 0xFF);
+        boolean is1e = "1E".equals(protocolMode);
+        byte[] request;
+        if (is1e) {
+            // MC1E 标准二进制帧（对照 pymcprotocol format_1e_binary）：
+            // [副头部0x10][网络0][PC 0xFF][I/O 0x03FF小端][站0] + 长度2 + 数据段（定时器/命令/子命令/地址/软元件/点数）
+            request = new byte[19];
+            request[0] = 0x10;                 // 副头部（1E 二进制帧标识）
+            request[1] = 0x00;                 // 网络号
+            request[2] = (byte) 0xFF;          // PC号
+            request[3] = (byte) 0xFF;          // 请求目标模块 I/O 号 0x03FF（低字节在前）
+            request[4] = 0x03;                 // 请求目标模块 I/O 号（高字节）
+            request[5] = 0x00;                 // 请求目标模块站号
+            request[6] = 0x0B;                 // 请求数据长度 = 定时器2+命令2+子命令2+地址2+软元件1+点数2 = 11（小端 0B 00）
+            request[7] = 0x00;
+            request[8] = 0x10;                 // 监视定时器 0x0010（4 秒，小端 10 00）
+            request[9] = 0x00;
+            request[10] = 0x01;                // 命令：批量读 0x0401（字/位统一，小端 01 04）
+            request[11] = 0x04;
+            request[12] = (byte) (wordDevice ? 0x00 : 0x01); // 子命令：字读 0x0000 / 位读 0x0001（小端）
+            request[13] = 0x00;
+            request[14] = (byte) (startAddr & 0xFF);         // 起始地址 2 字节小端
+            request[15] = (byte) ((startAddr >> 8) & 0xFF);
+            request[16] = (byte) areaCode;     // 软元件代码 1 字节（D=0xA8 等）
+            request[17] = (byte) (count & 0xFF);             // 点数 2 字节小端
+            request[18] = (byte) ((count >> 8) & 0xFF);
+        } else {
+            // MC QnA 兼容 3E 帧请求（7头 + 2长度 + 12请求数据 = 21 字节）
+            request = new byte[21];
+            request[0] = (byte) 0xD0; // 副头部高字节（QnA 兼容 3E 二进制帧，响应副头部同为 D0 00）
+            request[1] = 0x00;        // 副头部低字节
+            request[2] = 0x00;        // 网络号
+            request[3] = (byte) 0xFF; // PC号（QnA）
+            request[4] = (byte) 0xFF; // 请求目标模块 I/O 号 0x03FF（低字节在前）
+            request[5] = 0x03;        // 请求目标模块 I/O 号（高字节）
+            request[6] = 0x00;        // 请求目标模块站号
+            // 请求数据长度：从监视定时器到末尾 = 2 + 10 = 12 字节（小端 0x0C 00）
+            request[7] = 0x0C;
+            request[8] = 0x00;
+            // 监视定时器 0x0010（16 × 250ms = 4 秒，小端 10 00）
+            request[9] = 0x10;
+            request[10] = 0x00;
+            // 命令：批量读 0x0401（字/位统一，小端 01 04）
+            request[11] = 0x01;
+            request[12] = 0x04;
+            // 子命令：字读 0x0000 / 位读 0x0001（小端 00 00 / 01 00）
+            request[13] = (byte) (wordDevice ? 0x00 : 0x01);
+            request[14] = 0x00;
+            // 起始地址 3 字节小端（X/Y 已按八进制解析为实际编号）
+            request[15] = (byte) (startAddr & 0xFF);
+            request[16] = (byte) ((startAddr >> 8) & 0xFF);
+            request[17] = (byte) ((startAddr >> 16) & 0xFF);
+            // 软元件代码 1 字节（D=0xA8 等）
+            request[18] = (byte) areaCode;
+            // 点数 2 字节小端
+            request[19] = (byte) (count & 0xFF);
+            request[20] = (byte) ((count >> 8) & 0xFF);
+        }
 
         // 4. 发送
         out.write(request);
@@ -149,15 +178,23 @@ public class MitsubishiDataReader {
         // 等待 PLC 响应
         Thread.sleep(10);
 
-        // 5. 读取响应头（7 字节固定头 + 2 字节长度）
-        byte[] respHeader = new byte[9];
+        // 5. 读取响应头（按帧模式：MC1E 6 头+2 长度=8B；MC3E 7 头+2 长度=9B）
+        int headerLen = is1e ? 8 : 9;
+        byte[] respHeader = new byte[headerLen];
         readFully(in, respHeader);
-        // 校验副头部
-        if ((respHeader[0] & 0xFF) != 0xD0 || (respHeader[1] & 0xFF) != 0x00) {
-            throw new Exception("无效的 MC 响应头，期望 D0 00，实际: " + String.format("%02X %02X", respHeader[0], respHeader[1]));
+        if (is1e) {
+            // MC1E 响应副头部回显 0x10
+            if ((respHeader[0] & 0xFF) != 0x10) {
+                throw new Exception("无效的 MC1E 响应头，期望 0x10，实际: " + String.format("%02X", respHeader[0]));
+            }
+        } else {
+            // 校验副头部
+            if ((respHeader[0] & 0xFF) != 0xD0 || (respHeader[1] & 0xFF) != 0x00) {
+                throw new Exception("无效的 MC 响应头，期望 D0 00，实际: " + String.format("%02X %02X", respHeader[0], respHeader[1]));
+            }
         }
         // 响应长度字段小端（如 0x0006 → 06 00）
-        int respLen = ((respHeader[8] & 0xFF) << 8) | (respHeader[7] & 0xFF);
+        int respLen = ((respHeader[headerLen - 1] & 0xFF) << 8) | (respHeader[headerLen - 2] & 0xFF);
         if (respLen < 2) {
             throw new Exception("无效的 MC 响应长度: " + respLen);
         }

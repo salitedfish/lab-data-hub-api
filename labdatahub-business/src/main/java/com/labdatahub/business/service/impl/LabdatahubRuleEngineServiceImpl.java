@@ -1,9 +1,11 @@
+//由AI修改
 package com.labdatahub.business.service.impl;
 
 import java.io.IOException;
 import java.util.*;
 
 import com.alibaba.fastjson2.JSONObject;
+import lombok.extern.slf4j.Slf4j;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.labdatahub.business.domain.LabdatahubDevice;
@@ -45,6 +47,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
  * @date 2025-10-20
  */
 @Service
+@Slf4j
 public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleEngineMapper, LabdatahubRuleEngine> implements ILabdatahubRuleEngineService
 {
     @Autowired
@@ -128,6 +131,10 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
     @Override
     public boolean startRuleEngine(String id) {
         LabdatahubRuleEngine labdatahubRuleEngine = labdatahubRuleEngineMapper.selectById(id);
+        if(labdatahubRuleEngine == null){
+            log.warn("启动规则引擎失败，规则不存在：id={}", id);
+            return false;
+        }
         RuleEngineConfig config = JSONObject.parseObject(labdatahubRuleEngine.getConfigJson(),RuleEngineConfig.class);
         List<List<RuleNode>> ruleList = RuleGroupExtractor.extractValidGroups(config);
         String oldEngineConfig = RuleEngineCache.getJsonCache(labdatahubRuleEngine.getId());
@@ -178,6 +185,10 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
             RuleNode nodeType = ruleNodes.get(1);
             RuleNode output = ruleNodes.get(2);
             if(!"realTimePush".equals(nodeType.getType())){
+                return;
+            }
+            if(input.getConfigData() == null){
+                log.warn("规则引擎{} 的输入节点[{}]未配置数据源，跳过该规则组", id, input.getName());
                 return;
             }
             ProductConfig productConfig = input.getConfigData().toJavaObject(ProductConfig.class);
@@ -262,6 +273,10 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
     @Override
     public boolean stopRuleEngine(String id) {
         LabdatahubRuleEngine labdatahubRuleEngine = labdatahubRuleEngineMapper.selectById(id);
+        if(labdatahubRuleEngine == null){
+            log.warn("关闭规则引擎失败，规则不存在：id={}", id);
+            return false;
+        }
         if(StringUtils.isNotEmpty(labdatahubRuleEngine.getConfigJson())){
             RuleEngineConfig config = JSONObject.parseObject(labdatahubRuleEngine.getConfigJson(),RuleEngineConfig.class);
             List<List<RuleNode>> ruleList = RuleGroupExtractor.extractValidGroups(config);

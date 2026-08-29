@@ -9,6 +9,7 @@ import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.brother_tcp.BrotherTcpReadConfig;
 import com.labdatahub.component.fanuc_focas.FanucFocasReadConfig;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
+import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncReadConfig;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
 import com.labdatahub.component.modbus_tcp.ModbusReadConfig;
 import com.labdatahub.component.s7_tcp.S7ReadConfig;
@@ -128,6 +129,21 @@ public class ParseMetaUtils {
      * 把解析元数据应用到FANUC FOCAS2读取配置
      */
     public static void applyTo(FanucFocasReadConfig config, String deviceSn, String productSn, String code) {
+        LabdatahubProperties property = resolve(deviceSn, productSn, code);
+        if (property == null) {
+            return;
+        }
+        config.setDataType(property.getDataType());
+        config.setByteOrder(property.getByteOrder());
+        config.setIsSigned(property.getIsSigned());
+        config.setScale(property.getScale());
+        config.setOffset(property.getOffset());
+    }
+
+    /**
+     * 把解析元数据应用到三菱CNC TCP(MOCHA)读取配置
+     */
+    public static void applyTo(MitsubishiCncReadConfig config, String deviceSn, String productSn, String code) {
         LabdatahubProperties property = resolve(deviceSn, productSn, code);
         if (property == null) {
             return;

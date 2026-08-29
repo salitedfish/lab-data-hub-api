@@ -1,25 +1,21 @@
 //由AI修改
-package com.labdatahub.component.mitsubishi_tcp;
+package com.labdatahub.component.mitsubishi_cnc_tcp;
 
 import lombok.Data;
 
 /**
- * 三菱 MC 读取配置
+ * 三菱 CNC TCP（MOCHA）读取配置（点位级）
  */
 @Data
-public class MitsubishiReadConfig {
+public class MitsubishiCncReadConfig {
     // 设备id
     private String deviceSn;
-    // 指令编码
+    // 指令编码（物模型 identifier）
     private String code;
-    // 软元件代码（D/W/R/ZR/SD 字设备；M/L/B/X/Y/S/SM/F 位设备）
-    private Integer areaCode;
-    // 起始地址
-    private Integer startAddress;
-    // 读取数量
-    private Integer length;
-    // 协议帧模式：3E-QnA兼容3E帧（默认） 1E-MC1E标准二进制帧
-    private String protocolMode;
+    // 采集项类型：树根点位键（al/fre/pn/spn/cc/sl1/ss1/tn/stn/po/opt/cut/ct/sv/fv/st/pst/opm/axc；轴点 mechpos/currpos/remapos/cu/sp）
+    private String readType;
+    // 轴号（1-6，仅轴类点位有效）
+    private Integer axisNo;
     // 间隔时间
     private Integer intervalTime;
     // 读取完暂停时间

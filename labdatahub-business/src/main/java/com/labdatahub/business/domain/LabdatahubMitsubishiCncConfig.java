@@ -13,16 +13,16 @@ import lombok.NoArgsConstructor;
 
 /**
  *
-* @ClassName: LabdatahubMitsubishiConfig
-* @Description: 三菱MC协议读取配置对象 labdatahub_mitsubishi_config
+* @ClassName: LabdatahubMitsubishiCncConfig
+* @Description: 三菱CNC TCP(MOCHA)协议读取配置对象 labdatahub_mitsubishi_cnc_config
 * @author xwb
-* @date 2026年8月24日
+* @date 2026年8月29日
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@TableName(value = "labdatahub_mitsubishi_config")
-public class LabdatahubMitsubishiConfig implements Serializable
+@TableName(value = "labdatahub_mitsubishi_cnc_config")
+public class LabdatahubMitsubishiCncConfig implements Serializable
 {
 private static final long serialVersionUID = 1L;
 
@@ -42,23 +42,15 @@ private static final long serialVersionUID = 1L;
     /** 多少秒读取一次 */
     @Excel(name = "多少秒读取一次")
     private Long intervalTime;
-    /** 同一网络组件读取属性延迟时间（毫秒） */
+    /** 同一网络组件读取属性延迟时间 */
     @Excel(name = "同一网络组件读取属性延迟时间")
     private Long delayTime;
 
-    /** 软元件代码：字设备 D=0xA8 W=0xB4 R=0xAF ZR=0xB0 SD=0xA9；位设备 M=0x90 L=0x92 B=0xA0 X=0x9C Y=0x9D S=0x98 SM=0x91 F=0x93 */
-    @Excel(name = "软元件代码")
-    private Integer areaCode;
+    /** 采集项类型（树根点位键：al/fre/pn/spn/cc/sl1/ss1/tn/stn/po/opt/cut/ct/sv/fv/st/pst/opm/axc；轴点 mechpos/currpos/remapos/cu/sp） */
+    @Excel(name = "采集项类型")
+    private String readType;
 
-    /** 起始地址（X/Y为八进制地址） */
-    @Excel(name = "起始地址")
-    private Integer startAddress;
-
-    /** 读取数量（字设备为字数，位设备为点数） */
-    @Excel(name = "读取数量")
-    private Integer length;
-
-    /** 协议帧模式：3E-QnA兼容3E帧（默认） 1E-MC1E标准二进制帧 */
-    @Excel(name = "协议帧模式")
-    private String protocolMode;
+    /** 轴号（1-6，仅轴类点位有效） */
+    @Excel(name = "轴号")
+    private Integer axisNo;
 }

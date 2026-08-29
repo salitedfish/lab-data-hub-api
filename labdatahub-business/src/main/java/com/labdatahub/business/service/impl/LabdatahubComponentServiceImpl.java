@@ -36,6 +36,8 @@ import com.labdatahub.component.fins_tcp.FinsConnectionManager;
 import com.labdatahub.component.fins_tcp.FinsTcpConfig;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiConnectionManager;
 import com.labdatahub.component.mitsubishi_tcp.MitsubishiTcpConfig;
+import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncConnectionManager;
+import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncTcpConfig;
 import com.labdatahub.component.http.HttpServerConfig;
 import com.labdatahub.component.http.HttpServerManager;
 import com.labdatahub.component.modbus_tcp.ModbusConnectionManager;
@@ -463,6 +465,29 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                     return false;
                 }
             }
+            case "MITSUBISHI_CNC_TCP" : {
+                if(StringUtils.isNotEmpty(component.getOtherConfig())){
+                	MitsubishiCncTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(MitsubishiCncTcpConfig.class);
+                    boolean isOk = MitsubishiCncConnectionManager.addConnection(component.getId(), config);
+                    // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
+                    timerTask.initMitsubishiCncTcpRead();
+                    if(!isOk){
+                        throw new CommonWarnException("开启失败，请检查配置信息是否正确");
+                    }
+                    component.setStatus("1");
+                    if(StringUtils.isNotEmpty(component.getProtocolId())){
+                        initProtocol(component.getProtocolId());
+                        ProtocolManager.PROTOCOL_MAP.put(component.getId(),component.getProtocolId());
+                    }
+                    component.setIpAddr(config.getIpAddr());
+                    component.setPort(String.valueOf(config.getPort()));
+                    labdatahubComponentMapper.updateById(component);
+                    CacheUtils.setComponentCache(component.getId(),component);
+                    return true;
+                }else {
+                    return false;
+                }
+            }
             case "DATABASE_TCP" : {
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	DatabaseConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(DatabaseConfig.class);
@@ -603,6 +628,15 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
             }
             case "MITSUBISHI_TCP" : {
             	MitsubishiConnectionManager.closeConnection(component.getId());
+                // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
+                ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
+                component.setStatus("0");
+                labdatahubComponentMapper.updateById(component);
+                CacheUtils.setComponentCache(component.getId(),component);
+                return true;
+            }
+            case "MITSUBISHI_CNC_TCP" : {
+            	MitsubishiCncConnectionManager.closeConnection(component.getId());
                 // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
                 ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");

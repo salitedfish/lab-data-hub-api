@@ -1,7 +1,15 @@
 //由AI修改
-package com.labdatahub.component.mitsubishi_tcp;
+package com.labdatahub.component.mitsubishi_cnc_tcp;
 
-import com.alibaba.fastjson2.JSONArray;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.Socket;
+import java.util.concurrent.BlockingQueue;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.stereotype.Component;
+
 import com.alibaba.fastjson2.JSONObject;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.component.event.EventBus;
@@ -11,60 +19,52 @@ import com.labdatahub.component.message.MessageCache;
 import com.labdatahub.component.message.MessageUtils;
 import com.labdatahub.component.protocol.ProtocolManager;
 import com.labdatahub.component.sysws.WebSocketServer;
+
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-import org.springframework.stereotype.Component;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.net.Socket;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.BlockingQueue;
 
 /**
- * 三菱 MC 消息消费服务
+ * 三菱 CNC TCP（MOCHA）消息消费服务
  */
 @Slf4j
 @Component
-public class MitsubishiMessageConsumeService implements MitsubishiMessageConsumeHandler{
+public class MitsubishiCncMessageConsumeService implements MitsubishiCncMessageConsumeHandler{
     @Autowired
     private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     @Autowired
     private EventBus eventBus;
     @Override
-    public void handle(String componentId, MitsubishiMessage message) throws Exception {
-        Socket connection = MitsubishiConnectionManager.connections.get(componentId);
+    public void handle(String componentId, MitsubishiCncMessage message) throws Exception {
+        Socket connection = MitsubishiCncConnectionManager.connections.get(componentId);
         if(connection==null||!connection.isConnected()||connection.isClosed()){
             return;
         }
-        List<Integer> dataList = new ArrayList<>();
-        // 配置字段空值兜底：areaCode/startAddress/length 任一为空直接跳过，避免自动拆箱 NPE 触发无谓重连
-        if (message.getAreaCode() == null || message.getStartAddress() == null || message.getLength() == null) {
-            log.warn("componentId={} 读取code={}配置不完整（areaCode/startAddress/length 为空），跳过本次", componentId, message.getCode());
-            return;
-        }
+        String value = null;
         try {
-        	dataList = MitsubishiDataReader.readMemoryArea(componentId, message.getProtocolMode(), message.getAreaCode(), message.getStartAddress(), message.getLength());
+            // 按点位地址（readType + 轴号）读单项原始值
+            value = MitsubishiCncDataReader.readPoint(componentId, message.getReadType(), message.getAxisNo());
         }catch (Exception e){
             //处理恢复后避免脏数据过多
-            BlockingQueue<MitsubishiMessage> queue = MitsubishiMessageScheduler.messageQueueMap.get(componentId);
+            BlockingQueue<MitsubishiCncMessage> queue = MitsubishiCncMessageScheduler.messageQueueMap.get(componentId);
             if(queue!=null){
                 queue.removeIf(o->o.getCode().equals(message.getCode()));
             }
-            //读失败强制重连：半开连接本地状态检测不出来，靠读超时触发自愈（与S7的forceReconnect对齐）
+            //读失败强制重连：半开连接本地状态检测不出来，靠读超时触发自愈（与S7/MC的forceReconnect对齐）
             log.warn("componentId={} 读取code={}失败，触发强制重连", componentId, message.getCode());
-            MitsubishiConnectionManager.forceReconnect(componentId);
+            MitsubishiCncConnectionManager.forceReconnect(componentId);
             throw e;
+        }
+        if(value == null){
+            // 点位不支持或读取失败，跳过本次
+            return;
         }
         //读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
         if (message.getDelayTime() != null && message.getDelayTime() > 0) {
             Thread.sleep(message.getDelayTime());
         }
         JSONObject objecotData = new JSONObject();
-    	objecotData.put("deviceSn", message.getDeviceSn());
-    	objecotData.put("code", message.getCode());
-    	objecotData.put("jsonArray", JSONArray.from(dataList));
+        objecotData.put("deviceSn", message.getDeviceSn());
+        objecotData.put("code", message.getCode());
+        objecotData.put("value", value);
         objecotData.put("dataType", message.getDataType());
         objecotData.put("byteOrder", message.getByteOrder());
         objecotData.put("isSigned", message.getIsSigned());
@@ -79,7 +79,7 @@ public class MitsubishiMessageConsumeService implements MitsubishiMessageConsume
             Method method = ProtocolManager.DECODE_METHOD.get(protocolId);
             Object object = ProtocolManager.CLASS_INSTANCE.get(protocolId);
             try {
-            	Object data = method.invoke(object,objecotData);
+                Object data = method.invoke(object,objecotData);
                 DecodeMessage decodeMessage = MessageUtils.parseMessage(data);
                 if (decodeMessage == null) {
                     return;
