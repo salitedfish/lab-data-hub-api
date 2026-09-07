@@ -1,6 +1,8 @@
+//由AI修改
 package com.labdatahub.business.service;
 
 import java.util.List;
+import java.util.Map;
 import com.labdatahub.business.domain.LabdatahubProduct;
 import com.baomidou.mybatisplus.extension.service.IService;
 
@@ -64,4 +66,13 @@ public interface ILabdatahubProductService extends IService<LabdatahubProduct>
      * 同步产品总设备数量
      */
     public void syncDeviceCount(String productSn);
+
+    /**
+     * 按产品sn批量统计真实关联设备数（product_sn -> 设备数量）
+     * 产品列表/详情动态填充 deviceCount 用，不再直接信冗余列 device_count
+     *
+     * @param productSns 产品sn集合
+     * @return 统计结果，产品无设备时缺省按 0 处理
+     */
+    public Map<String, Long> countDevicesByProductSns(List<String> productSns);
 }

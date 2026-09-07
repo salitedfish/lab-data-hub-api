@@ -1,0 +1,217 @@
+-- ============================================
+-- 协议读取配置 全量增量脚本（整合版，勿合入 init.sql）
+-- 整合自 lab-data-hub-api/sql/pgsql/others 下的全部增量脚本：
+--   1. fanuc_config.sql                    建表 labdatahub_fanuc_config
+--   2. brother_config.sql                  建表 labdatahub_brother_config
+--   3. mitsubishi_config.sql               建表 labdatahub_mitsubishi_config
+--   4. mitsubishi_cnc_config.sql           建表 labdatahub_mitsubishi_cnc_config
+--   5. mitsubishi_config_protocol_mode.sql 加列 protocol_mode（MC1E / MC3E）
+--   6. plc_read_enhance.sql                加列 function_code / area_type
+--   7. protocol_config_name.sql            加列 name（7 张协议点位表）
+-- 在 PostgreSQL 主库执行本脚本即可：
+--   psql -U <user> -d <database> -f protocol_config_all.sql
+-- 依赖：modbus / s71200 / omronfins 等基础表由 init.sql 创建，需先执行 init.sql。
+-- 顺序说明：先建表、后加列（protocol_mode 依赖 mitsubishi_config 表已建）。
+-- ============================================
+
+-- ============================================
+-- 1. FANUC FOCAS2（FANUC_TCP）协议读取配置表
+-- 来源：fanuc_config.sql
+-- 表结构对齐 domain/LabdatahubFanucConfig。
+-- 地址约定：readType.param1.param2（如 axis.1.1 = X轴机械坐标）
+-- ============================================
+
+DROP TABLE IF EXISTS "public"."labdatahub_fanuc_config";
+CREATE TABLE "public"."labdatahub_fanuc_config" (
+  "id" varchar(255) COLLATE "pg_catalog"."default" NOT NULL,
+  "belong_sn" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "belong_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT '0'::character varying,
+  "code" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "create_time" timestamp(6),
+  "read_type" varchar(32) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "param1" numeric(10,0),
+  "param2" numeric(10,0),
+  "interval_time" int4 DEFAULT 1,
+  "delay_time" int4 DEFAULT 0
+)
+;
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."id" IS 'id';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."belong_sn" IS '归属sn';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."belong_type" IS '归属类型 0-产品 1-设备';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."code" IS '读取编码';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."create_time" IS '创建时间';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."read_type" IS '采集项类型（axis/spindle/feed/mode/status/prgnum/exeprgname/alarm/tcode/macro/timer/count/diag/override/pmc）';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."param1" IS '参数1（轴号/子项/宏变量号等，各readType含义不同）';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."param2" IS '参数2（坐标类型/地址号等，各readType含义不同）';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."interval_time" IS '多少秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_fanuc_config"."delay_time" IS '同一网络组件读取属性延迟时间';
+COMMENT ON TABLE "public"."labdatahub_fanuc_config" IS 'FANUC FOCAS2协议读取配置表';
+
+-- ----------------------------
+-- Primary Key structure for table labdatahub_fanuc_config
+-- ----------------------------
+ALTER TABLE "public"."labdatahub_fanuc_config" ADD CONSTRAINT "labdatahub_fanuc_config_pkey" PRIMARY KEY ("id");
+
+-- ============================================
+-- 2. Brother NC（BROTHER_TCP）协议读取配置表
+-- 来源：brother_config.sql
+-- 表结构对齐 domain/LabdatahubBrotherConfig。
+-- ============================================
+
+DROP TABLE IF EXISTS "public"."labdatahub_brother_config";
+CREATE TABLE "public"."labdatahub_brother_config" (
+  "id" varchar(255) COLLATE "pg_catalog"."default" NOT NULL,
+  "belong_sn" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "belong_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT '0'::character varying,
+  "code" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "create_time" timestamp(6),
+  "data_area" varchar(64) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "row_number" numeric(10,0),
+  "field_index" numeric(10,0),
+  "interval_time" int4 DEFAULT 1,
+  "delay_time" int4 DEFAULT 0
+)
+;
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."id" IS 'id';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."belong_sn" IS '归属sn';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."belong_type" IS '归属类型 0-产品 1-设备';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."code" IS '读取编码';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."create_time" IS '创建时间';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."data_area" IS '数据区名（PDSP/ALARM/PRD3/WKCNTR）';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."row_number" IS '行号（1起，对应数据区点表行顺序）';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."field_index" IS '字段序号（1起，第1个字段=行Symbol后第一个值）';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."interval_time" IS '多少秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_brother_config"."delay_time" IS '同一网络组件读取属性延迟时间';
+COMMENT ON TABLE "public"."labdatahub_brother_config" IS 'Brother NC协议读取配置表';
+
+-- ----------------------------
+-- Primary Key structure for table labdatahub_brother_config
+-- ----------------------------
+ALTER TABLE "public"."labdatahub_brother_config" ADD CONSTRAINT "labdatahub_brother_config_pkey" PRIMARY KEY ("id");
+
+-- ============================================
+-- 3. 三菱MC协议（MITSUBISHI_TCP）读取配置表
+-- 来源：mitsubishi_config.sql
+-- 表结构对齐 domain/LabdatahubMitsubishiConfig。
+-- 软元件：字设备 D/W/R/ZR/SD；位设备 M/L/B/X/Y/S/SM/F（X/Y 地址为八进制）。
+-- 字读单次 ≤960 点，位读单次 ≤2000 点。
+-- ============================================
+
+DROP TABLE IF EXISTS "public"."labdatahub_mitsubishi_config";
+CREATE TABLE "public"."labdatahub_mitsubishi_config" (
+  "id" varchar(255) COLLATE "pg_catalog"."default" NOT NULL,
+  "belong_sn" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "belong_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT '0'::character varying,
+  "code" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "create_time" timestamp(6),
+  "area_code" numeric(10,0),
+  "start_address" numeric(10,0),
+  "length" numeric(10,0),
+  "interval_time" int4 DEFAULT 1,
+  "delay_time" int4 DEFAULT 0
+)
+;
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."id" IS 'id';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."belong_sn" IS '归属sn';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."belong_type" IS '归属类型 0-产品 1-设备';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."code" IS '读取编码';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."create_time" IS '创建时间';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."area_code" IS '软元件代码（字设备 D=0xA8 W=0xB4 R=0xAF ZR=0xB0 SD=0xA9；位设备 M=0x90 L=0x92 B=0xA0 X=0x9C Y=0x9D S=0x98 SM=0x91 F=0x93）';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."start_address" IS '起始地址（X/Y 为八进制地址）';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."length" IS '读取数量（字设备为字数，位设备为点数）';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."interval_time" IS '多少秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."delay_time" IS '同一网络组件读取属性延迟时间（毫秒）';
+COMMENT ON TABLE "public"."labdatahub_mitsubishi_config" IS '三菱MC协议读取配置表';
+
+-- ----------------------------
+-- Primary Key structure for table labdatahub_mitsubishi_config
+-- ----------------------------
+ALTER TABLE "public"."labdatahub_mitsubishi_config" ADD CONSTRAINT "labdatahub_mitsubishi_config_pkey" PRIMARY KEY ("id");
+
+-- ============================================
+-- 4. 三菱 CNC TCP（MOCHA 协议）读取配置表
+-- 来源：mitsubishi_cnc_config.sql
+-- 表结构对齐 domain/LabdatahubMitsubishiCncConfig。
+-- 地址约定：readType 为树根点位键，轴点位配 axis_no（轴序 1-6）
+--   al/fre/pn/spn/cc/sl1/ss1/tn/stn/po/opt/cut/ct/sv/fv/st/pst/opm 无需轴号
+--   mechpos/currpos/remapos/cu/sp 需 axis_no（机械坐标/当前坐标/相对坐标/轴电流/轴速度）
+-- ============================================
+
+DROP TABLE IF EXISTS "public"."labdatahub_mitsubishi_cnc_config";
+CREATE TABLE "public"."labdatahub_mitsubishi_cnc_config" (
+  "id" varchar(255) COLLATE "pg_catalog"."default" NOT NULL,
+  "belong_sn" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "belong_type" varchar(255) COLLATE "pg_catalog"."default" DEFAULT '0'::character varying,
+  "code" varchar(255) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "create_time" timestamp(6),
+  "read_type" varchar(32) COLLATE "pg_catalog"."default" DEFAULT NULL::character varying,
+  "axis_no" numeric(10,0),
+  "interval_time" int4 DEFAULT 1,
+  "delay_time" int4 DEFAULT 0
+)
+;
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."id" IS 'id';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."belong_sn" IS '归属sn';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."belong_type" IS '归属类型 0-产品 1-设备';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."code" IS '读取编码';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."create_time" IS '创建时间';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."read_type" IS '采集项类型（树根点位键：al/fre/pn/spn/cc/sl1/ss1/tn/stn/po/opt/cut/ct/sv/fv/st/pst/opm/axc；轴点 mechpos/currpos/remapos/cu/sp）';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."axis_no" IS '轴号（1-6，仅轴类点位有效）';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."interval_time" IS '多少秒读取一次';
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_cnc_config"."delay_time" IS '同一网络组件读取属性延迟时间';
+COMMENT ON TABLE "public"."labdatahub_mitsubishi_cnc_config" IS '三菱CNC TCP(MOCHA)协议读取配置表';
+
+-- ----------------------------
+-- Primary Key structure for table labdatahub_mitsubishi_cnc_config
+-- ----------------------------
+ALTER TABLE "public"."labdatahub_mitsubishi_cnc_config" ADD CONSTRAINT "labdatahub_mitsubishi_cnc_config_pkey" PRIMARY KEY ("id");
+
+-- ============================================
+-- 5. 三菱 MC 配置表新增协议帧模式列（MC1E / MC3E）
+-- 来源：mitsubishi_config_protocol_mode.sql
+-- 作用：labdatahub_mitsubishi_config 每个点位可独立指定帧协议
+--   '3E' = QnA 兼容 3E 二进制帧（默认，现有已真机验证实现）
+--   '1E' = MC1E 标准二进制帧（新增，待真机验证）
+-- ============================================
+
+ALTER TABLE "public"."labdatahub_mitsubishi_config"
+    ADD COLUMN IF NOT EXISTS "protocol_mode" varchar(8) COLLATE "pg_catalog"."default" DEFAULT '3E'::character varying;
+
+COMMENT ON COLUMN "public"."labdatahub_mitsubishi_config"."protocol_mode" IS '协议帧模式：3E-QnA兼容3E帧（默认） 1E-MC1E标准二进制帧';
+
+-- ============================================
+-- 6. PLC 协议「读」能力增强（Modbus / S7-1200）
+-- 来源：plc_read_enhance.sql
+-- 新增列均有默认值，老数据自动兼容（function_code 默认 '03' 保持寄存器，area_type 默认 'DB'）
+-- ============================================
+
+ALTER TABLE labdatahub_modbus_config ADD COLUMN IF NOT EXISTS function_code varchar(32) DEFAULT '03';
+ALTER TABLE labdatahub_s71200_config ADD COLUMN IF NOT EXISTS area_type varchar(32) DEFAULT 'DB';
+
+-- ============================================
+-- 7. 协议点位表加 name 列（点位名称）
+-- 来源：protocol_config_name.sql
+-- 用途：物模型属性名用点位名称（前端点位表语义名，如 FANUC"机械坐标 X"），null 时物模型 name 用 code（标识）
+-- 仅 7 张协议点位表（含 code 关联物模型）；Database 协议 code=null 不关联物模型，不加
+-- ============================================
+
+ALTER TABLE labdatahub_fanuc_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_fanuc_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+
+ALTER TABLE labdatahub_brother_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_brother_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+
+ALTER TABLE labdatahub_mitsubishi_cnc_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_mitsubishi_cnc_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+
+ALTER TABLE labdatahub_modbus_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_modbus_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+
+ALTER TABLE labdatahub_mitsubishi_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_mitsubishi_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+
+ALTER TABLE labdatahub_omronfins_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_omronfins_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+
+ALTER TABLE labdatahub_s71200_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_s71200_config.name IS '点位名称（物模型属性名用，null 用标识 code）';

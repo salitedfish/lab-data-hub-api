@@ -1,8 +1,12 @@
+//由AI修改
 package com.labdatahub.business.service.impl;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
@@ -108,5 +112,27 @@ public class LabdatahubProductServiceImpl extends ServiceImpl<LabdatahubProductM
         labdatahubProductMapper.update(labdatahubProduct,new LambdaUpdateWrapper<LabdatahubProduct>()
                 .eq(LabdatahubProduct::getProductSn,labdatahubProduct.getProductSn()));
                 //.set(LabdatahubProduct::getDeviceCount,labdatahubProduct.getDeviceCount()));
+    }
+
+    @Override
+    public Map<String, Long> countDevicesByProductSns(List<String> productSns) {
+        Map<String, Long> result = new HashMap<>();
+        if (productSns == null || productSns.isEmpty()) {
+            return result;
+        }
+        // 按 product_sn 一次分组统计，避免对每个产品逐条 count
+        QueryWrapper<LabdatahubDevice> queryWrapper = new QueryWrapper<>();
+        queryWrapper.select("product_sn", "count(*) as cnt");
+        queryWrapper.in("product_sn", productSns);
+        queryWrapper.groupBy("product_sn");
+        List<Map<String, Object>> rows = labdatahubDeviceService.listMaps(queryWrapper);
+        for (Map<String, Object> row : rows) {
+            Object sn = row.get("product_sn");
+            Object cnt = row.get("cnt");
+            if (sn != null && cnt != null) {
+                result.put(String.valueOf(sn), Long.valueOf(cnt.toString()));
+            }
+        }
+        return result;
     }
 }

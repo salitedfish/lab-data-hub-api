@@ -1,9 +1,11 @@
+//由AI修改
 package com.labdatahub.business.controller;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -71,6 +73,19 @@ public class LabdatahubProductController extends BaseController {
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubProduct.getProductSn()),"product_sn",labdatahubProduct.getProductSn());
         Page<LabdatahubProduct> page = new Page<LabdatahubProduct>(PageUtils.getPageNum(), PageUtils.getPageSize());
         Page<LabdatahubProduct> pageList = labdatahubProductService.page(page, queryWrapper);
+        // 设备数量动态统计：deviceCount 按 labdatahub_device 真实统计回填，不直接信冗余列（由AI修改）
+        List<LabdatahubProduct> productRows = pageList.getRecords();
+        if (productRows != null && !productRows.isEmpty()) {
+            List<String> productSns = new ArrayList<String>();
+            for (LabdatahubProduct p : productRows) {
+                productSns.add(p.getProductSn());
+            }
+            Map<String, Long> countMap = labdatahubProductService.countDevicesByProductSns(productSns);
+            for (LabdatahubProduct p : productRows) {
+                Long count = countMap.get(p.getProductSn());
+                p.setDeviceCount(count == null ? 0L : count);
+            }
+        }
         return getDataTable(pageList);
     }
 
@@ -89,7 +104,14 @@ public class LabdatahubProductController extends BaseController {
      */
     @GetMapping(value = "/{id}")
     public AjaxResult getInfo(@PathVariable("id") String id) {
-        return success(labdatahubProductService.getById(id));
+        LabdatahubProduct product = labdatahubProductService.getById(id);
+        if (product != null) {
+            // 详情设备数量动态统计，与冗余列解耦（由AI修改）
+            long count = labdatahubDeviceService.count(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getProductSn, product.getProductSn()));
+            product.setDeviceCount(count);
+        }
+        return success(product);
     }
 
     /**
@@ -151,7 +173,10 @@ public class LabdatahubProductController extends BaseController {
     public AjaxResult remove(@PathVariable String[] ids) {
         for (String id : ids) {
             LabdatahubProduct product = labdatahubProductService.getById(id);
-            if(product.getDeviceCount()>0){
+            // 删除守卫改用真实设备数统计，避免冗余列漂移导致误判（由AI修改）
+            long count = labdatahubDeviceService.count(new LambdaQueryWrapper<LabdatahubDevice>()
+                    .eq(LabdatahubDevice::getProductSn, product.getProductSn()));
+            if (count > 0) {
                 return AjaxResult.warn("请先删除产品关联的设备");
             }
             labdatahubProductService.removeById(id);
