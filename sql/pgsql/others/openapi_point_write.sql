@@ -1,6 +1,6 @@
 -- ============================================
 -- 点位外部写入（写值）审计表
--- 独立增量脚本，勿合入 init.sql；已同步进 protocol_config_all.sql。
+-- 独立增量脚本，勿合入 init.sql；仅用于老库增量升级（全新部署已含在 init.sql 里）。
 -- 在 PostgreSQL 主库执行本脚本即可建表：
 --   psql -U <user> -d <database> -f openapi_point_write.sql
 -- 表结构对齐 domain/LabdatahubPointWriteRecord。
