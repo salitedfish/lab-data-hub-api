@@ -124,7 +124,9 @@ SELECT * FROM timescaledb_information.chunks
 WHERE hypertable_name = 'labdatahub_device_logs';
 
 -- 查看压缩状态
-SELECT * FROM timescaledb_information.compressed_hypertables;
+-- 注意：timescaledb 2.27 已删除 timescaledb_information.compressed_hypertables 视图，
+-- 引用它会报「关系不存在」。改用 hypertables 的 compression_enabled 列判断。
+SELECT * FROM timescaledb_information.hypertables WHERE compression_enabled;
 
 -- 手动压缩某个 chunk (如果需要)
 -- SELECT compress_chunk('_timescaledb_internal._hyper_1_1_chunk');
