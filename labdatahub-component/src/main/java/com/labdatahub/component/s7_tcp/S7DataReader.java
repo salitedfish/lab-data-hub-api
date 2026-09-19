@@ -106,8 +106,11 @@ public class S7DataReader {
     
     /**
      * 区类型转 DaveArea：DB→DB数据块，M→FLAGS标志位，I→INPUTS输入区，Q→OUTPUTS输出区
+     *
+     * <p>包级可见：写值链路 {@link S7PointWriter} 要按同一套映射定位写入区，
+     * 读写用两套映射迟早会写串区。
      */
-    private static DaveArea toDaveArea(String areaType) {
+    static DaveArea toDaveArea(String areaType) {
         if (areaType == null) {
             return DaveArea.DB;
         }

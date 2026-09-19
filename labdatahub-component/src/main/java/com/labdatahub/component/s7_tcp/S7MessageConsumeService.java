@@ -3,6 +3,7 @@ package com.labdatahub.component.s7_tcp;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
@@ -33,7 +34,7 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
 
     @Override
     public void handle(String componentId, S7Message message) throws Exception {
-        S7Connector connector = S7ConnectionManager.connections.get(componentId);
+        S7Connector connector = S7ConnectionManager.getConnection(componentId);
         if (connector == null) {
         	log.warn("componentId={} 连接不存在或未连接", componentId);
             return;
@@ -45,13 +46,27 @@ public class S7MessageConsumeService implements S7MessageConsumeHandler {
         }
 
         // 读取数据（按 区类型+块类型+数据类型 解析，读异常强制重连修复自愈）
+        //
+        // 读必须与写、重连共用同一把锁（见 S7ConnectionManager.lockMap 注释）：一台设备一条 TCP，
+        // 写从 HTTP 线程进来、重连会把连接对象换掉，不串行化的话读到的实时数据会串位。
+        // 读侧用无界 lock()：采集是命脉，不能因为抢不到写锁而失败。
         Object rawData;
+        boolean needReconnect = false;
+        ReentrantLock lock = S7ConnectionManager.getLock(componentId);
+        lock.lock();
         try {
             rawData = S7DataReader.readDB(connector, message.getDbNumber(), message.getBlockType(), message.getAreaType(), message.getDataType(), message.getStartAddress(), message.getLength(), message.getBitOffset(), message.getIsSigned());
         } catch (Exception e) {
-            log.error("componentId={} 读取S7数据失败，触发强制重连", componentId, e);
-            S7ConnectionManager.forceReconnect(componentId);
+            log.error("componentId={} 读取S7数据失败", componentId, e);
+            needReconnect = true;
             throw e;
+        } finally {
+            lock.unlock();
+            // ⚠️ 重连放在 unlock 之后：doReconnect 内部会真建 TCP 连接并退避 sleep，
+            //    持着锁做会把整条链路卡满数秒（方案 5.4）
+            if (needReconnect) {
+                S7ConnectionManager.forceReconnect(componentId);
+            }
         }
         // 读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
         if (message.getDelayTime() != null && message.getDelayTime() > 0) {

@@ -12,6 +12,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.labdatahub.business.domain.*;
 import com.labdatahub.business.event.DeviceHeartbeatManager;
 import com.labdatahub.business.service.ILabdatahubFunctionService;
+import com.labdatahub.business.service.IOpenApiPointValueService;
 import com.labdatahub.business.service.ILabdatahubProductService;
 import com.labdatahub.business.service.ILabdatahubWarnConfigService;
 import com.labdatahub.business.utils.CacheUtils;
@@ -45,6 +46,8 @@ public class LabdatahubDeviceController extends BaseController
     private ILabdatahubWarnConfigService labdatahubWarnConfigService;
     @Autowired
     private ILabdatahubFunctionService labdatahubFunctionService;
+    @Autowired
+    private IOpenApiPointValueService openApiPointValueService;
     /**
      * 查询设备列表
      */
@@ -188,5 +191,24 @@ public class LabdatahubDeviceController extends BaseController
                 .set(LabdatahubDevice::getCustomConfig,labdatahubDevice.getCustomConfig()));
         CacheUtils.updateDeviceCustomConfig(labdatahubDevice.getDeviceSn(),labdatahubDevice.getCustomConfig());
         return AjaxResult.success("更新成功");
+    }
+
+    /**
+     * 写入一个点位的值（前端「物模型」列表「写值」按钮的入口）
+     *
+     * <p>与 {@code OpenApiPointValueController#pointValue}
+     * （{@code /openapi/v1/device/pointValue}）<b>共用同一个 service，行为不分叉</b>（方案 4.7.2），
+     * 区别只在这条走平台 JWT、不需要 {@code @Anonymous}。
+     *
+     * <p>⚠️ <b>每次调用都真的写设备</b>，没有预演开关。
+     *
+     * @param request 请求体只有 deviceSn / code / value 三个字段
+     * @return code=200 写入成功；其余按方案 4.5 的错误码表（400/404/409/422/500/503/504）
+     */
+    @PostMapping("/pointValue")
+    public AjaxResult pointValue(@RequestBody(required = false) PointWriteRequest request)
+    {
+        // 来源由入口标明（方案 4.8.2），落进审计表供「写值记录」页区分
+        return openApiPointValueService.write(request, PointWriteSource.MANUAL);
     }
 }

@@ -3,12 +3,14 @@ package com.labdatahub.component.modbus_tcp;
 
 import java.net.InetAddress;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
@@ -27,6 +29,23 @@ public class ModbusConnectionManager {
     private static final Map<String, ModbusTcpConfig> configMap = new ConcurrentHashMap<>();
     // 存储每个 componentId 的重连失败次数
     private static final Map<String, AtomicInteger> reconnectFailCountMap = new ConcurrentHashMap<>();
+    // 已放弃重连的 componentId：失败次数达上限后连接是"死"的，但健康检查每 10 秒仍会走到上限分支，
+    // 只在这个集合里第一次加入时提示一条，避免同一条错误无限刷（重连/关连接时清掉）
+    private static final Set<String> reconnectStoppedSet = ConcurrentHashMap.newKeySet();
+
+    /**
+     * 每个 componentId 一把读写串行锁。
+     *
+     * <p>一台设备只有一条 TCP 连接（TCPMasterConnection），而 {@code ModbusTCPTransaction} 不是线程安全的：
+     * 读跑在消费线程、写从 HTTP 线程进来、重连跑在 modbus-reconnect-worker 上，三方同时操作同一个 socket
+     * 会<b>响应错配</b>——读到的实时数据串位、写的结果判断错误。所以读、写、重连三方都必须过这把锁。
+     *
+     * <p>取锁策略有意的<b>不对称</b>（见方案 5.4）：
+     * 读侧用无界 {@code lock()}——读是采集链路的命脉，抢锁时不能因为「等写」而失败；
+     * 写侧用有界 {@code tryLock(waitMs)}——写是外部请求，宁可返回 503 让调用方重试，
+     * 也不能让 HTTP 线程无限挂着。
+     */
+    private static final Map<String, ReentrantLock> lockMap = new ConcurrentHashMap<>();
     
     // 连接健康检查调度器（全局单例）
     private static final ScheduledExecutorService healthCheckScheduler = Executors.newScheduledThreadPool(
@@ -87,6 +106,8 @@ public class ModbusConnectionManager {
 
             configMap.put(componentId, config);
             reconnectFailCountMap.put(componentId, new AtomicInteger(0));
+            // 组件重新连接，清掉"已放弃重连"标记（下次再断连时仍会提示一条）
+            reconnectStoppedSet.remove(componentId);
 
             InetAddress address = InetAddress.getByName(config.getIpAddr());
             connection = new TCPMasterConnection(address);
@@ -158,7 +179,10 @@ public class ModbusConnectionManager {
         // 2. 清理配置（停止该组件的重连检查）
         configMap.remove(componentId);
         reconnectFailCountMap.remove(componentId);
-        
+        reconnectStoppedSet.remove(componentId);
+        // 2.1 清锁表：组件已关，锁不再有意义；留着会随组件反复开关慢慢涨
+        lockMap.remove(componentId);
+
         // 3. 清理消息队列和消费线程（原有逻辑保留）
         ModbusMessageScheduler.removeMessageQueue(componentId);
         ModbusLoopConsumer.stopConsume(componentId);
@@ -183,6 +207,8 @@ public class ModbusConnectionManager {
         connections.clear();
         configMap.clear();
         reconnectFailCountMap.clear();
+        reconnectStoppedSet.clear();
+        lockMap.clear();
 
         shutdownExecutor(healthCheckScheduler, "健康检查调度器");
         shutdownExecutor(reconnectScheduler, "重连调度器");
@@ -218,8 +244,11 @@ public class ModbusConnectionManager {
             int currentFailCount = failCount.get();
             
             if (currentFailCount >= MAX_RECONNECT_ATTEMPTS) {
-                log.error("[Modbus 重连] componentId={} 重连失败次数已达上限（{}次），停止重连", 
-                        componentId, MAX_RECONNECT_ATTEMPTS);
+                // 只在刚到达上限时提示一次：健康检查每 10 秒会再走到这里，不加这个判断会无限刷同一条错误
+                if (reconnectStoppedSet.add(componentId)) {
+                    log.error("[Modbus 重连] componentId={} 重连失败次数已达上限（{}次），停止重连（需手动重启组件）",
+                            componentId, MAX_RECONNECT_ATTEMPTS);
+                }
                 connections.remove(componentId);
                 return;
             }
@@ -259,6 +288,11 @@ public class ModbusConnectionManager {
      * 执行重连逻辑（带指数退避）
      */
     private static boolean reconnect(String componentId, ModbusTcpConfig config, AtomicInteger failCount) {
+        // 重连会 close() 旧连接再换掉 connections 里的对象 —— 不持锁的话：
+        //   写线程持锁 → 拿到 conn A → 正在 write/read，重连线程把 conn A.close() 了
+        // 写结果从此无法判定。读失败只是丢一次数据，写失败是「不知道写没写进去」，量级不同。
+        ReentrantLock lock = getLock(componentId);
+        lock.lock();
         try {
             int retryCount = failCount.incrementAndGet();
             
@@ -308,6 +342,8 @@ public class ModbusConnectionManager {
             }
 
             return false;
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -353,7 +389,29 @@ public class ModbusConnectionManager {
         AtomicInteger count = reconnectFailCountMap.get(componentId);
         return count != null ? count.get() : 0;
     }
-    
+
+    /**
+     * 取该 componentId 的读写串行锁（惰性创建）
+     *
+     * <p>读、写、重连三方共用同一把锁。{@link ReentrantLock} 可重入，所以同一线程
+     * 「持锁 → 调 getValidConnection → 内部同步 reconnect」不会死锁。
+     *
+     * @param componentId 组件唯一标识
+     * @return 该组件的锁，永不为 null（componentId 为 null 时返回一把独立锁，调用方应自行保证非空）
+     */
+    public static ReentrantLock getLock(String componentId) {
+        return lockMap.computeIfAbsent(String.valueOf(componentId), k -> new ReentrantLock());
+    }
+
+    /**
+     * 取该 componentId 的连接配置（供上层拼「连不上 127.0.0.1:502」这类提示语用）
+     *
+     * @return 配置；组件未开启或开启时连接失败时为 null
+     */
+    public static ModbusTcpConfig getConfig(String componentId) {
+        return configMap.get(componentId);
+    }
+
  // 获取有效连接（如果当前连接无效则触发重连）
 //    public static TCPMasterConnection getValidConnection(String componentId) {
 //        TCPMasterConnection conn = connections.get(componentId);
@@ -381,10 +439,34 @@ public class ModbusConnectionManager {
         return conn;
     }
 
+    /**
+     * 强制重连（丢弃当前连接，重建一条）
+     *
+     * <p>给写值链路在「结果不确定」之后用：回显对不上或读响应超时，说明这条 socket 上
+     * 的请求/响应已经错位，而 {@link #isConnectionValid} 只看本地 isConnected()，
+     * 错位但没断的 socket 会被判成「有效」从而一直复用下去。
+     *
+     * <p>⚠️ 调用方必须在 {@code unlock()} <b>之后</b>调用 —— 这里会真的建 TCP 连接，
+     * 持着锁做会把整条读链路卡住一个 connect 超时。
+     */
+    public static void forceReconnect(String componentId) {
+        ModbusTcpConfig config = configMap.get(componentId);
+        if (config == null) {
+            return;
+        }
+        AtomicInteger failCount = reconnectFailCountMap.computeIfAbsent(componentId, k -> new AtomicInteger(0));
+        // 先摘掉旧连接：保留着的话 getValidConnection 会认为它「有效」而不再重建
+        connections.remove(componentId);
+        reconnect(componentId, config, failCount);
+    }
+
     // 强制重连并返回新连接
     public static TCPMasterConnection renewConnection(String componentId) {
         ModbusTcpConfig config = configMap.get(componentId);
         if (config == null) return null;
+        // 同样要持锁：这里也会 connections.put 换掉连接对象，理由同 reconnect
+        ReentrantLock lock = getLock(componentId);
+        lock.lock();
         try {
             InetAddress address = InetAddress.getByName(config.getIpAddr());
             TCPMasterConnection newConn = new TCPMasterConnection(address);
@@ -396,6 +478,8 @@ public class ModbusConnectionManager {
         } catch (Exception e) {
             log.error("重连失败", e);
             return null;
+        } finally {
+            lock.unlock();
         }
     }
 }

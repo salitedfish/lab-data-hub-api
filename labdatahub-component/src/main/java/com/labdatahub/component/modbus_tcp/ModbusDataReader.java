@@ -16,6 +16,7 @@ import net.wimpi.modbus.util.BitVector;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 数据读取器，负责从Modbus设备读取/写入寄存器数据
@@ -43,6 +44,20 @@ public class ModbusDataReader {
 	 * @return 读取到的整数列表（线圈/离散输入转 0/1）
 	 */
 	public static List<Integer> readByFunction(String componentId, Integer slaveId, Integer functionCode, int startAddr, int count) throws Exception {
+		// 读、写、重连共用一把锁（方案 5.4）：一台设备只有一条 TCP 连接，
+		// 而 ModbusTCPTransaction 不是线程安全的，并发操作同一 socket 会响应错配。
+		// 读侧用无界 lock()——读是采集链路的命脉，绝不能因为「正在写」而失败；
+		// 写侧用有界 tryLock，宁可让 HTTP 请求拿 503 也不能让读挨饿。这个不对称是故意的。
+		ReentrantLock lock = ModbusConnectionManager.getLock(componentId);
+		lock.lock();
+		try {
+			return doReadByFunction(componentId, slaveId, functionCode, startAddr, count);
+		} finally {
+			lock.unlock();
+		}
+	}
+
+	private static List<Integer> doReadByFunction(String componentId, Integer slaveId, Integer functionCode, int startAddr, int count) throws Exception {
 		if (functionCode == null) {
 			functionCode = 3;
 		}
