@@ -57,9 +57,15 @@ public class LabdatahubDeviceLogsController extends BaseController
         // 用引号包裹的标识符匹配属性 key，避免误命中数值
         queryWrapper.like(StringUtils.isNotEmpty(propertyName), LabdatahubDeviceLogs::getProperties, "\"" + propertyName + "\"");
      // 处理时间范围查询
+        // ⚠️ 必须写成显式 if：Java 会先把 LocalDateTime.parse(startTime) 求值再传进 ge，
+        // 条件为 false 也照样解析，页面「重置」清空时间范围后 startTime 为 null → NPE
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-        queryWrapper.ge(StringUtils.isNotEmpty(startTime),LabdatahubDeviceLogs::getCreateTime, LocalDateTime.parse(startTime, formatter));
-        queryWrapper.le(StringUtils.isNotEmpty(endTime),LabdatahubDeviceLogs::getCreateTime, LocalDateTime.parse(endTime, formatter));
+        if (StringUtils.isNotEmpty(startTime)) {
+            queryWrapper.ge(LabdatahubDeviceLogs::getCreateTime, LocalDateTime.parse(startTime, formatter));
+        }
+        if (StringUtils.isNotEmpty(endTime)) {
+            queryWrapper.le(LabdatahubDeviceLogs::getCreateTime, LocalDateTime.parse(endTime, formatter));
+        }
         Page<LabdatahubDeviceLogs> page = new Page<LabdatahubDeviceLogs>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubDeviceLogs> pageList = labdatahubDeviceLogsService.page(page,queryWrapper);
         return getDataTable(pageList);
