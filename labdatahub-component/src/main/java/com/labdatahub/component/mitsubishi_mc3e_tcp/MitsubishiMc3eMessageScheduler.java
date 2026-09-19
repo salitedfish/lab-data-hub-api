@@ -1,4 +1,4 @@
-package com.labdatahub.component.mitsubishi_tcp;
+package com.labdatahub.component.mitsubishi_mc3e_tcp;
 
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -15,12 +15,12 @@ import cn.hutool.core.bean.BeanUtil;
 
 /**
  * 三菱 MC 消息定时生产-消费工具类（静态版+多组件隔离队列）
- * 功能：根据MitsubishiReadConfig的intervalTime定时生成MitsubishiMessage，按componentId存入不同队列供消费
+ * 功能：根据MitsubishiMc3eReadConfig的intervalTime定时生成MitsubishiMc3eMessage，按componentId存入不同队列供消费
  */
-public class MitsubishiMessageScheduler {
+public class MitsubishiMc3eMessageScheduler {
     // ========== 静态变量（全局唯一） ==========
     // 多组件隔离的消息队列：key=componentId，value=对应组件的阻塞队列
-    public static final Map<String, BlockingQueue<MitsubishiMessage>> messageQueueMap = new ConcurrentHashMap<>();
+    public static final Map<String, BlockingQueue<MitsubishiMc3eMessage>> messageQueueMap = new ConcurrentHashMap<>();
     // 调度器：用于执行定时生成消息的任务（静态初始化，全局唯一）
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(5);
     // 存储配置与对应定时任务的映射（避免重复调度，支持动态移除）
@@ -31,7 +31,7 @@ public class MitsubishiMessageScheduler {
     //单个网络组件最大的消息堆积值
     private static final Integer MAX_QUEUE_SIZE = 1000;
     // ========== 私有构造器（禁止实例化） ==========
-    private MitsubishiMessageScheduler() {
+    private MitsubishiMc3eMessageScheduler() {
         throw new UnsupportedOperationException("该类为静态工具类，禁止实例化");
     }
     /**
@@ -39,7 +39,7 @@ public class MitsubishiMessageScheduler {
      * @param componentId 组件ID（标识消息队列所属类型，不能为空）
      * @param readConfig 读取配置（必须包含deviceSn、code、intervalTime）
      */
-    public static void addReadConfig(String componentId, MitsubishiReadConfig readConfig) {
+    public static void addReadConfig(String componentId, MitsubishiMc3eReadConfig readConfig) {
         // 1. 核心参数校验（componentId+基础配置）
         if (StringUtils.isBlank(componentId)) {
             // componentId为空表示设备未绑定网络组件，无需调度，直接跳过（避免readSwitch等路径抛异常）
@@ -47,7 +47,7 @@ public class MitsubishiMessageScheduler {
             return;
         }
         if (readConfig == null) {
-            throw new IllegalArgumentException("MitsubishiReadConfig 不能为null");
+            throw new IllegalArgumentException("MitsubishiMc3eReadConfig 不能为null");
         }
         if (StringUtils.isBlank(readConfig.getDeviceSn())) {
             throw new IllegalArgumentException("deviceSn 不能为空");
@@ -64,13 +64,13 @@ public class MitsubishiMessageScheduler {
         if (configTaskMap.containsKey(configKey)) {
             removeReadConfig(componentId, readConfig.getDeviceSn(), readConfig.getCode());
         }
-        // 3. 创建定时任务：按intervalTime（秒）循环生成MitsubishiMessage
+        // 3. 创建定时任务：按intervalTime（秒）循环生成MitsubishiMc3eMessage
         ScheduledFuture<?> future = scheduler.scheduleAtFixedRate(
                 () -> {
                     // 配置转消息（核心映射逻辑）
-                    MitsubishiMessage message = convertToMitsubishiMessage(readConfig);
+                    MitsubishiMc3eMessage message = convertToMitsubishiMc3eMessage(readConfig);
                     // 根据componentId获取/创建对应的队列（原子操作，线程安全）
-                    BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.computeIfAbsent(
+                    BlockingQueue<MitsubishiMc3eMessage> targetQueue = messageQueueMap.computeIfAbsent(
                             componentId,
                             k -> new LinkedBlockingQueue<>() // 每个componentId对应一个独立队列
                     );
@@ -135,17 +135,17 @@ public class MitsubishiMessageScheduler {
     /**
      * 【静态方法】消费者获取指定组件的消息（阻塞式，无消息时等待）
      * @param componentId 组件ID（标识要读取的队列）
-     * @return MitsubishiMessage
+     * @return MitsubishiMc3eMessage
      * @throws InterruptedException 线程中断异常
      * @throws IllegalArgumentException componentId为空或无对应队列时抛出
      */
-    public static MitsubishiMessage takeMessage(String componentId) throws InterruptedException {
+    public static MitsubishiMc3eMessage takeMessage(String componentId) throws InterruptedException {
         // 参数校验
         if (StringUtils.isBlank(componentId)) {
             throw new IllegalArgumentException("componentId 不能为空");
         }
         // 获取对应组件的队列（不存在则抛异常）
-        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.get(componentId);
+        BlockingQueue<MitsubishiMc3eMessage> targetQueue = messageQueueMap.get(componentId);
         if (targetQueue == null) {
             throw new IllegalArgumentException("componentId=" + componentId + " 无对应的消息队列");
         }
@@ -155,16 +155,16 @@ public class MitsubishiMessageScheduler {
     /**
      * 【静态方法】消费者获取指定组件的消息（非阻塞式，无消息时返回null）
      * @param componentId 组件ID（标识要读取的队列）
-     * @return MitsubishiMessage 或 null
+     * @return MitsubishiMc3eMessage 或 null
      * @throws IllegalArgumentException componentId为空时抛出
      */
-    public static MitsubishiMessage pollMessage(String componentId) {
+    public static MitsubishiMc3eMessage pollMessage(String componentId) {
         // 参数校验
         if (StringUtils.isBlank(componentId)) {
             throw new IllegalArgumentException("componentId 不能为空");
         }
         // 获取对应组件的队列（不存在则返回null）
-        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.get(componentId);
+        BlockingQueue<MitsubishiMc3eMessage> targetQueue = messageQueueMap.get(componentId);
         if (targetQueue == null) {
             return null;
         }
@@ -192,10 +192,10 @@ public class MitsubishiMessageScheduler {
         System.out.println("MC消息调度器已关闭，所有组件队列已清空");
     }
     /**
-     * 【静态方法】MitsubishiReadConfig 转 MitsubishiMessage（字段映射）
+     * 【静态方法】MitsubishiMc3eReadConfig 转 MitsubishiMc3eMessage（字段映射）
      */
-    private static MitsubishiMessage convertToMitsubishiMessage(MitsubishiReadConfig readConfig) {
-        MitsubishiMessage message = new MitsubishiMessage();
+    private static MitsubishiMc3eMessage convertToMitsubishiMc3eMessage(MitsubishiMc3eReadConfig readConfig) {
+        MitsubishiMc3eMessage message = new MitsubishiMc3eMessage();
         BeanUtil.copyProperties(readConfig, message);
         return message;
     }
@@ -208,7 +208,7 @@ public class MitsubishiMessageScheduler {
         if (StringUtils.isBlank(componentId)) {
             return 0;
         }
-        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.get(componentId);
+        BlockingQueue<MitsubishiMc3eMessage> targetQueue = messageQueueMap.get(componentId);
         return targetQueue == null ? 0 : targetQueue.size();
     }
     /**
@@ -231,7 +231,7 @@ public class MitsubishiMessageScheduler {
             }
             return false;
         });
-        BlockingQueue<MitsubishiMessage> targetQueue = messageQueueMap.remove(componentId);
+        BlockingQueue<MitsubishiMc3eMessage> targetQueue = messageQueueMap.remove(componentId);
         if (targetQueue != null) {
             System.out.printf("已移除componentId=%s 的消息队列，清空消息数：%d%n", componentId, targetQueue.size());
             targetQueue.clear();

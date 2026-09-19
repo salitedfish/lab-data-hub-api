@@ -10,7 +10,7 @@ import com.labdatahub.component.brother_tcp.BrotherTcpReadConfig;
 import com.labdatahub.component.fanuc_focas.FanucFocasReadConfig;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
 import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncReadConfig;
-import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
+import com.labdatahub.component.mitsubishi_mc3e_tcp.MitsubishiMc3eReadConfig;
 import com.labdatahub.component.modbus_tcp.ModbusReadConfig;
 import com.labdatahub.component.s7_tcp.S7ReadConfig;
 
@@ -98,7 +98,7 @@ public class ParseMetaUtils {
     /**
      * 把解析元数据应用到三菱MC读取配置
      */
-    public static void applyTo(MitsubishiReadConfig config, String deviceSn, String productSn, String code) {
+    public static void applyTo(MitsubishiMc3eReadConfig config, String deviceSn, String productSn, String code) {
         LabdatahubProperties property = resolve(deviceSn, productSn, code);
         if (property == null) {
             return;

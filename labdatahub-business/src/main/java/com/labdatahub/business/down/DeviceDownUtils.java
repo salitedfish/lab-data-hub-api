@@ -118,12 +118,12 @@ public class DeviceDownUtils {
                     isOk = fanucFocasDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
                     break;
                 }
-                case "MITSUBISHI_TCP":{
-                    isOk = mitsubishiTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                case "MITSUBISHI_MC3E_TCP":{
+                    isOk = mitsubishiMc3eTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
                     break;
                 }
                 case "MITSUBISHI_CNC_TCP":{
-                    isOk = mitsubishiTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
+                    isOk = mitsubishiMc3eTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
                     break;
                 }
                 default:
@@ -222,12 +222,12 @@ public class DeviceDownUtils {
                     isOk = fanucFocasDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
-                case "MITSUBISHI_TCP": {
-                    isOk = mitsubishiTcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
+                case "MITSUBISHI_MC3E_TCP": {
+                    isOk = mitsubishiMc3eTcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
                 case "MITSUBISHI_CNC_TCP": {
-                    isOk = mitsubishiTcpDown(deviceSn, functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
+                    isOk = mitsubishiMc3eTcpDown(deviceSn, functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
                 default:
@@ -423,9 +423,9 @@ public class DeviceDownUtils {
     }
 
     /**
-     * MITSUBISHI_TCP功能下发（三菱 MC 协议只读采集，encode 返回 isSend=false，直接返回成功）
+     * MITSUBISHI_MC3E_TCP功能下发（三菱 MC 协议只读采集，encode 返回 isSend=false，直接返回成功）
      */
-    public static boolean mitsubishiTcpDown(String deviceSn,String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
+    public static boolean mitsubishiMc3eTcpDown(String deviceSn,String functionCode, Map<String,Object> properties,String params, String componentId, String protocolId,String customConfig) throws InvocationTargetException, IllegalAccessException, MqttException {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.getOrDefault(protocolId,null);
         Object instance = ProtocolManager.CLASS_INSTANCE.getOrDefault(protocolId,null);
         Object result = encodeMethod.invoke(instance,functionCode,deviceSn,properties,params,customConfig,null);

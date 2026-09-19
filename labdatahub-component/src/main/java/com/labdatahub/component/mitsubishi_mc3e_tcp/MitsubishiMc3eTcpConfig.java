@@ -1,4 +1,4 @@
-package com.labdatahub.component.mitsubishi_tcp;
+package com.labdatahub.component.mitsubishi_mc3e_tcp;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class MitsubishiTcpConfig {
+public class MitsubishiMc3eTcpConfig {
     // IP地址
     private String ipAddr;
     // 端口，MC协议默认5007

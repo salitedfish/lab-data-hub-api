@@ -1,14 +1,14 @@
 //由AI修改
-package com.labdatahub.component.mitsubishi_tcp;
+package com.labdatahub.component.mitsubishi_mc3e_tcp;
 
 import lombok.Data;
 
 /**
- * 三菱 MC 消息实体
+ * 三菱 MC 读取配置
  */
 @Data
-public class MitsubishiMessage {
-    // 设备SN
+public class MitsubishiMc3eReadConfig {
+    // 设备id
     private String deviceSn;
     // 指令编码
     private String code;
@@ -18,8 +18,8 @@ public class MitsubishiMessage {
     private Integer startAddress;
     // 读取数量
     private Integer length;
-    // 协议帧模式：3E-QnA兼容3E帧（默认） 1E-MC1E标准二进制帧
-    private String protocolMode;
+    // 间隔时间
+    private Integer intervalTime;
     // 读取完暂停时间
     private Integer delayTime;
     // 数据类型: int/double/bool/string（来自物模型）

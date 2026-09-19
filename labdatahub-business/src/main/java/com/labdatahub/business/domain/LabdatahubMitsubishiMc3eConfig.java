@@ -13,16 +13,16 @@ import lombok.NoArgsConstructor;
 
 /**
  *
-* @ClassName: LabdatahubMitsubishiConfig
-* @Description: 三菱MC协议读取配置对象 labdatahub_mitsubishi_config
+* @ClassName: LabdatahubMitsubishiMc3eConfig
+* @Description: 三菱MC协议读取配置对象 labdatahub_mitsubishi_mc3e_config
 * @author xwb
 * @date 2026年8月24日
  */
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@TableName(value = "labdatahub_mitsubishi_config")
-public class LabdatahubMitsubishiConfig implements Serializable
+@TableName(value = "labdatahub_mitsubishi_mc3e_config")
+public class LabdatahubMitsubishiMc3eConfig implements Serializable
 {
 private static final long serialVersionUID = 1L;
 
@@ -60,8 +60,4 @@ private static final long serialVersionUID = 1L;
     /** 读取数量（字设备为字数，位设备为点数） */
     @Excel(name = "读取数量")
     private Integer length;
-
-    /** 协议帧模式：3E-QnA兼容3E帧（默认） 1E-MC1E标准二进制帧 */
-    @Excel(name = "协议帧模式")
-    private String protocolMode;
 }

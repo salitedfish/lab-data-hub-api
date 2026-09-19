@@ -1,4 +1,4 @@
-package com.labdatahub.component.mitsubishi_tcp;
+package com.labdatahub.component.mitsubishi_mc3e_tcp;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -9,18 +9,18 @@ import javax.annotation.PreDestroy;
  */
 @Slf4j
 @Component
-public class MitsubishiLifecycle {
+public class MitsubishiMc3eLifecycle {
 
     @PreDestroy
     public void destroy() {
     	log.info("=== 应用关闭，停止 Mitsubishi 循环消费线程 ===");
-    	MitsubishiLoopConsumer.stopAllConsume();
+    	MitsubishiMc3eLoopConsumer.stopAllConsume();
 
         log.info("=== 应用关闭，停止 Mitsubishi 消息调度器 ===");
-        MitsubishiMessageScheduler.shutdown();
+        MitsubishiMc3eMessageScheduler.shutdown();
 
         log.info("=== 应用关闭，清理 Mitsubishi 连接资源 ===");
-        MitsubishiConnectionManager.closeAllConnections();
+        MitsubishiMc3eConnectionManager.closeAllConnections();
 
         log.info("=== 所有 Mitsubishi 资源已清理完成 ===");
     }

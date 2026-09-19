@@ -8,7 +8,7 @@ import com.labdatahub.business.domain.LabdatahubBrotherConfig;
 import com.labdatahub.business.domain.LabdatahubDevice;
 import com.labdatahub.business.domain.LabdatahubFanucConfig;
 import com.labdatahub.business.domain.LabdatahubModbusConfig;
-import com.labdatahub.business.domain.LabdatahubMitsubishiConfig;
+import com.labdatahub.business.domain.LabdatahubMitsubishiMc3eConfig;
 import com.labdatahub.business.domain.LabdatahubMitsubishiCncConfig;
 import com.labdatahub.business.domain.LabdatahubOmronFinsConfig;
 import com.labdatahub.business.domain.LabdatahubS71200Config;
@@ -16,7 +16,7 @@ import com.labdatahub.business.service.ILabdatahubBrotherConfigService;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubFanucConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
-import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
+import com.labdatahub.business.service.ILabdatahubMitsubishiMc3eConfigService;
 import com.labdatahub.business.service.ILabdatahubMitsubishiCncConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubS71200ConfigService;
@@ -30,8 +30,8 @@ import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
 import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncMessageScheduler;
 import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncReadConfig;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
-import com.labdatahub.component.mitsubishi_tcp.MitsubishiMessageScheduler;
-import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
+import com.labdatahub.component.mitsubishi_mc3e_tcp.MitsubishiMc3eMessageScheduler;
+import com.labdatahub.component.mitsubishi_mc3e_tcp.MitsubishiMc3eReadConfig;
 import com.labdatahub.component.modbus_tcp.ModbusMessageScheduler;
 import com.labdatahub.component.modbus_tcp.ModbusReadConfig;
 import com.labdatahub.component.s7_tcp.S7MessageScheduler;
@@ -178,6 +178,7 @@ public class ProtocolReadConfigRebuilder {
             config.setIntervalTime(o.getIntervalTime().intValue());
             config.setAreaCode(o.getAreaCode());
             config.setStartAddress(o.getStartAddress());
+            config.setBitAddress(o.getBitAddress());
             config.setLength(o.getLength());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
             FinsMessageScheduler.addReadConfig(componentId, config);
@@ -185,21 +186,21 @@ public class ProtocolReadConfigRebuilder {
     }
 
     /**
-     * 重建三菱MC读取配置（构建逻辑与 LabdatahubMitsubishiConfigController 保持一致）
+     * 重建三菱MC读取配置（构建逻辑与 LabdatahubMitsubishiMc3eConfigController 保持一致）
      */
     private static void rebuildMitsubishi(LabdatahubDevice device) {
         String componentId = device.getComponentId();
         String deviceSn = device.getDeviceSn();
-        List<LabdatahubMitsubishiConfig> list = SpringUtils.getBean(ILabdatahubMitsubishiConfigService.class).list(
-                new LambdaQueryWrapper<LabdatahubMitsubishiConfig>().eq(LabdatahubMitsubishiConfig::getBelongSn, deviceSn));
-        for (LabdatahubMitsubishiConfig o : list) {
+        List<LabdatahubMitsubishiMc3eConfig> list = SpringUtils.getBean(ILabdatahubMitsubishiMc3eConfigService.class).list(
+                new LambdaQueryWrapper<LabdatahubMitsubishiMc3eConfig>().eq(LabdatahubMitsubishiMc3eConfig::getBelongSn, deviceSn));
+        for (LabdatahubMitsubishiMc3eConfig o : list) {
             if (o.getDelayTime() == null || o.getIntervalTime() == null) {
                 continue;
             }
-            if (!MitsubishiMessageScheduler.isReadConfigRunning(componentId, deviceSn, o.getCode())) {
+            if (!MitsubishiMc3eMessageScheduler.isReadConfigRunning(componentId, deviceSn, o.getCode())) {
                 continue;
             }
-            MitsubishiReadConfig config = new MitsubishiReadConfig();
+            MitsubishiMc3eReadConfig config = new MitsubishiMc3eReadConfig();
             config.setDeviceSn(o.getBelongSn());
             config.setCode(o.getCode());
             config.setDelayTime(o.getDelayTime().intValue());
@@ -207,9 +208,8 @@ public class ProtocolReadConfigRebuilder {
             config.setAreaCode(o.getAreaCode());
             config.setStartAddress(o.getStartAddress());
             config.setLength(o.getLength());
-            config.setProtocolMode(o.getProtocolMode());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
-            MitsubishiMessageScheduler.addReadConfig(componentId, config);
+            MitsubishiMc3eMessageScheduler.addReadConfig(componentId, config);
         }
     }
 

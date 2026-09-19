@@ -34,8 +34,8 @@ import com.labdatahub.component.db.DatabaseConnectionManager;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.labdatahub.component.fins_tcp.FinsConnectionManager;
 import com.labdatahub.component.fins_tcp.FinsTcpConfig;
-import com.labdatahub.component.mitsubishi_tcp.MitsubishiConnectionManager;
-import com.labdatahub.component.mitsubishi_tcp.MitsubishiTcpConfig;
+import com.labdatahub.component.mitsubishi_mc3e_tcp.MitsubishiMc3eConnectionManager;
+import com.labdatahub.component.mitsubishi_mc3e_tcp.MitsubishiMc3eTcpConfig;
 import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncConnectionManager;
 import com.labdatahub.component.mitsubishi_cnc_tcp.MitsubishiCncTcpConfig;
 import com.labdatahub.component.http.HttpServerConfig;
@@ -442,10 +442,10 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                     return false;
                 }
             }
-            case "MITSUBISHI_TCP" : {
+            case "MITSUBISHI_MC3E_TCP" : {
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
-                	MitsubishiTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(MitsubishiTcpConfig.class);
-                    boolean isOk = MitsubishiConnectionManager.addConnection(component.getId(), config);
+                	MitsubishiMc3eTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(MitsubishiMc3eTcpConfig.class);
+                    boolean isOk = MitsubishiMc3eConnectionManager.addConnection(component.getId(), config);
                     // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
                     timerTask.initMitsubishiTcpRead();
                     if(!isOk){
@@ -626,8 +626,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 CacheUtils.setComponentCache(component.getId(),component);
                 return true;
             }
-            case "MITSUBISHI_TCP" : {
-            	MitsubishiConnectionManager.closeConnection(component.getId());
+            case "MITSUBISHI_MC3E_TCP" : {
+            	MitsubishiMc3eConnectionManager.closeConnection(component.getId());
                 // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
                 ComponentOnlineNotifier.markOfflineAndNotify(component.getId());
                 component.setStatus("0");

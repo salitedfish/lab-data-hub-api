@@ -21,9 +21,9 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.labdatahub.business.domain.LabdatahubDevice;
-import com.labdatahub.business.domain.LabdatahubMitsubishiConfig;
+import com.labdatahub.business.domain.LabdatahubMitsubishiMc3eConfig;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
-import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
+import com.labdatahub.business.service.ILabdatahubMitsubishiMc3eConfigService;
 import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.business.utils.ParseMetaUtils;
 import com.labdatahub.business.utils.ProtocolPointModelSync;
@@ -34,22 +34,22 @@ import com.labdatahub.common.core.page.TableDataInfo;
 import com.labdatahub.common.enums.BusinessType;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
-import com.labdatahub.component.mitsubishi_tcp.MitsubishiMessageScheduler;
-import com.labdatahub.component.mitsubishi_tcp.MitsubishiReadConfig;
+import com.labdatahub.component.mitsubishi_mc3e_tcp.MitsubishiMc3eMessageScheduler;
+import com.labdatahub.component.mitsubishi_mc3e_tcp.MitsubishiMc3eReadConfig;
 
 /**
  *
-* @ClassName: LabdatahubMitsubishiConfigController
+* @ClassName: LabdatahubMitsubishiMc3eConfigController
 * @Description: 三菱MC协议读取配置Controller
 * @author xwb
 * @date 2026年8月24日
  */
 @RestController
-@RequestMapping("/business/mitsubishiTcp")
-public class LabdatahubMitsubishiConfigController extends BaseController
+@RequestMapping("/business/mitsubishiMc3eTcp")
+public class LabdatahubMitsubishiMc3eConfigController extends BaseController
 {
     @Autowired
-    private ILabdatahubMitsubishiConfigService labdatahubMitsubishiConfigService;
+    private ILabdatahubMitsubishiMc3eConfigService labdatahubMitsubishiConfigService;
     @Autowired
     private ILabdatahubDeviceService labdatahubDeviceService;
 
@@ -69,18 +69,18 @@ public class LabdatahubMitsubishiConfigController extends BaseController
      * 查询三菱MC协议读取配置列表
      */
     @GetMapping("/list")
-    public TableDataInfo list(LabdatahubMitsubishiConfig labdatahubMitsubishiConfig)
+    public TableDataInfo list(LabdatahubMitsubishiMc3eConfig labdatahubMitsubishiConfig)
     {
-        LambdaQueryWrapper<LabdatahubMitsubishiConfig> queryWrapper = new LambdaQueryWrapper<>();
-        queryWrapper.orderByAsc(LabdatahubMitsubishiConfig::getCreateTime);
+        LambdaQueryWrapper<LabdatahubMitsubishiMc3eConfig> queryWrapper = new LambdaQueryWrapper<>();
+        queryWrapper.orderByAsc(LabdatahubMitsubishiMc3eConfig::getCreateTime);
         if (StringUtils.isNotEmpty(labdatahubMitsubishiConfig.getBelongSn())) {
-            queryWrapper.eq(LabdatahubMitsubishiConfig::getBelongSn, labdatahubMitsubishiConfig.getBelongSn());
+            queryWrapper.eq(LabdatahubMitsubishiMc3eConfig::getBelongSn, labdatahubMitsubishiConfig.getBelongSn());
         }
         if (StringUtils.isNotEmpty(labdatahubMitsubishiConfig.getCode())) {
-            queryWrapper.like(LabdatahubMitsubishiConfig::getCode, labdatahubMitsubishiConfig.getCode());
+            queryWrapper.like(LabdatahubMitsubishiMc3eConfig::getCode, labdatahubMitsubishiConfig.getCode());
         }
-        Page<LabdatahubMitsubishiConfig> page = new Page<>(PageUtils.getPageNum(), PageUtils.getPageSize());
-        Page<LabdatahubMitsubishiConfig> pageList = labdatahubMitsubishiConfigService.page(page, queryWrapper);
+        Page<LabdatahubMitsubishiMc3eConfig> page = new Page<>(PageUtils.getPageNum(), PageUtils.getPageSize());
+        Page<LabdatahubMitsubishiMc3eConfig> pageList = labdatahubMitsubishiConfigService.page(page, queryWrapper);
         return getDataTable(pageList);
     }
 
@@ -98,7 +98,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
      *
      * @return null-校验通过，否则返回错误信息
      */
-    private AjaxResult checkConfig(LabdatahubMitsubishiConfig config) {
+    private AjaxResult checkConfig(LabdatahubMitsubishiMc3eConfig config) {
         if (config.getAreaCode() == null) {
             return AjaxResult.error("软元件代码 areaCode 不能为空");
         }
@@ -109,7 +109,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         if (config.getStartAddress() == null || config.getStartAddress() < 0) {
             return AjaxResult.error("起始地址 startAddress 不能为负数");
         }
-        // X/Y 输入/输出继电器地址为八进制：十进制写法含 8/9 即为非法八进制数字，配置期拦截（读取期 MitsubishiDataReader 也会抛）
+        // X/Y 输入/输出继电器地址为八进制：十进制写法含 8/9 即为非法八进制数字，配置期拦截（读取期 MitsubishiMc3eDataReader 也会抛）
         if ((config.getAreaCode() == 0x9C || config.getAreaCode() == 0x9D)
                 && Integer.toString(config.getStartAddress()).matches(".*[89].*")) {
             return AjaxResult.error("X/Y 软元件地址为八进制（仅允许数字 0-7），当前起始地址含非法数字：" + config.getStartAddress());
@@ -129,10 +129,6 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
             return AjaxResult.error("读取间隔 intervalTime 必须为正整数（单位：秒）");
         }
-        // 协议帧模式：为空默认 3E；非空仅允许 1E/3E
-        if (config.getProtocolMode() != null && !"1E".equals(config.getProtocolMode()) && !"3E".equals(config.getProtocolMode())) {
-            return AjaxResult.error("协议帧模式 protocolMode 只能是 1E(MC1E) / 3E(MC3E)");
-        }
         return null;
     }
 
@@ -141,7 +137,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
      */
     @Log(title = "三菱MC协议读取配置", businessType = BusinessType.INSERT)
     @PostMapping
-    public AjaxResult add(@RequestBody LabdatahubMitsubishiConfig labdatahubMitsubishiConfig)
+    public AjaxResult add(@RequestBody LabdatahubMitsubishiMc3eConfig labdatahubMitsubishiConfig)
     {
         AjaxResult check = checkConfig(labdatahubMitsubishiConfig);
         if (check != null) {
@@ -161,7 +157,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
      */
     @Log(title = "三菱MC协议读取配置", businessType = BusinessType.UPDATE)
     @PutMapping
-    public AjaxResult edit(@RequestBody LabdatahubMitsubishiConfig labdatahubMitsubishiConfig)
+    public AjaxResult edit(@RequestBody LabdatahubMitsubishiMc3eConfig labdatahubMitsubishiConfig)
     {
         AjaxResult check = checkConfig(labdatahubMitsubishiConfig);
         if (check != null) {
@@ -171,13 +167,13 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         // 避免旧 code 的调度以旧 key 残留在调度器，导致同一点位被新旧两套调度同时读取
         String oldCode = null;
         if (labdatahubMitsubishiConfig.getId() != null) {
-            LabdatahubMitsubishiConfig oldConfig = labdatahubMitsubishiConfigService.getById(labdatahubMitsubishiConfig.getId());
+            LabdatahubMitsubishiMc3eConfig oldConfig = labdatahubMitsubishiConfigService.getById(labdatahubMitsubishiConfig.getId());
             if (oldConfig != null && StringUtils.isNotBlank(oldConfig.getBelongSn())) {
                 oldCode = oldConfig.getCode();
                 LabdatahubDevice oldDevice = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                         .eq(LabdatahubDevice::getDeviceSn, oldConfig.getBelongSn()), false);
                 if (oldDevice != null && oldDevice.getComponentId() != null) {
-                    MitsubishiMessageScheduler.removeReadConfig(oldDevice.getComponentId(), oldDevice.getDeviceSn(), oldConfig.getCode());
+                    MitsubishiMc3eMessageScheduler.removeReadConfig(oldDevice.getComponentId(), oldDevice.getDeviceSn(), oldConfig.getCode());
                 }
             }
         }
@@ -197,9 +193,9 @@ public class LabdatahubMitsubishiConfigController extends BaseController
     public AjaxResult remove(@PathVariable String[] ids)
     {
         // 由AI修改：删除前先取出配置，删除后逐个同步移除调度器，避免停服前残留调度
-        List<LabdatahubMitsubishiConfig> configList = labdatahubMitsubishiConfigService.listByIds(Arrays.asList(ids));
+        List<LabdatahubMitsubishiMc3eConfig> configList = labdatahubMitsubishiConfigService.listByIds(Arrays.asList(ids));
         AjaxResult result = toAjax(labdatahubMitsubishiConfigService.removeBatchByIds(Arrays.asList(ids)));
-        for (LabdatahubMitsubishiConfig config : configList) {
+        for (LabdatahubMitsubishiMc3eConfig config : configList) {
             syncConfigToScheduler(config.getBelongSn(), config, true);
             // 由AI修改：删除点位同时删除自动生成的对应物模型属性（不误伤手动配置的同名属性）
             ProtocolPointModelSync.afterRemove(config.getBelongSn(), config.getBelongType(), config.getCode());
@@ -215,7 +211,7 @@ public class LabdatahubMitsubishiConfigController extends BaseController
      * @param config 读取配置
      * @param removeOnly true=仅从调度器移除（删除场景），false=移除后重建（新增/修改场景）
      */
-    private void syncConfigToScheduler(String belongSn, LabdatahubMitsubishiConfig config, boolean removeOnly)
+    private void syncConfigToScheduler(String belongSn, LabdatahubMitsubishiMc3eConfig config, boolean removeOnly)
     {
         if (StringUtils.isBlank(belongSn)) {
             return;
@@ -228,11 +224,11 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         if (!"1".equals(device.getModbusRead())) {
             return; // 读取开关未开启：无需同步调度
         }
-        MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(), device.getDeviceSn(), config.getCode());
+        MitsubishiMc3eMessageScheduler.removeReadConfig(device.getComponentId(), device.getDeviceSn(), config.getCode());
         if (removeOnly) {
             return;
         }
-        MitsubishiReadConfig readConfig = new MitsubishiReadConfig();
+        MitsubishiMc3eReadConfig readConfig = new MitsubishiMc3eReadConfig();
         readConfig.setDeviceSn(config.getBelongSn());
         readConfig.setCode(config.getCode());
         readConfig.setDelayTime(config.getDelayTime() == null ? 0 : config.getDelayTime().intValue());
@@ -240,9 +236,8 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         readConfig.setAreaCode(config.getAreaCode());
         readConfig.setStartAddress(config.getStartAddress());
         readConfig.setLength(config.getLength());
-        readConfig.setProtocolMode(config.getProtocolMode());
         ParseMetaUtils.applyTo(readConfig, device.getDeviceSn(), device.getProductSn(), config.getCode());
-        MitsubishiMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
+        MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
     }
 
     /**
@@ -250,15 +245,15 @@ public class LabdatahubMitsubishiConfigController extends BaseController
      */
     @PostMapping("/syncConfigToDevice")
     public AjaxResult syncConfigToDevice(@RequestParam String productSn){
-        List<LabdatahubMitsubishiConfig> configList = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiConfig>()
-                .eq(LabdatahubMitsubishiConfig::getBelongSn,productSn));
+        List<LabdatahubMitsubishiMc3eConfig> configList = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiMc3eConfig>()
+                .eq(LabdatahubMitsubishiMc3eConfig::getBelongSn,productSn));
         List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getProductSn,productSn));
         deviceList.forEach(device->{
             //删除设备所有规则
-            labdatahubMitsubishiConfigService.remove(new LambdaUpdateWrapper<LabdatahubMitsubishiConfig>()
-                    .eq(LabdatahubMitsubishiConfig::getBelongSn,device.getDeviceSn())
-                    .eq(LabdatahubMitsubishiConfig::getBelongType,"1"));
+            labdatahubMitsubishiConfigService.remove(new LambdaUpdateWrapper<LabdatahubMitsubishiMc3eConfig>()
+                    .eq(LabdatahubMitsubishiMc3eConfig::getBelongSn,device.getDeviceSn())
+                    .eq(LabdatahubMitsubishiMc3eConfig::getBelongType,"1"));
             //添加新的规则
             configList.forEach(config->{
                 config.setId(IdWorker.getIdStr());
@@ -276,8 +271,8 @@ public class LabdatahubMitsubishiConfigController extends BaseController
             labdatahubMitsubishiConfigService.saveBatch(configList);
             if("1".equals(device.getModbusRead())){
                 configList.forEach(o->{
-                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                    MitsubishiReadConfig config = new MitsubishiReadConfig();
+                    MitsubishiMc3eMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiMc3eReadConfig config = new MitsubishiMc3eReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
                     config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
@@ -285,13 +280,12 @@ public class LabdatahubMitsubishiConfigController extends BaseController
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
-                    config.setProtocolMode(o.getProtocolMode());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
-                    MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
+                    MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {
                 configList.forEach(o->{
-                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiMc3eMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
                 });
             }
             CacheUtils.updateDeviceWarnRule(device.getDeviceSn());
@@ -311,12 +305,12 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         if (device == null) {
             return AjaxResult.error("设备不存在：" + deviceSn);
         }
-        List<LabdatahubMitsubishiConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiConfig>()
-                .eq(LabdatahubMitsubishiConfig::getBelongSn,device.getDeviceSn()));
+        List<LabdatahubMitsubishiMc3eConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiMc3eConfig>()
+                .eq(LabdatahubMitsubishiMc3eConfig::getBelongSn,device.getDeviceSn()));
         if("1".equals(isOpen)){
             list.forEach(o->{
-                MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                MitsubishiReadConfig config = new MitsubishiReadConfig();
+                MitsubishiMc3eMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                MitsubishiMc3eReadConfig config = new MitsubishiMc3eReadConfig();
                 config.setDeviceSn(o.getBelongSn());
                 config.setCode(o.getCode());
                 config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
@@ -325,11 +319,11 @@ public class LabdatahubMitsubishiConfigController extends BaseController
                 config.setStartAddress(o.getStartAddress());
                 config.setLength(o.getLength());
                 ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
-                MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
+                MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(),config);
             });
         }else {
             list.forEach(o->{
-                MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                MitsubishiMc3eMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
             });
         }
         // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致
@@ -348,12 +342,12 @@ public class LabdatahubMitsubishiConfigController extends BaseController
         List<LabdatahubDevice> deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getProductSn,productSn));
         deviceList.forEach(device->{
-            List<LabdatahubMitsubishiConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiConfig>()
-                    .eq(LabdatahubMitsubishiConfig::getBelongSn,device.getDeviceSn()));
+            List<LabdatahubMitsubishiMc3eConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiMc3eConfig>()
+                    .eq(LabdatahubMitsubishiMc3eConfig::getBelongSn,device.getDeviceSn()));
             if("1".equals(isOpen)){
                 list.forEach(o->{
-                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
-                    MitsubishiReadConfig config = new MitsubishiReadConfig();
+                    MitsubishiMc3eMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiMc3eReadConfig config = new MitsubishiMc3eReadConfig();
                     config.setDeviceSn(o.getBelongSn());
                     config.setCode(o.getCode());
                     config.setDelayTime(o.getDelayTime() == null ? 0 : o.getDelayTime().intValue());
@@ -361,13 +355,12 @@ public class LabdatahubMitsubishiConfigController extends BaseController
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
                     config.setLength(o.getLength());
-                    config.setProtocolMode(o.getProtocolMode());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
-                    MitsubishiMessageScheduler.addReadConfig(device.getComponentId(),config);
+                    MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(),config);
                 });
             }else {
                 list.forEach(o->{
-                    MitsubishiMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
+                    MitsubishiMc3eMessageScheduler.removeReadConfig(device.getComponentId(),device.getDeviceSn(),o.getCode());
                 });
             }
             // 持久化读取开关状态，保证刷新页面后开关状态与实际读取一致

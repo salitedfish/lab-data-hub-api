@@ -47,7 +47,7 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
     @Autowired
     private ILabdatahubMitsubishiCncConfigService labdatahubMitsubishiCncConfigService;
     @Autowired
-    private ILabdatahubMitsubishiConfigService labdatahubMitsubishiConfigService;
+    private ILabdatahubMitsubishiMc3eConfigService labdatahubMitsubishiConfigService;
     @Autowired
     private ILabdatahubBrotherConfigService labdatahubBrotherConfigService;
     @Autowired

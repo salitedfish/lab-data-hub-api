@@ -13,8 +13,8 @@ COMMENT ON COLUMN labdatahub_mitsubishi_cnc_config.name IS '点位名称（物�
 ALTER TABLE labdatahub_modbus_config ADD COLUMN IF NOT EXISTS name varchar(100);
 COMMENT ON COLUMN labdatahub_modbus_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
 
-ALTER TABLE labdatahub_mitsubishi_config ADD COLUMN IF NOT EXISTS name varchar(100);
-COMMENT ON COLUMN labdatahub_mitsubishi_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+ALTER TABLE labdatahub_mitsubishi_mc3e_config ADD COLUMN IF NOT EXISTS name varchar(100);
+COMMENT ON COLUMN labdatahub_mitsubishi_mc3e_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
 
 ALTER TABLE labdatahub_omronfins_config ADD COLUMN IF NOT EXISTS name varchar(100);
 COMMENT ON COLUMN labdatahub_omronfins_config.name IS '点位名称（物模型属性名用，null 用标识 code）';

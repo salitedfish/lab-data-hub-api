@@ -18,7 +18,7 @@ import com.labdatahub.business.service.ILabdatahubDbConfigService;
 import com.labdatahub.business.service.ILabdatahubFanucConfigService;
 import com.labdatahub.business.service.ILabdatahubFunctionService;
 import com.labdatahub.business.service.ILabdatahubMitsubishiCncConfigService;
-import com.labdatahub.business.service.ILabdatahubMitsubishiConfigService;
+import com.labdatahub.business.service.ILabdatahubMitsubishiMc3eConfigService;
 import com.labdatahub.business.service.ILabdatahubModbusConfigService;
 import com.labdatahub.business.service.ILabdatahubOmronFinsConfigService;
 import com.labdatahub.business.service.ILabdatahubPropertiesService;
@@ -52,7 +52,7 @@ public class ProtocolPointCopyUtil {
     @Autowired
     private ILabdatahubMitsubishiCncConfigService labdatahubMitsubishiCncConfigService;
     @Autowired
-    private ILabdatahubMitsubishiConfigService labdatahubMitsubishiConfigService;
+    private ILabdatahubMitsubishiMc3eConfigService labdatahubMitsubishiConfigService;
     @Autowired
     private ILabdatahubBrotherConfigService labdatahubBrotherConfigService;
     @Autowired
