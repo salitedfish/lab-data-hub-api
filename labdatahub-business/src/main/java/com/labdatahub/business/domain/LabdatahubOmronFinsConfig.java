@@ -1,3 +1,4 @@
+//由AI修改
 package com.labdatahub.business.domain;
 
 import java.io.Serializable;
@@ -48,12 +49,19 @@ private static final long serialVersionUID = 1L;
     @Excel(name = "同一网络组件读取属性延迟时间")
     private Long delayTime;
 
+    /** 存储区代码：字区如 DM=0x82 / CIO=0xB0，位区如 DM位=0x02 / CIO位=0x30 */
     @Excel(name = "存储区代码")
-    private Integer areaCode;     
-        
+    private Integer areaCode;
+
+    /** 起始字地址（位区下这是「字地址」，位号另看 bitAddress） */
     @Excel(name = "起始地址")
-    private Integer startAddress; 
-    
-    @Excel(name = "读取长度（字节）")
-    private Integer length;       // 读取长度（字节）
+    private Integer startAddress;
+
+    /** 位号（仅位区用，0-15；字区为 null 表示按字访问） */
+    @Excel(name = "位号")
+    private Integer bitAddress;
+
+    /** 读取长度：字区=字个数，位区=位个数（位点位恒为 1） */
+    @Excel(name = "读取长度")
+    private Integer length;
 }

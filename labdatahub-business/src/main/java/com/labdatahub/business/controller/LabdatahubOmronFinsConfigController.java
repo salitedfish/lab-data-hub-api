@@ -34,6 +34,7 @@ import com.labdatahub.common.core.page.TableDataInfo;
 import com.labdatahub.common.enums.BusinessType;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
+import com.labdatahub.component.fins_tcp.FinsDataReader;
 import com.labdatahub.component.fins_tcp.FinsMessageScheduler;
 import com.labdatahub.component.fins_tcp.FinsReadConfig;
 
@@ -93,7 +94,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
     }
 
     /**
-     * 校验 FINS 读取配置字段（存储区白名单 + 地址/长度/间隔）
+     * 校验 FINS 读取配置字段（存储区白名单 + 字区/位区一致性 + 地址/长度/间隔）
      *
      * @return null-校验通过，否则返回错误信息
      */
@@ -101,22 +102,61 @@ public class LabdatahubOmronFinsConfigController extends BaseController
         if (config.getAreaCode() == null) {
             return AjaxResult.error("存储区 areaCode 不能为空");
         }
-        // 存储区白名单：DM区/CIO区/WR区/H区/IR区/LR区/EM区
-        // FINS 标准区码：DM=0x82 / CIO=0x30 / WR=0xB1 / H(HR)=0x32 / IR=0x88 / LR=0x98 / EM=0xA0
-        // 注意：H 区是 0x32（0x31 是 WR 的位码，旧配置误用会静默读到 WR 区）
-        if (!Arrays.asList(0x82, 0x30, 0xB1, 0x32, 0x88, 0x98, 0xA0).contains(config.getAreaCode())) {
-            return AjaxResult.error("存储区 areaCode 只能是 DM区(0x82)/CIO区(0x30)/WR区(0xB1)/H区(0x32)/IR区(0x88)/LR区(0x98)/EM区(0xA0)");
+        // FINS 标准区码（W342 内存区指定表），字区码与位区码成对出现：
+        //   区          字访问  位访问
+        //   CIO         0xB0    0x30
+        //   WR          0xB1    0x31
+        //   HR(H)       0xB2    0x32
+        //   AR(A)       0xB3    0x33
+        //   DM          0x82    0x02
+        //   EM 当前库    0x98    0x18
+        //   EM 库 0-15   0xA0-AF 0x20-2F
+        // 旧白名单里的 IR(0x88)/LR(0x98) 是错的：0x88 是 CNT 计数器区（不是 IR，CS/CJ 也没有 IR 区），
+        // 0x98 是 EM 当前库。区码填错设备不会报错，只会静默读到另一个区，所以这里必须按标准卡死。
+        int areaCode = config.getAreaCode();
+        boolean isBitArea = FinsDataReader.isBitArea(areaCode);
+        if (!isBitArea && !isWordArea(areaCode)) {
+            return AjaxResult.error("存储区 areaCode 非法：字区只能是 CIO(0xB0)/WR(0xB1)/H(0xB2)/A(0xB3)/DM(0x82)"
+                    + "/EM当前库(0x98)/EM库0-15(0xA0-0xAF)，位区只能是 CIO(0x30)/WR(0x31)/H(0x32)/A(0x33)"
+                    + "/DM(0x02)/EM当前库(0x18)/EM库0-15(0x20-0x2F)");
         }
-        if (config.getStartAddress() == null || config.getStartAddress() < 0) {
-            return AjaxResult.error("起始地址 startAddress 不能为负数");
+        // 字区/位区必须与位号一致：位号是地址第三字节，配错了不是报错而是写到别处去
+        if (isBitArea) {
+            if (config.getBitAddress() == null) {
+                return AjaxResult.error("位区（areaCode=0x" + Integer.toHexString(areaCode)
+                        + "）必须填写位号 bitAddress（0-15）");
+            }
+            if (config.getBitAddress() < 0 || config.getBitAddress() > 15) {
+                return AjaxResult.error("位号 bitAddress 必须在 0-15 之间");
+            }
+            if (config.getLength() != null && config.getLength() != 1) {
+                return AjaxResult.error("位区点位一次只读 1 个位，读取长度 length 必须为 1");
+            }
+        } else {
+            if (config.getBitAddress() != null) {
+                return AjaxResult.error("字区（areaCode=0x" + Integer.toHexString(areaCode)
+                        + "）不应填写位号 bitAddress，请留空（要按位读写请改选位区码）");
+            }
+            if (config.getLength() == null || config.getLength() < 1 || config.getLength() > 1000) {
+                return AjaxResult.error("读取长度 length 必须在 1-1000 之间");
+            }
         }
-        if (config.getLength() == null || config.getLength() < 1 || config.getLength() > 1000) {
-            return AjaxResult.error("读取长度 length 必须在 1-1000 之间");
+        if (config.getStartAddress() == null || config.getStartAddress() < 0 || config.getStartAddress() > 65535) {
+            return AjaxResult.error("起始字地址 startAddress 必须在 0-65535 之间");
         }
         if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
             return AjaxResult.error("读取间隔 intervalTime 必须为正整数（单位：秒）");
         }
         return null;
+    }
+
+    /**
+     * 是否 FINS 字区码（与位区码互补，位区判据取自 {@code FinsDataReader.isBitArea}，避免两份实现漂移）
+     */
+    private boolean isWordArea(int areaCode) {
+        return areaCode == 0xB0 || areaCode == 0xB1 || areaCode == 0xB2 || areaCode == 0xB3
+                || areaCode == 0x82 || areaCode == 0x98
+                || (areaCode >= 0xA0 && areaCode <= 0xAF);
     }
 
     /**
@@ -222,6 +262,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
         readConfig.setIntervalTime(config.getIntervalTime() == null ? 1 : config.getIntervalTime().intValue());
         readConfig.setAreaCode(config.getAreaCode());
         readConfig.setStartAddress(config.getStartAddress());
+        readConfig.setBitAddress(config.getBitAddress());
         readConfig.setLength(config.getLength());
         ParseMetaUtils.applyTo(readConfig, device.getDeviceSn(), device.getProductSn(), config.getCode());
         FinsMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
@@ -253,6 +294,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                 config.setIntervalTime(config.getIntervalTime());
                 config.setAreaCode(config.getAreaCode());
                 config.setStartAddress(config.getStartAddress());
+                config.setBitAddress(config.getBitAddress());
                 config.setLength(config.getLength());
             });
             labdatahubOmronFinsConfigService.saveBatch(configList);
@@ -266,6 +308,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
+                    config.setBitAddress(o.getBitAddress());
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
@@ -304,6 +347,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                 config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                 config.setAreaCode(o.getAreaCode());
                 config.setStartAddress(o.getStartAddress());
+                config.setBitAddress(o.getBitAddress());
                 config.setLength(o.getLength());
                 ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                 FinsMessageScheduler.addReadConfig(device.getComponentId(),config);
@@ -341,6 +385,7 @@ public class LabdatahubOmronFinsConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
+                    config.setBitAddress(o.getBitAddress());
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     FinsMessageScheduler.addReadConfig(device.getComponentId(),config);

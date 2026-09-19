@@ -21,6 +21,7 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * FINS消息消费服务
@@ -34,7 +35,7 @@ public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
     private EventBus eventBus;
     @Override
     public void handle(String componentId, FinsMessage message) throws Exception {
-        Socket connection = FinsConnectionManager.connections.get(componentId);
+        Socket connection = FinsConnectionManager.getConnection(componentId);
         if(connection==null||!connection.isConnected()||connection.isClosed()){
             return;
         }
@@ -44,8 +45,14 @@ public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
             return;
         }
         List<Integer> dataList = new ArrayList<>();
+        // 读与写共用同一个 socket，且 FINS 是「发一帧收一帧」的同步问答：不加锁就会和写值/重连
+        // 交错，把对方的响应当自己的帧解析。读侧用无界 lock()（采集命脉，不因等写而失败）
+        ReentrantLock lock = FinsConnectionManager.getLock(componentId);
+        boolean needReconnect = false;
+        lock.lock();
         try {
-        	dataList = FinsDataReader.readMemoryArea(componentId, message.getAreaCode(), message.getStartAddress(), message.getLength());          
+        	dataList = FinsDataReader.readMemoryArea(componentId, message.getAreaCode(), message.getStartAddress(),
+                    message.getBitAddress(), message.getLength());
         }catch (Exception e){
             //处理恢复后避免脏数据过多
             BlockingQueue<FinsMessage> queue = FinsMessageScheduler.messageQueueMap.get(componentId);
@@ -59,9 +66,16 @@ public class FinsMessageConsumeService implements FinsMessageConsumeHandler{
             } else {
                 //传输层异常（超时/断流/EOF）：半开连接本地状态检测不出来，靠读超时触发自愈（与S7的forceReconnect对齐）
                 log.warn("componentId={} 读取code={}失败，触发强制重连", componentId, message.getCode());
-                FinsConnectionManager.forceReconnect(componentId);
+                needReconnect = true;
             }
             throw e;
+        } finally {
+            lock.unlock();
+            // forceReconnect 必须在 unlock 之后：它内部真建 TCP 连接 + 指数退避 sleep，
+            // 持着锁做会把整条采集链路卡住 1+2 秒
+            if (needReconnect) {
+                FinsConnectionManager.forceReconnect(componentId);
+            }
         }
         //读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
         if (message.getDelayTime() != null && message.getDelayTime() > 0) {
