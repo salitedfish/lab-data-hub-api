@@ -108,12 +108,21 @@ public class MqttForwardThrottler {
             entry.changed = false;
             String payload = entry.payload;
             List<String> targets = entry.targets;
+            boolean allSent = true;
             for (String o : targets) {
                 try {
                     MqttBrokerUtils.publishMessage(o, payload);
                 } catch (Exception e) {
+                    allSent = false;
                     log.error("MQTT 规则转发失败，brokerId={}, deviceSn={}: {}", o, deviceSn, e.getMessage());
                 }
+            }
+            if (!allSent) {
+                // ⚠️ 原实现把 changed 置 false 后就发布，publish 抛异常时这条数据<b>永远不会再发</b>
+                //    （只留下上面那行日志）—— broker 短暂不可用就会静默丢一窗数据。
+                //    有目标没发成功就把标记恢复，下个节流窗口拿同一份最新值重试；
+                //    期间该设备若有新数据进来，offer 会用更新的 payload 覆盖（本就是「最新值」语义）。
+                entry.changed = true;
             }
         }
     }
