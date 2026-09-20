@@ -99,6 +99,7 @@ public class LabdatahubComponentController extends BaseController
     @Transactional(rollbackFor = Exception.class)
     public AjaxResult add(@RequestBody LabdatahubComponent labdatahubComponent) throws Exception {
     	labdatahubComponent.setCreateTime(new Date());
+        syncDisplayAddress(labdatahubComponent);
         labdatahubComponentService.save(labdatahubComponent);
         CacheUtils.setComponentCache(labdatahubComponent.getId(),labdatahubComponent);
         if("1".equals(labdatahubComponent.getStatus())) {
@@ -119,6 +120,7 @@ public class LabdatahubComponentController extends BaseController
     @PutMapping
     @Transactional(rollbackFor = Exception.class)
     public AjaxResult edit(@RequestBody LabdatahubComponent labdatahubComponent) throws Exception {
+        syncDisplayAddress(labdatahubComponent);
         labdatahubComponentService.updateById(labdatahubComponent);
         if("1".equals(labdatahubComponent.getStatus())) {
             labdatahubComponentService.closeComponent(labdatahubComponent.getId());
@@ -171,9 +173,67 @@ public class LabdatahubComponentController extends BaseController
         if("0".equals(status)){
             labdatahubComponentService.closeComponent(id);
         }else {
-            labdatahubComponentService.openComponent(id);
+            // 开启结果必须回传：原先无论成败都回 success()，页面弹「操作成功」而组件其实没开起来
+            // （openComponent 返回 false 时既没抛异常也没置 status=1，前端只能靠这句话判断）
+            boolean isOk = labdatahubComponentService.openComponent(id);
+            if(!isOk){
+                return AjaxResult.error("开启失败，请检查配置信息是否正确");
+            }
         }
         return AjaxResult.success();
+    }
+
+    /**
+     * 把动态配置里的地址回写到 ip_addr / port 两个展示列。
+     *
+     * <p>这两列是<b>派生展示值</b>（列表卡片上的「地址」「端口」直接读它们），原先只在
+     * {@code openComponent} 连接<b>成功</b>之后才回写 —— 于是「改了 IP 之后组件没启动、或启动失败」
+     * 时列表永远显示旧地址：库里 {@code other_config.ipAddr} 已是新值、{@code ip_addr} 还是老值，
+     * 页面上看着像"改了没生效"，而真正生效的偏偏是不显示的那个。
+     * 保存时就同步，展示的地址始终等于下次启动会用的地址。
+     *
+     * <p>键名按各 netType 的动态配置取（与前端表单、各 XxxConfig 的字段名一致）：
+     * TCP/PLC 类用 {@code ipAddr}+{@code port}，数据库用 {@code ipAddr}+{@code port}，
+     * MQTT 服务端用 {@code tcpPort}/{@code wsPort}（无 IP，绑定 0.0.0.0，交给 openComponent 回写），
+     * HTTP/COAP/WS/TCP/UDP 服务端只有 {@code port}/{@code serverPort}。
+     * 取不到的值不动原列，不凭空造地址。
+     */
+    private void syncDisplayAddress(LabdatahubComponent component) {
+        if (component == null || StringUtils.isEmpty(component.getOtherConfig())) {
+            return;
+        }
+        JSONObject config;
+        try {
+            config = JSONObject.parseObject(component.getOtherConfig());
+        } catch (Exception e) {
+            // 动态配置不是合法 JSON：保持原列不动，交给 openComponent 解析时报错
+            return;
+        }
+        if (config == null) {
+            return;
+        }
+        String ipAddr = config.getString("ipAddr");
+        if (StringUtils.isEmpty(ipAddr)) {
+            ipAddr = config.getString("brokerUrl");
+        }
+        if (StringUtils.isNotEmpty(ipAddr)) {
+            component.setIpAddr(ipAddr);
+        }
+        String port = config.getString("port");
+        if (StringUtils.isEmpty(port)) {
+            port = config.getString("serverPort");
+        }
+        if (StringUtils.isEmpty(port)) {
+            // MQTT 服务端：端口拆在 tcpPort / wsPort 两个键里，合并写法与 openComponent 一致
+            String tcpPort = config.getString("tcpPort");
+            if (StringUtils.isNotEmpty(tcpPort)) {
+                String wsPort = config.getString("wsPort");
+                port = StringUtils.isNotEmpty(wsPort) ? tcpPort + "," + wsPort : tcpPort;
+            }
+        }
+        if (StringUtils.isNotEmpty(port)) {
+            component.setPort(port);
+        }
     }
 
     /**
