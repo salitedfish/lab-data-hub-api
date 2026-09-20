@@ -34,7 +34,11 @@ server:
 # 日志配置
 logging:
   level:
-    com.labdatahub: debug
+    # 生产用 info：debug 会把 MyBatis 的每条 SQL 连同完整参数（点位 payload）一起打出来，
+    # 实测本机 4 台设备时日志里 88.6% 是这类 DEBUG 行；按 100 台设备估算约 83 KB/秒 ≈ 7 GB/天，
+    # 且 logback 默认同步写文件，LogProcessor 单线程会阻塞在磁盘 I/O 上、直接拖慢落库。
+    # 需要排查 SQL 时临时改成 debug（或只对 mapper 包开：com.labdatahub.business.mapper: debug）
+    com.labdatahub: info
     org.springframework: warn
 
 # 用户配置

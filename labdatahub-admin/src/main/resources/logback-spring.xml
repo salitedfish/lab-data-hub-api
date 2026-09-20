@@ -18,7 +18,7 @@
         <file>${LOG_PATH}/sys-info.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>${LOG_PATH}/sys-info.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <maxHistory>60</maxHistory>
+            <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
             <pattern>${log.pattern}</pattern>
@@ -35,7 +35,7 @@
         <file>${LOG_PATH}/sys-error.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>${LOG_PATH}/sys-error.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <maxHistory>60</maxHistory>
+            <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
             <pattern>${log.pattern}</pattern>
@@ -52,7 +52,7 @@
         <file>${LOG_PATH}/sys-user.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>${LOG_PATH}/sys-user.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <maxHistory>60</maxHistory>
+            <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
             <pattern>${log.pattern}</pattern>
@@ -63,6 +63,10 @@
     <logger name="com.labdatahub" level="info" />
     <!-- Spring 框架日志级别 -->
     <logger name="org.springframework" level="warn" />
+    <!-- 内嵌 MQTT broker：每转发一条消息就打一行 INFO（Sending internal PUBLISH message），
+         实测 4 台设备时它一家占掉 api_run.log 六成篇幅，100 台设备会到每天上百 MB。
+         只压 PostOffice 这一个 logger —— broker 自身的启动横幅在 io.moquette.broker.Server 上，保留。 -->
+    <logger name="io.moquette.broker.PostOffice" level="warn" />
 
     <!-- 用户操作日志（独立 logger） -->
     <logger name="sys-user" level="info">

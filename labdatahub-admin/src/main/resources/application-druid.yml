@@ -21,7 +21,10 @@ spring:
             # 最小连接池数量
             minIdle: 10
             # 最大连接池数量
-            maxActive: 20
+            # 20 对百台设备偏紧：每个网络组件一条消费线程，日志落库（LogProcessor 单线程）、
+            # 前端查询、定时任务共用这一个池。设备规模上来后按 设备数/4 估，至少 50。
+            # 放大前确认 PostgreSQL 的 max_connections 留有余量（默认 100，够用）。
+            maxActive: 50
             # 配置获取连接等待超时的时间
             maxWait: 60000
             # 配置连接超时时间
