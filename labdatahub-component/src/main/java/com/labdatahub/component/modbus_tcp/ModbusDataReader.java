@@ -198,7 +198,9 @@ public class ModbusDataReader {
                     return readHoldingRegisters(componentId, newConn, slaveId, startAddr, count, retryLeft - 1);
                 }
             }
-        	e.printStackTrace();
+        	// 这里不 printStackTrace：它直写 System.err，绕开 logback（既不做级别控制也不做滚动），
+        	// 设备离线时每条消息都会来一次完整堆栈。调用方（ModbusMessageConsumeService）已经带着
+        	// 异常打了日志，这里再打一遍纯属重复。
         	throw e;
         }
     }
@@ -229,7 +231,7 @@ public class ModbusDataReader {
             return result;
 
         } catch (Exception e) {
-            e.printStackTrace();
+            // 不 printStackTrace：直写 System.err 会绕开 logback 的级别控制与滚动，调用方已带异常记日志
             throw e;
         }
     }
@@ -296,10 +298,12 @@ public class ModbusDataReader {
                     && response.getWordCount() == values.size();
 
         } catch (IllegalArgumentException e) {
-            e.printStackTrace();
+            // 不 printStackTrace：直写 System.err 绕开 logback 的级别控制与滚动，写不出来反而看不见
+            log.warn("[Modbus写入] 参数非法，slaveId={}, startAddr={}：{}", slaveId, startAddr, e.getMessage());
             throw e; // 参数异常直接抛出
         } catch (Exception e) {
-            e.printStackTrace();
+            log.warn("[Modbus写入] 写多个保持寄存器失败，slaveId={}, startAddr={}, 数量={}：{}",
+                    slaveId, startAddr, values.size(), e.getMessage(), e);
             return false;
         }
     }

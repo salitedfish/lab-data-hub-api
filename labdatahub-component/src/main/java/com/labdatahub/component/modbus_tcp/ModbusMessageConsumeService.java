@@ -20,7 +20,9 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * @Description:
@@ -30,10 +32,31 @@ import java.util.concurrent.BlockingQueue;
 @Slf4j
 @Component
 public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
+    /** 「读取寄存器失败」告警的节流间隔（毫秒）：连接恢复前每个组件每分钟最多一条 */
+    private static final long READ_FAIL_LOG_INTERVAL_MS = 60000;
+    /** 每个 componentId 最近一次「读取寄存器失败」告警的时刻 */
+    private static final Map<String, Long> READ_FAIL_LOG_TS = new ConcurrentHashMap<>();
+
     @Autowired
     private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     @Autowired
     private EventBus eventBus;
+
+    /**
+     * 「读取寄存器失败」告警的节流判定（{@link #READ_FAIL_LOG_INTERVAL_MS} 内最多一条）
+     *
+     * @param componentId 组件ID
+     * @return true=本次允许打日志（并刷新节流时刻）
+     */
+    private static boolean shouldLogReadFailure(String componentId) {
+        long now = System.currentTimeMillis();
+        Long last = READ_FAIL_LOG_TS.get(componentId);
+        if (last == null || now - last >= READ_FAIL_LOG_INTERVAL_MS) {
+            READ_FAIL_LOG_TS.put(componentId, now);
+            return true;
+        }
+        return false;
+    }
     @Override
     public void handle(String componentId,ModbusMessage message) throws Exception {
 //        TCPMasterConnection connection = ModbusConnectionManager.connections.get(componentId);
@@ -68,13 +91,17 @@ public class ModbusMessageConsumeService implements ModbusMessageConsumeHandler{
         try {
             dataList = ModbusDataReader.readByFunction(componentId, message.getSlaveId(), functionCode, minStart, count);
         } catch (Exception e) {
-            log.error("componentId={} 读取寄存器失败，slaveId={}, range={}",
-                    componentId, message.getSlaveId(), minStart + "-" + count, e);
-            //处理恢复后避免脏数据过多
+            // 设备离线时消费线程会按消息节奏（每条 code 一个周期，可达每秒数条）不停重试，
+            // 每条都打一条 ERROR + 完整堆栈的话，100 台设备同时离线就是每秒几十条日志 ——
+            // 磁盘被写满、真正该看见的那条被淹掉。按组件节流到每分钟一条（同 S7 的 logConnMissing）。
+            if (shouldLogReadFailure(componentId)) {
+                log.error("componentId={} 读取寄存器失败（连接恢复前按分钟汇总），slaveId={}, range={}",
+                        componentId, message.getSlaveId(), minStart + "-" + count, e);
+            }
+            //处理恢复后避免脏数据过多（本身很廉价，只是不再逐条打日志）
             BlockingQueue<ModbusMessage> queue = ModbusMessageScheduler.messageQueueMap.get(componentId);
             if (queue != null) {
                 queue.removeIf(o -> o.getCode().equals(message.getCode()) && o.getSlaveId().equals(message.getSlaveId()));
-                log.info("componentId={} 清理脏数据", componentId);
             }
             throw e;
         }
