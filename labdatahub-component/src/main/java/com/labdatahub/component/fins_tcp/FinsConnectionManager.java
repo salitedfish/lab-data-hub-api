@@ -15,6 +15,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
+import com.labdatahub.component.utils.ParallelHealthCheck;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -138,6 +139,17 @@ public class FinsConnectionManager {
             log.warn("[FINS连接] componentId={} 参数非法", componentId);
             return false;
         }
+        // 先把消费线程拉起来，与「连接是否成功」解耦：
+        //   调用方（LabdatahubComponentServiceImpl 的 OMRONFINS_TCP 分支）是「先 addConnection、再
+        //   timerTask.initOmronFinsTcpRead()」，也就是无论连接成败，读配置的定时任务都已经开始产消息了；
+        //   消费线程不起来，队列只会被灌满到上限、恢复后还要回放一堆过期快照。
+        //   连接由健康检查在设备回来后自动重建（见 checkAndReconnect），届时数据即可正常被消费。
+        //   （消费线程对「队列不存在」自带退避重试，见 FinsLoopConsumer#run 的 QUEUE_MISSING_RETRY_MS）
+        try {
+            FinsLoopConsumer.startConsume(componentId, SpringUtils.getBean(FinsMessageConsumeService.class));
+        } catch (IllegalStateException e) {
+            log.warn("[FINS连接] componentId={} 已存在消费线程，跳过重复启动", componentId);
+        }
         Socket socket = null;
         // 换连接必须持锁：否则会把在途的读写掐掉（见 lockMap 注释）
         ReentrantLock lock = getLock(componentId);
@@ -164,21 +176,17 @@ public class FinsConnectionManager {
             log.error("[FINS连接] componentId={} 首次连接失败：{}", componentId, e.getMessage());
             // 连接失败时关闭刚创建的 socket（含握手失败场景），避免 socket 泄漏
             closeQuietly(socket, componentId);
-            // 连接失败时移除无效配置/连接，避免空转
+            // 连接失败时移除无效连接，避免空转
+            // ⚠️ 但 configMap 不能删：它是健康检查的监控名单（checkAllConnections 遍历的就是它的 keySet），
+            //    删掉等于判定「不再重连」。而「首次连接失败」只说明设备此刻不在线（平台启动时设备正好停着），
+            //    不代表组件不该被监控 —— 删掉之后设备回来了也永远接不回去，只能由管理员在页面上重新点开启。
+            //    配置留在 map 里，健康检查每 10 秒会自动重试（组件被真正关闭时走 closeConnection，那里才清 configMap）
             connections.remove(componentId);
-            configMap.remove(componentId);
             // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
             ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
         } finally {
             lock.unlock();
-        }
-        // 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
-        //    应复用已有消费线程，而不是回滚刚建立的有效连接）
-        try {
-            FinsLoopConsumer.startConsume(componentId, SpringUtils.getBean(FinsMessageConsumeService.class));
-        } catch (IllegalStateException e) {
-            log.warn("[FINS连接] componentId={} 已存在消费线程，跳过重复启动", componentId);
         }
         return true;
     }
@@ -236,10 +244,10 @@ public class FinsConnectionManager {
      * 检查所有连接状态，失效则自动重连
      */
     private static void checkAllConnections() {
-        // 遍历所有已配置的componentId（避免遗漏待重连的组件）
-        for (String componentId : configMap.keySet()) {
-            checkAndReconnect(componentId);
-        }
+        // 并发检查：原先单线程串行遍历，设备离线时每台都要等满一次建连超时，
+        // 100 台同协议设备同时离线要几分钟才轮完一遍，断线/恢复感知随之失效
+        // （详见 ParallelHealthCheck 的类注释）
+        ParallelHealthCheck.run("FINS", configMap.keySet(), FinsConnectionManager::checkAndReconnect, HEALTH_CHECK_INTERVAL);
     }
 
     /**
@@ -368,17 +376,24 @@ public class FinsConnectionManager {
     private static boolean doReconnect(String componentId, FinsTcpConfig config) {
         ReentrantLock lock = getLock(componentId);
         lock.lock();
+        Socket newSocket = null;
         try {
             closeOldConnection(componentId);
-            Socket newSocket = buildSocket(config);
+            newSocket = buildSocket(config);
             // 握手拿 PLC 节点地址（重连后节点号可能不变，但不能假设 —— 重新问一次）
             int plcNodeAddr = doHandshake(newSocket, config.getClientNodeAddress());
             config.setPlcNodeAddress(plcNodeAddr);
             connections.put(componentId, newSocket);
+            // 连接已交给 connections 托管，后面再出异常也不该由本地引用去关它
+            newSocket = null;
             log.info("[FINS重连] componentId={} 重建连接成功（{}:{}，PLC节点地址={}）",
                     componentId, config.getIpAddr(), config.getPort(), plcNodeAddr);
             return true;
         } catch (Exception e) {
+            // ⚠️ 半成品 socket 必须在这里显式关闭：buildSocket 连上、doHandshake 拿不到应答抛异常时，
+            //    这个 socket 还没进 connections，除了本地引用没人管它 —— 不关就永远停在
+            //    CLOSE_WAIT（对端已发 FIN，本端不回 FIN），本机实测这类泄漏积了 12 条。
+            closeQuietly(newSocket, componentId);
             log.error("[FINS重连] componentId={} 重连尝试失败: {}", componentId, e.getMessage());
             return false;
         } finally {

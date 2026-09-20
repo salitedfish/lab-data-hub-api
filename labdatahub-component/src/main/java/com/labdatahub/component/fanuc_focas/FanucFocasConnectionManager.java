@@ -10,6 +10,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
+import com.labdatahub.component.utils.ParallelHealthCheck;
 import com.sun.jna.NativeLong;
 import com.sun.jna.ptr.ShortByReference;
 
@@ -103,7 +104,10 @@ public class FanucFocasConnectionManager {
             System.err.printf("[FOCAS2连接] componentId=%s 首次连接失败：%s%n", componentId, e.getMessage());
             // 连接失败时释放已建立句柄并移除无效配置，避免空转/泄漏
             closeHandle(componentId);
-            configMap.remove(componentId);
+            // ⚠️ 但 configMap 不能删：它是健康检查的监控名单（checkAllConnections 遍历的就是它的 keySet），
+            //    删掉等于判定「不再重连」。而「首次连接失败」只说明机床此刻不在线（平台启动时机床正好没开），
+            //    不代表组件不该被监控 —— 删掉之后机床开机了也永远接不回去，只能由管理员在页面上重新点开启。
+            //    配置留在 map 里，健康检查每 10 秒会自动重试（组件被真正关闭时走 closeConnection，那里才清 configMap）
             readLockMap.remove(componentId);
             // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
             ComponentOnlineNotifier.markOfflineAndNotify(componentId);
@@ -197,10 +201,10 @@ public class FanucFocasConnectionManager {
      * 检查所有连接状态，失效则自动重连
      */
     private static void checkAllConnections() {
-        // 遍历所有已配置的componentId（避免遗漏待重连的组件）
-        for (String componentId : configMap.keySet()) {
-            checkAndReconnect(componentId);
-        }
+        // 并发检查：原先单线程串行遍历，设备离线时每台都要等满一次建连超时，
+        // 100 台同协议设备同时离线要几分钟才轮完一遍，断线/恢复感知随之失效
+        // （详见 ParallelHealthCheck 的类注释）
+        ParallelHealthCheck.run("FANUC", configMap.keySet(), FanucFocasConnectionManager::checkAndReconnect, HEALTH_CHECK_INTERVAL);
     }
 
     /**

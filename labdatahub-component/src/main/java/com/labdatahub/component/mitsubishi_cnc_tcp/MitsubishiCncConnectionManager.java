@@ -12,6 +12,7 @@ import java.util.concurrent.TimeUnit;
 
 import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
+import com.labdatahub.component.utils.ParallelHealthCheck;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -55,12 +56,23 @@ public class MitsubishiCncConnectionManager {
      * @return 首次连接是否成功
      */
     public static boolean addConnection(String componentId, MitsubishiCncTcpConfig config) {
+        // 1. 校验参数
+        if (componentId == null || config == null || config.getIpAddr() == null) {
+            return false;
+        }
+        // 先把消费线程拉起来，与「连接是否成功」解耦：
+        //   调用方（LabdatahubComponentServiceImpl 的 MITSUBISHI_CNC_TCP 分支）是「先 addConnection、再
+        //   timerTask.initMitsubishiCncTcpRead()」，也就是无论连接成败，读配置的定时任务都已经开始产消息了；
+        //   消费线程不起来，队列只会被灌满到上限、恢复后还要回放一堆过期快照。
+        //   连接由健康检查在机床回来后自动重建（见 checkAndReconnect），届时数据即可正常被消费。
+        //   （消费线程对「队列不存在」自带退避重试，见 MitsubishiCncLoopConsumer#run 的 QUEUE_MISSING_RETRY_MS）
+        try {
+            MitsubishiCncLoopConsumer.startConsume(componentId, SpringUtils.getBean(MitsubishiCncMessageConsumeService.class));
+        } catch (IllegalStateException e) {
+            System.out.printf("[MITSUBISHI-CNC连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);
+        }
         Socket socket = null;
         try {
-            // 1. 校验参数
-            if (componentId == null || config == null || config.getIpAddr() == null) {
-                return false;
-            }
             configMap.put(componentId, config);
             // 先关闭旧连接（避免资源泄漏）
             Socket oldConn = connections.get(componentId);
@@ -96,19 +108,15 @@ public class MitsubishiCncConnectionManager {
                     System.err.printf("[MITSUBISHI-CNC连接] componentId=%s 关闭失败连接异常：%s%n", componentId, closeEx.getMessage());
                 }
             }
-            // 连接失败时移除无效配置/连接，避免空转
+            // 连接失败时移除无效连接，避免空转
+            // ⚠️ 但 configMap 不能删：它是健康检查的监控名单（checkAllConnections 遍历的就是它的 keySet），
+            //    删掉等于判定「不再重连」。而「首次连接失败」只说明机床此刻不在线（平台启动时机床正好没开），
+            //    不代表组件不该被监控 —— 删掉之后机床开机了也永远接不回去，只能由管理员在页面上重新点开启。
+            //    配置留在 map 里，健康检查每 10 秒会自动重试（组件被真正关闭时走 closeConnection，那里才清 configMap）
             connections.remove(componentId);
-            configMap.remove(componentId);
             // 首次连接失败视为组件离线，通知设备下线（已离线设备幂等跳过）
             ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
-        }
-        // 4. 启动消费线程（放 try 外：重复开启组件时 startConsume 抛 IllegalStateException，
-        //    应复用已有消费线程，而不是回滚刚建立的有效连接）
-        try {
-            MitsubishiCncLoopConsumer.startConsume(componentId, SpringUtils.getBean(MitsubishiCncMessageConsumeService.class));
-        } catch (IllegalStateException e) {
-            System.out.printf("[MITSUBISHI-CNC连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);
         }
         return true;
     }
@@ -170,10 +178,10 @@ public class MitsubishiCncConnectionManager {
      * 检查所有连接状态，失效则自动重连
      */
     private static void checkAllConnections() {
-        // 遍历所有已配置的componentId（避免遗漏待重连的组件）
-        for (String componentId : configMap.keySet()) {
-            checkAndReconnect(componentId);
-        }
+        // 并发检查：原先单线程串行遍历，设备离线时每台都要等满一次建连超时，
+        // 100 台同协议设备同时离线要几分钟才轮完一遍，断线/恢复感知随之失效
+        // （详见 ParallelHealthCheck 的类注释）
+        ParallelHealthCheck.run("MitsubishiCNC", configMap.keySet(), MitsubishiCncConnectionManager::checkAndReconnect, HEALTH_CHECK_INTERVAL);
     }
 
     /**
@@ -227,10 +235,15 @@ public class MitsubishiCncConnectionManager {
      * @return 重连是否成功
      */
     private static boolean reconnect(String componentId, MitsubishiCncTcpConfig config) {
+        Socket newSocket = null;
         try {
             // 1. 创建新连接
+            // ⚠️ connect 必须带超时：`new Socket(addr, port)` 走操作系统默认 connect 超时
+            //    （Windows 约 21 秒、Linux 约 127 秒）。设备断电/拔网线时健康检查会卡在这里，
+            //    100 台同时离线一轮要几十分钟，离线/恢复感知失效。首次连接本就带超时，重连必须一致。
             InetAddress address = InetAddress.getByName(config.getIpAddr());
-            Socket newSocket = new Socket(address, config.getPort());
+            newSocket = new Socket();
+            newSocket.connect(new InetSocketAddress(address, config.getPort()), config.getTimeout());
             newSocket.setSoTimeout(config.getTimeout());
             newSocket.setTcpNoDelay(true);
             // MOCHA 握手：取消模态（失败不阻断重连）
@@ -240,28 +253,26 @@ public class MitsubishiCncConnectionManager {
                 System.err.printf("[MITSUBISHI-CNC握手] componentId=%s 重连后发送mochaCancelModal2异常：%s%n", componentId, he.getMessage());
             }
 
-            // 2. 关闭旧连接（释放资源）
-            Socket oldConn = connections.get(componentId);
-            if (oldConn != null) {
-                try {
-                    oldConn.close();
-                } catch (Exception e) {
-                    // 旧连接关闭失败不影响新连接创建
-                    System.err.printf("[MITSUBISHI-CNC重连] componentId=%s 旧连接关闭失败：%s%n", componentId, e.getMessage());
-                }
-            }
+            // 2. 摘掉并关闭旧连接（摘与关必须成对，理由见 catch 注释）
+            closeQuietly(connections.remove(componentId), componentId);
 
             // 3. 更新连接映射
             connections.put(componentId, newSocket);
+            // 已交给 connections 托管，后面的异常不再由本地引用负责关闭
+            newSocket = null;
             System.out.printf("[MITSUBISHI-CNC重连] componentId=%s 重连成功（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
             // 重连成功，清除离线节流标记
             ComponentOnlineNotifier.markOnline(componentId);
             return true;
         } catch (Exception e) {
+            // ⚠️ 半成品 socket（还没进 connections 的）必须由本地引用显式关闭：
+            //    new Socket 成功、后续 setSoTimeout/setTcpNoDelay 抛异常时它就没主了（FINS 同位置漏过）
+            closeQuietly(newSocket, componentId);
+            // ⚠️ 摘掉 map 里残留的连接并关闭：原实现只 remove 不 close，
+            //    异常发生在第 2 步之前时，旧 socket 就这样被摘掉且永不关闭
+            closeQuietly(connections.remove(componentId), componentId);
             System.err.printf("[MITSUBISHI-CNC重连] componentId=%s 重连失败：%s%n", componentId, e.getMessage());
-            // 重连失败时移除无效连接（避免下次检查重复处理）
-            connections.remove(componentId);
             // 重连失败视为组件离线，通知设备下线（节流，仅在在线→离线转变时发一次）
             ComponentOnlineNotifier.markOfflineAndNotify(componentId);
             return false;
@@ -279,5 +290,19 @@ public class MitsubishiCncConnectionManager {
             return;
         }
         reconnect(componentId, config);
+    }
+
+    /** 静默关闭 socket：失败只记日志，不影响主流程（socket 为 null 时什么都不做） */
+    private static void closeQuietly(Socket socket, String componentId) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            if (!socket.isClosed()) {
+                socket.close();
+            }
+        } catch (Exception e) {
+            System.err.printf("[MITSUBISHI-CNC连接] componentId=%s 关闭连接异常：%s%n", componentId, e.getMessage());
+        }
     }
 }
