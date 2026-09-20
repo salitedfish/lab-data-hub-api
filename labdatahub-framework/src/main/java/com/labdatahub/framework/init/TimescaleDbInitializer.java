@@ -113,7 +113,7 @@ public class TimescaleDbInitializer {
                 stmt.execute(sql);
                 log.info("保留策略已配置：{} -> {}", policy.getTableName(), policy.getRetentionInterval());
             } catch (Exception e) {
-                log.warn("保留策略配置失败：{}", policy.getTableName(), e.getMessage());
+                log.warn("保留策略配置失败：{}", policy.getTableName(), e);
             }
         }
         DataSourceUtils.releaseConnection(conn, jdbcTemplate.getDataSource());
@@ -134,7 +134,7 @@ public class TimescaleDbInitializer {
                         "WITH (timescaledb.continuous) AS " +
                         "SELECT time_bucket('%s'::interval, %s) AS bucket, %s, COUNT(*) AS log_count,MAX(create_time) as last_log_time " +
                         "FROM %s " +
-                        "GROUP BY time_bucket, %s " +
+                        "GROUP BY bucket, %s " +
                         "WITH NO DATA",
                         agg.getViewName(),
                         agg.getBucketInterval(),
@@ -160,7 +160,9 @@ public class TimescaleDbInitializer {
                 stmt.execute(addRefreshPolicySql);
                 log.info("连续聚合视图+刷新策略已创建：{}", agg.getViewName());
             } catch (Exception e) {
-                log.warn("连续聚合视图创建失败：{}", agg.getViewName(), e.getMessage());
+                // 末位参数必须是异常对象本身，SLF4J 才会把堆栈打出来。原先传的是 e.getMessage()，
+                // 而占位符只有一个 —— 多余的字符串参数被静默丢弃，日志里只剩视图名、看不到任何原因。
+                log.warn("连续聚合视图创建失败：{}", agg.getViewName(), e);
             }
         }
         DataSourceUtils.releaseConnection(conn, jdbcTemplate.getDataSource());
