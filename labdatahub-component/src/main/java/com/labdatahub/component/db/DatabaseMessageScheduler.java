@@ -76,6 +76,15 @@ public class DatabaseMessageScheduler {
 
                 BlockingQueue<DatabaseMessage> queue = messageQueueMap.computeIfAbsent(datasourceId,
                         k -> new LinkedBlockingQueue<>());
+                // 没有消费线程就不产消息。定时任务按「设备点位配置」在 TimerTask 里注册，与组件是否启动
+                // 无关；消费线程则由 DatabaseConnectionManager#addConnection 创建。两者不同步时
+                //（组件未启动 / 启动后又停止 / 消费线程已死）消息只进不出：队列按生产速率一路涨到
+                // MAX_QUEUE_SIZE，此后永远「丢最旧」，白占内存且每分钟刷一条告警 —— 而那条告警看着像
+                // 吞吐不够，实际是压根没人消费。
+                // 队列本身仍照常创建：消费线程的启动路径在等它（见 ConsumeThread#run 的「队列尚未创建」分支）。
+                if (!DatabaseLoopConsumer.isConsuming(datasourceId)) {
+                    return;
+                }
                 int currentSize = queue.size();
                 if (currentSize > MAX_QUEUE_SIZE) {
                     log.warn("[DB调度] 数据源 {} 消息队列积压，当前大小={}, 超过限制{}，丢弃消息",

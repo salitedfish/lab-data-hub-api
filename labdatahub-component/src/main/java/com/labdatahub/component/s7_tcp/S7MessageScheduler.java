@@ -21,7 +21,22 @@ public class S7MessageScheduler {
     private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(5);
     private static final Map<String, ScheduledFuture<?>> configTaskMap = new ConcurrentHashMap<>();
     private static final String CONFIG_KEY_FORMAT = "%s_%s_%s";
-    private static final Integer MAX_QUEUE_SIZE = 1000;
+    /**
+     * 队列上限。原值 1000 是按「能吸收多大抖动」拍的，但这是一条<b>实时</b>数据链：
+     * 本机 S7 消费速度约 1 条/秒（读一次 0.1~1 秒 + delayTime），1000 条够排十几分钟，
+     * 队列里躺着的数据早就不是「实时」了 —— 顶到上限时按最坏情况算，上报的是 15 分钟前的快照。
+     * 上限只该用来吸收瞬时抖动：200 条 ≈ 90 秒的量，够用。
+     */
+    private static final Integer MAX_QUEUE_SIZE = 200;
+    /** 队列告警的上次打印时间：key = componentId */
+    private static final Map<String, Long> queueFullLogTsMap = new ConcurrentHashMap<>();
+    /**
+     * 队列告警的节流间隔（毫秒）。
+     *
+     * <p>原实现每次丢弃都打一条 warn，而队列一旦顶到上限就是<b>每条都丢</b> ——
+     * 本机实测刷了 155894 行「消息队列积压」，把 api_run.log 冲得看不出别的问题。
+     */
+    private static final long QUEUE_FULL_LOG_INTERVAL_MS = 60000;
 
     private S7MessageScheduler() {
     	throw new UnsupportedOperationException("该类为静态工具类，禁止实例化");
@@ -60,17 +75,26 @@ public class S7MessageScheduler {
         		BeanUtil.copyProperties(readConfig, message);
 
                 BlockingQueue<S7Message> queue = messageQueueMap.computeIfAbsent(componentId, k -> new LinkedBlockingQueue<>());
-                int currentSize = queue.size();
-                if (currentSize > MAX_QUEUE_SIZE) {
-                    log.warn("[S7调度] componentId={} 消息队列积压，当前大小={}, 超过限制{}，丢弃消息", componentId, currentSize, MAX_QUEUE_SIZE);
-                    return; // 丢弃本次消息
+                // 没有消费线程就不产消息。定时任务按「设备点位配置」在 TimerTask 里注册，与组件是否启动
+                // 无关；消费线程则由 S7ConnectionManager#addConnection 创建。两者不同步时
+                //（组件未启动 / 启动后又停止 / 消费线程已死）消息只进不出：队列按生产速率一路涨到
+                // MAX_QUEUE_SIZE，此后永远「丢最旧」，白占内存且每分钟刷一条告警 —— 而那条告警看着像
+                // 吞吐不够，实际是压根没人消费。
+                // 队列本身仍照常创建：消费线程的启动路径在等它（见 ConsumeThread#run 的「队列尚未创建」分支）。
+                if (!S7LoopConsumer.isConsuming(componentId)) {
+                    return;
                 }
-                if (currentSize > MAX_QUEUE_SIZE * 0.8) {
-                    log.warn("[S7调度] componentId={} 消息队列接近满载，当前大小={}", componentId, currentSize);
+                // 队列满时丢「最旧」的，不是丢「最新」的。
+                // 原实现丢最新（size 超限直接 return），于是队列一旦顶到上限就永久丢新消息、
+                // 队列里 1000 条老快照一条不动 —— 设备恢复后还要花十几分钟把陈年数据当实时数据上报一遍。
+                // 丢最旧则队列始终只保留最近 MAX_QUEUE_SIZE 条，上报的永远是最新的那一段。
+                if (queue.size() >= MAX_QUEUE_SIZE) {
+                    queue.poll();
+                    logQueueFull(componentId);
                 }
                 boolean offered = queue.offer(message);
                 if (!offered) {
-                    log.warn("[S7调度] componentId={} 消息入队失败（队列已满），丢弃消息", componentId);
+                    logQueueFull(componentId);
                 }
         	} catch (Exception e) {
                 log.error("[S7调度] componentId={} 定时生成消息异常", componentId, e);
@@ -139,10 +163,26 @@ public class S7MessageScheduler {
         return queue == null ? null : queue.poll();
     }
 
+    /**
+     * 队列满告警，按组件节流（{@link #QUEUE_FULL_LOG_INTERVAL_MS} 内最多一条）
+     *
+     * @param componentId 组件ID
+     */
+    private static void logQueueFull(String componentId) {
+        long now = System.currentTimeMillis();
+        Long lastLogTs = queueFullLogTsMap.get(componentId);
+        if (lastLogTs == null || now - lastLogTs >= QUEUE_FULL_LOG_INTERVAL_MS) {
+            queueFullLogTsMap.put(componentId, now);
+            log.warn("[S7调度] componentId={} 消息队列已满（上限{}），丢弃最旧消息以保证上报的是最新数据",
+                    componentId, MAX_QUEUE_SIZE);
+        }
+    }
+
     public static void removeMessageQueue(String componentId) {
         if (StringUtils.isBlank(componentId)) {
             return;
         }
+        queueFullLogTsMap.remove(componentId);
         // 取消该组件所有定时生产任务（key 前缀 = componentId_），避免关闭组件后遗留僵尸定时任务
         String prefix = componentId + "_";
         configTaskMap.entrySet().removeIf(entry -> {
@@ -173,6 +213,7 @@ public class S7MessageScheduler {
         int queueCount = messageQueueMap.size();
         log.info("正在清空 {} 个消息队列", queueCount);
         messageQueueMap.clear();
+        queueFullLogTsMap.clear();
         // 3. 关闭调度器
         log.info("正在关闭调度器线程池");
         scheduler.shutdown();

@@ -14,10 +14,13 @@ import org.apache.commons.lang3.StringUtils;
 
 import cn.hutool.core.bean.BeanUtil;
 
+import lombok.extern.slf4j.Slf4j;
+
 /**
  * FANUC FOCAS2 消息定时生产-消费工具类（静态版+多组件隔离队列）
  * 功能：根据FanucFocasReadConfig的intervalTime定时生成FanucFocasMessage，按componentId存入不同队列供消费
  */
+@Slf4j
 public class FanucFocasMessageScheduler {
     // ========== 静态变量（全局唯一） ==========
     // 多组件隔离的消息队列：key=componentId，value=对应组件的阻塞队列
@@ -31,6 +34,10 @@ public class FanucFocasMessageScheduler {
     private static final String CONFIG_KEY_FORMAT = "%s_%s_%s";
     // 单个网络组件最大的消息堆积值
     private static final Integer MAX_QUEUE_SIZE = 1000;
+    /** 队列告警的上次打印时间：key = componentId（队列一满就是每条都丢，不节流会刷爆日志） */
+    private static final Map<String, Long> queueFullLogTsMap = new ConcurrentHashMap<>();
+    /** 队列告警的节流间隔（毫秒） */
+    private static final long QUEUE_FULL_LOG_INTERVAL_MS = 60000;
     // ========== 私有构造器（禁止实例化） ==========
     private FanucFocasMessageScheduler() {
         throw new UnsupportedOperationException("该类为静态工具类，禁止实例化");
@@ -75,11 +82,25 @@ public class FanucFocasMessageScheduler {
                             componentId,
                             k -> new LinkedBlockingQueue<>() // 每个componentId对应一个独立队列
                     );
+                    // 没有消费线程就不产消息。定时任务按「设备点位配置」在 TimerTask 里注册，与组件是否启动
+                    // 无关；消费线程则由 FanucFocasConnectionManager#addConnection 创建。两者不同步时
+                    //（组件未启动 / 启动后又停止 / 消费线程已死）消息只进不出：队列按生产速率一路涨到
+                    // MAX_QUEUE_SIZE，此后永远「丢最旧」，白占内存且每分钟刷一条告警 —— 而那条告警看着像
+                    // 吞吐不够，实际是压根没人消费。
+                    // 队列本身仍照常创建：消费线程的启动路径在等它（见 ConsumeThread#run 的「队列尚未创建」分支）。
+                    if (!FanucFocasLoopConsumer.isConsuming(componentId)) {
+                        return;
+                    }
                     // 将消息放入对应组件的队列
                     try {
-                        if (targetQueue.size() <= MAX_QUEUE_SIZE) {
-                            targetQueue.put(message);
+                        // 队列满时丢「最旧」的，不是丢「最新」的：队列顶到上限说明生产已快于消费，
+                        // 丢新会让那批陈旧快照永远排不空、此后每条新消息都被静默丢弃（原实现连日志都没有）；
+                        // 丢最旧则队列始终只保留最近 MAX_QUEUE_SIZE 条，上报的永远是最新的那一段。
+                        if (targetQueue.size() >= MAX_QUEUE_SIZE) {
+                            targetQueue.poll();
+                            logQueueFull(componentId);
                         }
+                        targetQueue.put(message);
                     } catch (InterruptedException e) {
                         // 中断时恢复线程中断状态，不影响任务
                         Thread.currentThread().interrupt();
@@ -216,6 +237,23 @@ public class FanucFocasMessageScheduler {
      * 【静态方法】移除指定组件的队列（清空消息+删除队列）
      * @param componentId 组件ID
      */
+    /**
+     * 队列满告警，按组件节流（{@link #QUEUE_FULL_LOG_INTERVAL_MS} 内最多一条）。
+     *
+     * <p>原实现队列满时直接丢弃新消息、不留任何痕迹。而队列一旦顶到上限就说明<b>生产已经快于消费</b>，
+     * 那批陈旧快照永远排不空，于是<b>之后每条新消息都被静默丢弃</b> —— 平台照常跑、页面照常显示、
+     * 转发照常发生，只是数据越来越旧，且没有任何线索可查。至少要让它能被发现。
+     */
+    private static void logQueueFull(String componentId) {
+        long now = System.currentTimeMillis();
+        Long lastLogTs = queueFullLogTsMap.get(componentId);
+        if (lastLogTs == null || now - lastLogTs >= QUEUE_FULL_LOG_INTERVAL_MS) {
+            queueFullLogTsMap.put(componentId, now);
+            log.warn("[FANUC调度] componentId={} 消息队列已满（上限{}），丢弃最旧消息以保证上报的是最新数据",
+                    componentId, MAX_QUEUE_SIZE);
+        }
+    }
+
     public static void removeMessageQueue(String componentId) {
         if (StringUtils.isBlank(componentId)) {
             return;
