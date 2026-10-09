@@ -78,12 +78,18 @@ mvn spring-boot:run -pl labdatahub-admin
 
 ## 编码规范
 
-1. **AI 修改/创建的 Java 文件**，文件开头添加注释 `//由AI修改`；XML、YAML、properties 等非 Java 文件不加。
-2. **所有 class 字段必须加中文注释**。
-3. 列表循环尽量用增强 for（`for (Item item : list)`），少用下标循环。
-4. 接口返回字段使用现有 `AjaxResult` / 分页 `TableDataInfo` 约定（RuoYi 体系）。
+1. **所有 class 字段必须加中文注释**。
+2. 列表循环尽量用增强 for（`for (Item item : list)`），少用下标循环。
+3. 接口返回字段使用现有 `AjaxResult` / 分页 `TableDataInfo` 约定（RuoYi 体系）。
 
 ## 踩坑经验记录
+
+### 规则引擎「数据转发」：输入侧设备范围**不决定**输出服务起不起（2026-10-07 实测修复）
+- **现象**：`labdatahub_rule_engine` 的「数据转发」配好 MQTT 出口、点「启动」，页面提示「操作成功」，但出口端口根本没有监听——**报成功而服务没起**。
+- **根因两层**：① `LabdatahubRuleEngineServiceImpl#startRuleEngine` 在输入节点 `configData` 为空、或 `deviceScope=all` 且 `productScope` 为空、或 `deviceScope=part` 且 `deviceSnList` 为空时，**直接 `return` 掉整个规则组**，连 `MqttBrokerUtils.addBroker` 一起跳过（注意：查询出来 `deviceList` 为空**不会**跳过，只有"范围没配"才跳）；② `LabdatahubRuleEngineController#controlEngine` 丢弃 `startRuleEngine` 的返回值、无条件 `AjaxResult.success()`，且 `isEnable` 在方法末尾无条件写 `"1"`。
+- **修法**：输入侧范围降级为「只决定转发哪些设备的消息」——`productConfig` 为 null 或范围为空时 `deviceList` 保持空，输出服务（MQTT/Kafka/RocketMQ/RabbitMQ/HTTP）照常启动，只是没有消息进来，并各打一条 `log.warn` 说明「仅启动输出服务、不绑定设备」；controller 按返回值给 200/500；`TimerTask#initRuleEngine` 的 `catch (Exception ignored){}` 改为 `log.error`（重启恢复失败原来一行日志都没有）。
+- **验收口径**：清空输入节点 `productScope` 后点「启动」，日志应出现 `未选择产品范围，仅启动输出服务、不绑定设备` + `Server bound to host=0.0.0.0, port=<规则里配的端口>`，`netstat` 能看到该端口被**后端进程**监听着。**只验"页面提示成功"不算**——那正是修复前的假象。
+- **仍未改的两处（已知）**：`output.getConfigData()` 在输出节点没配过时会 NPE（输入侧已加 null 保护、输出侧没动）；`isEnable` 仍在循环后无条件置 `"1"`——画布上凑不出完整「输入→实时推送→输出」通路时 `ruleList` 为空，什么都没启动却照样显示已启用。
 
 ### ProtoForge 模拟器会把 S7 位地址的 bit 部分丢掉（2026-09-18 实测，S7 位读对不上时先查这里）
 - **现象**：模拟器点位配 `M0.3`、`fixed_value=true`，页面显示 true；平台侧配「区类型=M、起始地址=0、位偏移=3」读出来是 **false**，且不报错——看起来像"我们读位读错了"。

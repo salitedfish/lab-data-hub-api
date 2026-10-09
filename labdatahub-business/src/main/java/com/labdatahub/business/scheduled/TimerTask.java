@@ -179,7 +179,15 @@ public class TimerTask {
                     closeComponent.setId(component.getId());
                     closeComponent.setStatus("0");
                     labdatahubComponentService.updateById(closeComponent);
-                    throw new RuntimeException(e);
+                    // ⚠️ 这里<b>不能</b>把异常抛出去。本方法跑在一个 forEach 里，抛异常等于中断整轮启动：
+                    //    排在该组件之后的组件全部不再执行 —— 协议 jar 不注册、连接不建立、消费线程不创建，
+                    //    而它们的 status 仍是 '1'（上一次启动留下的），页面上照常显示「已开启」，
+                    //    实际一个字节都不采，日志里连一条线索都没有。
+                    //    实测（2026-09-22）：S7 组件因模拟器没开而连不上，排在其后的 MODBUS / MC3E / FINS
+                    //    三个组件全部没被开启，写值接口报「协议未注册或加载失败（protocolId=MODBUS 的协议id）」。
+                    //    一台设备离线是产线上的常态，不能因此拖垮其余所有设备。
+                    log.error("[组件启动] componentId={} 开启失败，已置为关闭，继续启动其余组件：{}",
+                            component.getId(), e.getMessage(), e);
                 }
             });
         });
@@ -301,7 +309,10 @@ public class TimerTask {
             ruleEngines.forEach(ruleEngine->{
                 try {
                     labdatahubRuleEngineService.startRuleEngine(ruleEngine.getId());
-                }catch (Exception ignored){}
+                }catch (Exception e){
+                    //恢复失败必须留痕：原为 catch(Exception ignored)，规则引擎起不来时页面仍显示「已启用」却没有任何输出服务在跑
+                    log.error("恢复规则引擎失败，该规则引擎本次未启动：id={}，name={}", ruleEngine.getId(), ruleEngine.getEngineName(), e);
+                }
             });
         });
     }

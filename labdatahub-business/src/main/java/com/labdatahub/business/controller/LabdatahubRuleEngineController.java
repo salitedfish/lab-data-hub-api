@@ -139,12 +139,13 @@ public class LabdatahubRuleEngineController extends BaseController
     @PutMapping("/control")
     public AjaxResult controlEngine(@RequestParam String id,
                                        @RequestParam String isEnable) throws MqttException, IOException, CommonWarnException {
+        boolean result;
         if("0".equals(isEnable)){
-            labdatahubRuleEngineService.stopRuleEngine(id);
+            result = labdatahubRuleEngineService.stopRuleEngine(id);
         }else {
-            labdatahubRuleEngineService.startRuleEngine(id);
+            result = labdatahubRuleEngineService.startRuleEngine(id);
         }
-        return AjaxResult.success();
+        return result ? AjaxResult.success() : AjaxResult.error("规则引擎不存在");
     }
 
 }

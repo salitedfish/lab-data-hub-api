@@ -187,24 +187,29 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
             if(!"realTimePush".equals(nodeType.getType())){
                 return;
             }
+            // 输入侧设备范围只决定「转发哪些设备的消息」，不决定「输出服务起不起」：
+            // 范围缺失/为空时 deviceList 保持为空，下面的输出服务（MQTT/Kafka/...）照常启动，只是没有消息进来
+            ProductConfig productConfig = null;
             if(input.getConfigData() == null){
-                log.warn("规则引擎{} 的输入节点[{}]未配置数据源，跳过该规则组", id, input.getName());
-                return;
+                log.warn("规则引擎{} 的输入节点[{}]未配置数据源，仅启动输出服务、不绑定设备", id, input.getName());
+            }else {
+                productConfig = input.getConfigData().toJavaObject(ProductConfig.class);
             }
-            ProductConfig productConfig = input.getConfigData().toJavaObject(ProductConfig.class);
             List<LabdatahubDevice> deviceList = new ArrayList<>();
-            if("all".equals(productConfig.getDeviceScope())){
+            if(productConfig != null && "all".equals(productConfig.getDeviceScope())){
                 if(productConfig.getProductScope()==null||productConfig.getProductScope().isEmpty()){
-                    return;
+                    log.warn("规则引擎{} 的输入节点[{}]未选择产品范围，仅启动输出服务、不绑定设备", id, input.getName());
+                }else {
+                    deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                            .in(LabdatahubDevice::getProductSn,productConfig.getProductScope()));
                 }
-                deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
-                        .in(LabdatahubDevice::getProductSn,productConfig.getProductScope()));
-            }else if("part".equals(productConfig.getDeviceScope())){
+            }else if(productConfig != null && "part".equals(productConfig.getDeviceScope())){
                 if(productConfig.getDeviceSnList()==null||productConfig.getDeviceSnList().isEmpty()){
-                    return;
+                    log.warn("规则引擎{} 的输入节点[{}]未选择设备，仅启动输出服务、不绑定设备", id, input.getName());
+                }else {
+                    deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
+                            .in(LabdatahubDevice::getDeviceSn,productConfig.getDeviceSnList()));
                 }
-                deviceList = labdatahubDeviceService.list(new LambdaQueryWrapper<LabdatahubDevice>()
-                        .in(LabdatahubDevice::getDeviceSn,productConfig.getDeviceSnList()));
             }
             String componentId = id+"_"+output.getId();
             switch (output.getType()){
