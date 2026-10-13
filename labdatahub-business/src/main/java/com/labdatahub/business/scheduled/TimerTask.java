@@ -7,8 +7,10 @@ import static com.labdatahub.business.utils.CacheUtils.updateAllDeviceCache;
 import java.io.File;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -160,37 +162,65 @@ public class TimerTask {
         threadPoolTaskExecutor.execute(() -> {
             List<LabdatahubComponent> components = labdatahubComponentService.list(new LambdaQueryWrapper<LabdatahubComponent>()
                     .eq(LabdatahubComponent::getStatus, "1"));
-            components.forEach(component -> {
-                CacheUtils.setComponentCache(component.getId(),component);
-                //先加载相关协议
-                if (StringUtils.isNotEmpty(component.getProtocolId())) {
-                    LabdatahubProtocol protocol = labdatahubProtocolService.getById(component.getProtocolId());
-                    try {
-                        ProtocolManager.addProtocol(protocol.getId(),protocol.getProtocolType(), PROTOCOL_PATH + File.separator + protocol.getNewName(), protocol.getMainClassPath());
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
+
+            // ===== 第一段：顺序注册全部用到的协议（按 protocolId 去重） =====
+            // 必须放在开组件之前、且顺序执行：原先协议注册与组件开启在同一个 forEach 里交错进行，
+            // 一旦并发开组件，同一个协议会被多个组件线程同时 addProtocol（同一台协议 jar 重复加载）。
+            // 去重后只注册一次，语义更严，也不再有这个竞态。
+            Set<String> registeredProtocolIds = new HashSet<>();
+            for (LabdatahubComponent component : components) {
+                CacheUtils.setComponentCache(component.getId(), component);
+                if (StringUtils.isEmpty(component.getProtocolId())
+                        || !registeredProtocolIds.add(component.getProtocolId())) {
+                    continue;
+                }
+                LabdatahubProtocol protocol = labdatahubProtocolService.getById(component.getProtocolId());
+                if (protocol == null) {
+                    log.error("[组件启动] 协议不存在，protocolId={}，使用该协议的组件都开不起来", component.getProtocolId());
+                    continue;
                 }
                 try {
-                    labdatahubComponentService.openComponent(component.getId());
+                    ProtocolManager.addProtocol(protocol.getId(), protocol.getProtocolType(), PROTOCOL_PATH + File.separator + protocol.getNewName(), protocol.getMainClassPath());
                 } catch (Exception e) {
-                    //开启失败则状态置为关闭
-                    LabdatahubComponent closeComponent = new LabdatahubComponent();
-                    closeComponent.setId(component.getId());
-                    closeComponent.setStatus("0");
-                    labdatahubComponentService.updateById(closeComponent);
-                    // ⚠️ 这里<b>不能</b>把异常抛出去。本方法跑在一个 forEach 里，抛异常等于中断整轮启动：
-                    //    排在该组件之后的组件全部不再执行 —— 协议 jar 不注册、连接不建立、消费线程不创建，
-                    //    而它们的 status 仍是 '1'（上一次启动留下的），页面上照常显示「已开启」，
-                    //    实际一个字节都不采，日志里连一条线索都没有。
-                    //    实测（2026-09-22）：S7 组件因模拟器没开而连不上，排在其后的 MODBUS / MC3E / FINS
-                    //    三个组件全部没被开启，写值接口报「协议未注册或加载失败（protocolId=MODBUS 的协议id）」。
-                    //    一台设备离线是产线上的常态，不能因此拖垮其余所有设备。
-                    log.error("[组件启动] componentId={} 开启失败，已置为关闭，继续启动其余组件：{}",
-                            component.getId(), e.getMessage(), e);
+                    log.error("[组件启动] 协议注册失败 protocolId={}（{}），使用该协议的组件都开不起来",
+                            protocol.getId(), protocol.getProtocolName(), e);
                 }
-            });
+            }
+
+            // ===== 第二段：并发开启组件 =====
+            // 原先在一个线程上串行 openComponent。设备在线时无所谓，但 FANUC 的 addConnection 要
+            // **同步等消费线程在本线程建连**（最长 8 秒，见 FanucFocasConnectionManager），
+            // 100 台同时离线就是最多 800 秒才轮完，期间后面所有设备一个字节都不采。
+            // 提交到共享线程池并发开来（core 50 / queue 20000），100 台约两轮跑完。
+            for (LabdatahubComponent component : components) {
+                threadPoolTaskExecutor.execute(() -> openComponentSafely(component));
+            }
         });
+    }
+
+    /**
+     * 开启单个组件；失败则把状态置为关闭并记日志，<b>不向上抛</b>。
+     *
+     * <p>⚠️ 不能把异常抛出去。本方法跑在线程池的任务里，抛出去等于这个组件「悄悄没了」：
+     * status 不会被置 0（页面上照常显示「已开启」），实际一个字节都不采，日志里只剩线程池吞掉的堆栈。
+     * 实测（2026-09-22）：S7 组件因模拟器没开而连不上时，若不兜住异常，其后的 MODBUS / MC3E / FINS
+     * 三个组件全部不会被开启，写值接口报「协议未注册或加载失败（protocolId=MODBUS 的协议id）」。
+     * 一台设备离线是产线上的常态，不能因此拖垮其余所有设备。
+     *
+     * @param component 待开启的网络组件
+     */
+    private void openComponentSafely(LabdatahubComponent component) {
+        try {
+            labdatahubComponentService.openComponent(component.getId());
+        } catch (Exception e) {
+            //开启失败则状态置为关闭
+            LabdatahubComponent closeComponent = new LabdatahubComponent();
+            closeComponent.setId(component.getId());
+            closeComponent.setStatus("0");
+            labdatahubComponentService.updateById(closeComponent);
+            log.error("[组件启动] componentId={} 开启失败，已置为关闭，继续启动其余组件：{}",
+                    component.getId(), e.getMessage(), e);
+        }
     }
 
     /**

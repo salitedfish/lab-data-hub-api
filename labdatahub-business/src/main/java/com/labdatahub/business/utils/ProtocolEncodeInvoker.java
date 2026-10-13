@@ -65,8 +65,7 @@ public class ProtocolEncodeInvoker {
         Method encodeMethod = ProtocolManager.ENCODE_METHOD.get(protocolId);
         Object instance = ProtocolManager.CLASS_INSTANCE.get(protocolId);
         if (encodeMethod == null || instance == null) {
-            throw new PointWriteException(500, "协议未注册或加载失败（protocolId=" + protocolId
-                    + "），请到「协议管理」页面重新上传协议包", meta);
+            throw new PointWriteException(500, protocolNotRegisteredMessage(meta, protocolId), meta);
         }
 
         Object result;
@@ -100,6 +99,32 @@ public class ProtocolEncodeInvoker {
             throw new PointWriteException(500, "协议层未产出写入载荷（modbusWriteJson 为空）", meta);
         }
         return payload;
+    }
+
+    /**
+     * 「协议未注册」时的文案：组件停用时，把它换成调用方真正该做的那一步
+     *
+     * <p>协议 jar 是<b>随组件启用才注册</b>的 —— {@code TimerTask#initComponentAndProtocol}
+     * 只遍历 {@code status=1} 的组件、按 protocolId 去重后 {@code addProtocol}。所以
+     * 「组件停用」与「协议没注册」在后端重启之后是同一件事的两种说法：没启用的组件，
+     * 它的协议压根不在 {@code ProtocolManager} 里，编码这一步（在下发之前）就先失败了，
+     * 因此这类请求<b>根本走不到 503</b>，表现是 500。
+     *
+     * <p>原文案让调用方「到协议管理页重新上传协议包」——此时既没必要，还会把好好的包换掉。
+     * 组件没启用时给一句能直接照做的指引，原文案附在后面备查。
+     *
+     * <p>⚠️ 与 503 的 {@code connectionFailMessage} 同一个原则：只在明确
+     * {@code componentEnabled=false} 时改写。为 null 或 true 时保留原文 —— 那才是
+     * 「包真的没了 / 上传时选错了网络类型 / 主类对不上」的场合。
+     */
+    private static String protocolNotRegisteredMessage(PointWriteMeta meta, String protocolId) {
+        if (meta != null && Boolean.FALSE.equals(meta.getComponentEnabled())) {
+            return "网络组件当前为停用状态，平台未加载该组件的协议，无法编码写入值，"
+                    + "请先在「网络组件」页面开启该组件后重试。协议层详情：协议未注册或加载失败（protocolId="
+                    + protocolId + "）";
+        }
+        return "协议未注册或加载失败（protocolId=" + protocolId
+                + "），请到「协议管理」页面重新上传协议包";
     }
 
     /**

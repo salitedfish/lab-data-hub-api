@@ -91,7 +91,7 @@
     		<version>2.1</version>
 		</dependency>
 
-        <!-- JNA：FANUC FOCAS2（fwlib32 库）原生调用 -->
+        <!-- JNA：FANUC FOCAS2（官方库）原生调用 -->
         <dependency>
             <groupId>net.java.dev.jna</groupId>
             <artifactId>jna</artifactId>

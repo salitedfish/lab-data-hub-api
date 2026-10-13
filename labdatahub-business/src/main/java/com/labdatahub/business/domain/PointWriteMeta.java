@@ -59,12 +59,34 @@ public class PointWriteMeta implements Serializable {
     /** 写功能码（MODBUS 保持寄存器恒为 16；S7 无功能码概念，恒为 null） */
     private Integer writeFunctionCode;
 
-    // ========== 内部流转用（不进响应） ==========
+    /** 物模型单位（如 ℃ / mm），回显用；物模型没配就是 null，响应里不输出 */
+    private String unit;
+
+    /**
+     * 本次匹配当时，平台侧记录的设备在线状态
+     *
+     * <p>取 {@code CacheUtils.getDeviceStatusBySn(deviceSn)} 的内存态 —— 与设备列表页 /
+     * 详情页显示的「在线/离线」同一个口径，避免出现「页面显示在线、接口说离线」。
+     * ⚠️ 这是<b>平台判定</b>，不是「此刻一定连得上」：标记离线但实际可达的设备照样能写进去
+     * （下发路径本来就会重连）。所以它只做回显，<b>不作为写入的前置拦截</b>。
+     */
+    private Boolean deviceOnline;
+
+    /**
+     * 本次匹配当时，网络组件是否处于启用状态（{@code labdatahub_component.status == "1"}）
+     *
+     * <p>语义是「组件有没有被拉起」，<b>不是</b>「连得上」——组件启用了但设备不可达是另一回事。
+     * 它同时用于 503 的文案判定：只有明确为 false（停用）时才改写协议层那句
+     * 「网络组件未开启，或开启时连接失败」。
+     */
+    private Boolean componentEnabled;
+
+    // ========== 内部流转用（标了「响应回显」的几项也进 data） ==========
 
     /** 协议id，反射调 encode 用 */
     private String protocolId;
 
-    /** 网络类型：MODBUS_TCP / S71200_TCP，决定取哪张协议点位表 */
+    /** 网络类型：MODBUS_TCP / S71200_TCP，决定取哪张协议点位表；响应回显（决定 address/count 的单位口径） */
     private String netType;
 
     /** 网络组件otherConfig 解析出的 IP */
@@ -84,7 +106,7 @@ public class PointWriteMeta implements Serializable {
     /** 区类型（S7）：DB / M / I / Q */
     private String areaType;
 
-    /** DB 块号（S7；M/I/Q 区不使用，但配置里仍带） */
+    /** DB 块号（S7；M/I/Q 区不使用，但配置里仍带）；响应回显（缺了 address 就读不懂是 DB 几） */
     private Integer dbNumber;
 
     /** 块类型（S7）：DBX / DBW / DBD / DBB */
@@ -98,7 +120,7 @@ public class PointWriteMeta implements Serializable {
 
     // ===== 以下 2 项只有欧姆龙 FINS 用，直接映射 labdatahub_omronfins_config 的同名字段 =====
 
-    /** 存储区码（FINS）：字区如 DM=0x82 / CIO=0xB0，位区如 DM位=0x02 / CIO位=0x30 */
+    /** 存储区码（FINS）：字区如 DM=0x82 / CIO=0xB0，位区如 DM位=0x02 / CIO位=0x30；响应回显（缺了 address 就读不懂在哪个区） */
     private Integer areaCode;
 
     /** 位号（FINS 仅位区用，0-15；字区为 null 表示按字访问） */

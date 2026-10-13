@@ -7,7 +7,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 数据读取器，负责按点位地址（readType.param1.param2）从 FANUC FOCAS2 设备读取单项数据
- * FOCAS2 通过 fwlib32 库按函数调用读取，一次读一个点；读失败自动重连重试一次
+ * FOCAS2 通过官方库按函数调用读取，一次读一个点；读失败自动重连重试一次
  * 所有读取函数均为官方 FOCAS2 函数族（cnc_rdaxisdata/cnc_acts/cnc_rdspload/cnc_actf/
  * cnc_statinfo/cnc_rdprgnum/cnc_rdseqnum/cnc_exeprgname/cnc_rdalmmsg/cnc_rdmacro/cnc_rdtimer/
  * cnc_rdcount/cnc_diagnoss/pmc_rdpmcrng）：
@@ -74,7 +74,7 @@ public class FanucFocasDataReader {
         if (handle == null || readType == null) {
             return null;
         }
-        Fwlib32 lib = Fwlib32Loader.get();
+        Fwlib lib = FwlibLoader.get();
         String type = readType.trim().toLowerCase();
         switch (type) {
             case "axis": {
@@ -101,19 +101,19 @@ public class FanucFocasDataReader {
                 }
                 // 官方 cnc_rdaxisdata 从第 1 根轴开始按 (*len) 读取，读第 param1 根轴需 len=param1、取 axdata[param1-1]
                 short[] len = new short[]{param1.shortValue()};
-                Fwlib32.ODBAXDT[] axdata = new Fwlib32.ODBAXDT[param1];
+                Fwlib.ODBAXDT[] axdata = new Fwlib.ODBAXDT[param1];
                 short ret = lib.cnc_rdaxisdata(handle, (short) 1, new short[]{axisType}, (short) 1, len, axdata);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_rdaxisdata socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 // 实际有效轴数少于请求轴数：该轴不存在
                 if (len[0] < param1) {
                     return null;
                 }
-                Fwlib32.ODBAXDT data = axdata[param1 - 1];
+                Fwlib.ODBAXDT data = axdata[param1 - 1];
                 // 位置值 = data / 10^dec
                 return String.valueOf(data.data.intValue() / Math.pow(10, data.dec));
             }
@@ -125,12 +125,12 @@ public class FanucFocasDataReader {
                 switch (param1) {
                     case 1: {
                         // 实际主轴转速：cnc_acts（FOCAS2 无 cnc_rdspindle）
-                        Fwlib32.ODBACT data = new Fwlib32.ODBACT();
+                        Fwlib.ODBACT data = new Fwlib.ODBACT();
                         short ret = lib.cnc_acts(handle, data);
-                        if (ret == Fwlib32.EW_SOCKET) {
+                        if (ret == Fwlib.EW_SOCKET) {
                             throw new IOException("cnc_acts socket错误(" + ret + ")");
                         }
-                        if (ret != Fwlib32.EW_OK) {
+                        if (ret != Fwlib.EW_OK) {
                             return null;
                         }
                         return String.valueOf(data.data.longValue());
@@ -138,24 +138,24 @@ public class FanucFocasDataReader {
                     case 2: {
                         // 主轴倍率：FOCAS2 无直接读取函数，按 FANUC 标准梯形图约定读 PMC G 区 G30 字节
                         // （SOV0-SOV7，值即百分比，100=100%）；台丽 0i-MF Plus 真机实测 G30=100，地址以机床 PMC 梯形图为准
-                        Fwlib32.IODBPMC pmc = new Fwlib32.IODBPMC();
+                        Fwlib.IODBPMC pmc = new Fwlib.IODBPMC();
                         short ret = lib.pmc_rdpmcrng(handle, (short) 0, (short) 0, (short) 30, (short) 30, (short) 9, pmc);
-                        if (ret == Fwlib32.EW_SOCKET) {
+                        if (ret == Fwlib.EW_SOCKET) {
                             throw new IOException("pmc_rdpmcrng socket错误(" + ret + ")");
                         }
-                        if (ret != Fwlib32.EW_OK) {
+                        if (ret != Fwlib.EW_OK) {
                             return null;
                         }
                         return String.valueOf(pmc.byteAt(0));
                     }
                     case 3: {
                         // 主轴负载：cnc_rdspload，负载在 ODBSPN.data[0]
-                        Fwlib32.ODBSPN data = new Fwlib32.ODBSPN();
+                        Fwlib.ODBSPN data = new Fwlib.ODBSPN();
                         short ret = lib.cnc_rdspload(handle, (short) 1, data);
-                        if (ret == Fwlib32.EW_SOCKET) {
+                        if (ret == Fwlib.EW_SOCKET) {
                             throw new IOException("cnc_rdspload socket错误(" + ret + ")");
                         }
-                        if (ret != Fwlib32.EW_OK) {
+                        if (ret != Fwlib.EW_OK) {
                             return null;
                         }
                         return String.valueOf(data.data[0]);
@@ -163,12 +163,12 @@ public class FanucFocasDataReader {
                     default: {
                         // 主轴报警：cnc_rdalmmsg type=9（0i-D/F 主轴报警 SP）
                         short[] num = new short[]{4};
-                        Fwlib32.ODBALMMSG[] alms = new Fwlib32.ODBALMMSG[4];
+                        Fwlib.ODBALMMSG[] alms = new Fwlib.ODBALMMSG[4];
                         short ret = lib.cnc_rdalmmsg(handle, (short) 9, num, alms);
-                        if (ret == Fwlib32.EW_SOCKET) {
+                        if (ret == Fwlib.EW_SOCKET) {
                             throw new IOException("cnc_rdalmmsg socket错误(" + ret + ")");
                         }
-                        if (ret != Fwlib32.EW_OK) {
+                        if (ret != Fwlib.EW_OK) {
                             return null;
                         }
                         return num[0] > 0 ? "1" : "0";
@@ -180,12 +180,12 @@ public class FanucFocasDataReader {
                 if (param1 == null || param1 != 1) {
                     return null;
                 }
-                Fwlib32.ODBACT data = new Fwlib32.ODBACT();
+                Fwlib.ODBACT data = new Fwlib.ODBACT();
                 short ret = lib.cnc_actf(handle, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_actf socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 // 由AI修改：cnc_actf 官方单位 0.1mm/min（G94）/ 0.001mm/rev（G95），除以 10 换算成 mm/min / mm/rev。
@@ -197,12 +197,12 @@ public class FanucFocasDataReader {
                 // 0=MDI 1=MEM 2=*** 3=EDIT 4=HANDLE 5=JOG 6=Teach JOG 7=Teach HANDLE 8=INC 9=REF 10=RMT 11=TEST
                 // 由AI修改：mode 点位固定读 aut，不使用 param1（DB 配置 operation_mode 的 param1 为空）。
                 // 此前要求 param1 非空，导致 param1 留空的操作模式点位静默无数据。
-                Fwlib32.ODBST data = new Fwlib32.ODBST();
+                Fwlib.ODBST data = new Fwlib.ODBST();
                 short ret = lib.cnc_statinfo(handle, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_statinfo socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 return String.valueOf(data.aut);
@@ -216,12 +216,12 @@ public class FanucFocasDataReader {
                 if (param1 == null || param1 < 1 || param1 > 4) {
                     return null;
                 }
-                Fwlib32.ODBST data = new Fwlib32.ODBST();
+                Fwlib.ODBST data = new Fwlib.ODBST();
                 short ret = lib.cnc_statinfo(handle, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_statinfo socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 switch (param1) {
@@ -247,22 +247,22 @@ public class FanucFocasDataReader {
                 if (param1 == 2) {
                     // 由AI修改：当前执行段顺序号此前误以为无直接读取函数返回 null，
                     // FOCAS2 官方有 cnc_rdseqnum，直接读取（值 = ODBSEQNUM.data）
-                    Fwlib32.ODBSEQNUM seq = new Fwlib32.ODBSEQNUM();
+                    Fwlib.ODBSEQNUM seq = new Fwlib.ODBSEQNUM();
                     short ret = lib.cnc_rdseqnum(handle, seq);
-                    if (ret == Fwlib32.EW_SOCKET) {
+                    if (ret == Fwlib.EW_SOCKET) {
                         throw new IOException("cnc_rdseqnum socket错误(" + ret + ")");
                     }
-                    if (ret != Fwlib32.EW_OK) {
+                    if (ret != Fwlib.EW_OK) {
                         return null;
                     }
                     return String.valueOf(seq.data.longValue());
                 }
-                Fwlib32.ODBPRO data = new Fwlib32.ODBPRO();
+                Fwlib.ODBPRO data = new Fwlib.ODBPRO();
                 short ret = lib.cnc_rdprgnum(handle, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_rdprgnum socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 return String.valueOf(data.data);
@@ -274,12 +274,12 @@ public class FanucFocasDataReader {
                     return null;
                 }
                 short[] num = new short[]{16};
-                Fwlib32.ODBALMMSG[] alms = new Fwlib32.ODBALMMSG[16];
+                Fwlib.ODBALMMSG[] alms = new Fwlib.ODBALMMSG[16];
                 short ret = lib.cnc_rdalmmsg(handle, (short) -1, num, alms);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_rdalmmsg socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 int count = num[0];
@@ -299,12 +299,12 @@ public class FanucFocasDataReader {
                     return null;
                 }
                 short macroNo = param1 == 1 ? (short) 3901 : (short) 3902;
-                Fwlib32.ODBM data = new Fwlib32.ODBM();
+                Fwlib.ODBM data = new Fwlib.ODBM();
                 short ret = lib.cnc_rdmacro(handle, macroNo, (short) 10, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_rdmacro socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 // 由AI修改：宏变量值需按小数位换算（#3901 刀具号 dec_val=7，刀具 44 存为 440000000/10^7）。
@@ -319,12 +319,12 @@ public class FanucFocasDataReader {
                 if (param1 == null || param1 < 1) {
                     return null;
                 }
-                Fwlib32.ODBM data = new Fwlib32.ODBM();
+                Fwlib.ODBM data = new Fwlib.ODBM();
                 short ret = lib.cnc_rdmacro(handle, param1.shortValue(), (short) 10, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_rdmacro socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 if (data.dec_val <= 0) {
@@ -352,12 +352,12 @@ public class FanucFocasDataReader {
                         timerType = 0;
                         break;
                 }
-                Fwlib32.IODBTIME data = new Fwlib32.IODBTIME();
+                Fwlib.IODBTIME data = new Fwlib.IODBTIME();
                 short ret = lib.cnc_rdtimer(handle, timerType, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_rdtimer socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 return String.valueOf(data.minute.longValue());
@@ -388,12 +388,12 @@ public class FanucFocasDataReader {
                 if (param1 == null || param1 < 1) {
                     return null;
                 }
-                Fwlib32.ODBDIAGNO data = new Fwlib32.ODBDIAGNO();
+                Fwlib.ODBDIAGNO data = new Fwlib.ODBDIAGNO();
                 short ret = lib.cnc_diagnoss(handle, param1.shortValue(), data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_diagnoss socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 return String.valueOf(data.data.longValue());
@@ -406,12 +406,12 @@ public class FanucFocasDataReader {
                     return null;
                 }
                 short gNo = param1 == 1 ? (short) 12 : (short) 14;
-                Fwlib32.IODBPMC pmc = new Fwlib32.IODBPMC();
+                Fwlib.IODBPMC pmc = new Fwlib.IODBPMC();
                 short ret = lib.pmc_rdpmcrng(handle, (short) 0, (short) 0, gNo, gNo, (short) 9, pmc);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("pmc_rdpmcrng socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 return String.valueOf(pmc.byteAt(0));
@@ -419,12 +419,12 @@ public class FanucFocasDataReader {
             case "exeprgname": {
                 // 主程序名：cnc_exeprgname（当前执行中的程序名，最长 32 字节；GBK 解码去末尾空字节）
                 // 由AI修改：新增，与树根 MainProgramName 对齐（我们此前只有程序号无程序名）
-                Fwlib32.ODBEXEPRGNAME data = new Fwlib32.ODBEXEPRGNAME();
+                Fwlib.ODBEXEPRGNAME data = new Fwlib.ODBEXEPRGNAME();
                 short ret = lib.cnc_exeprgname(handle, data);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("cnc_exeprgname socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 return decodeCncString(data.name);
@@ -452,13 +452,13 @@ public class FanucFocasDataReader {
                     default:
                         return null;
                 }
-                Fwlib32.IODBPMC pmc = new Fwlib32.IODBPMC();
+                Fwlib.IODBPMC pmc = new Fwlib.IODBPMC();
                 short ret = lib.pmc_rdpmcrng(handle, adrType, (short) 0,
                         param2.shortValue(), param2.shortValue(), (short) 9, pmc);
-                if (ret == Fwlib32.EW_SOCKET) {
+                if (ret == Fwlib.EW_SOCKET) {
                     throw new IOException("pmc_rdpmcrng socket错误(" + ret + ")");
                 }
-                if (ret != Fwlib32.EW_OK) {
+                if (ret != Fwlib.EW_OK) {
                     return null;
                 }
                 return String.valueOf(pmc.byteAt(0));

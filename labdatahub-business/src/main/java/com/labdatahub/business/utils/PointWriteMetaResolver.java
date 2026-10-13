@@ -108,6 +108,9 @@ public class PointWriteMetaResolver {
             throw new PointWriteException(404, "设备不存在：" + deviceSn, meta);
         }
         meta.setDeviceName(device.getDeviceName());
+        // 平台侧记录的在线状态（内存态，与设备列表页同一个口径）。只做回显，不拦截写入 ——
+        // 标记离线但实际可达的设备照样让它写（下发路径本来就会重连）。
+        meta.setDeviceOnline(CacheUtils.getDeviceStatusBySn(deviceSn));
 
         // 3. 组件
         if (StringUtils.isEmpty(device.getComponentId())) {
@@ -121,6 +124,9 @@ public class PointWriteMetaResolver {
             throw new PointWriteException(409, "设备绑定的网络组件不存在：" + device.getComponentId(), meta);
         }
         meta.setNetType(component.getNetType());
+        // 组件「有没有被拉起」（0-停用 1-启用），不是「连得上」。
+        // 503 时用它把「组件停用」从协议层那句「未开启，或开启时连接失败」里择出来。
+        meta.setComponentEnabled("1".equals(component.getStatus()));
 
         // 4. 网络类型准入：只放行已实现写值的四个协议，其余一律 409
         String netType = component.getNetType() == null ? "" : component.getNetType().trim();
@@ -185,6 +191,7 @@ public class PointWriteMetaResolver {
                     + " 的属性（设备 " + deviceSn + " 与其产品下都没有）", meta);
         }
         meta.setDataType(property.getDataType());
+        meta.setUnit(property.getUnit());
         meta.setByteOrder(property.getByteOrder());
         meta.setIsSigned(property.getIsSigned());
         meta.setScale(property.getScale());

@@ -25,7 +25,11 @@ spring:
       # 最小连接池数量
       minIdle: 10
       # 最大连接池数量
-      maxActive: 20
+      # 50 按百台设备估：每个网络组件一条消费线程，日志落库、前端查询、定时任务共用这一个池。
+      # 注意这是**当前 profile（pgsql）实际生效**的那份；application-druid.yml 里也有一处同名配置，
+      # 但那份只在 profile=druid（MySQL）时加载，改那边对现行的 PG 部署没有任何效果。
+      # PostgreSQL 默认 max_connections=100，50 留有余量。
+      maxActive: 50
       # 配置获取连接等待超时的时间
       maxWait: 60000
       # 配置连接超时时间
@@ -79,12 +83,16 @@ timescaledb:
       numberPartitions: 4 # 分区数量
       chunkTimeInterval: 1 day # 分片时间间隔
       compressionEnabled: true # 开启自动压缩
-      compressionInterval: 7 days # 7天前数据自动压缩
+      compressionInterval: 1 day # 1天前数据自动压缩（保留窗口收到7天后同步收窄：压缩窗口必须明显短于保留窗口，否则刚压完就被删）
 
   # 2. 数据保留策略
+  # ⚠️ 这里改值对**已存在的库不生效**：TimescaleDbInitializer 用的是
+  #    add_retention_policy(..., if_not_exists => TRUE)，策略已存在就整句跳过、值不会变。
+  #    要改现网，得显式 alter_job(<job_id>, config => '{"drop_after":"7 days"}')，
+  #    或 remove_retention_policy 后重启重建。改完下一次策略任务运行就会按新值删块。
   retention-policies:
     - tableName: labdatahub_device_logs # 表名
-      retentionInterval: 90 days # 数据保留90天
+      retentionInterval: 7 days # 数据保留7天（压缩窗口在另一条线上、比它短得多，见 compressionInterval；两者相等才是配置错误）
 
   # 3. 连续聚合视图配置
   continuous-aggregates:

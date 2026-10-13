@@ -18,6 +18,6 @@ public class FanucFocasConfig {
     private Integer port = 8193;
     // 连接超时时间
     private Integer timeout = 3000;
-    // fwlib32 库路径（可选，为空时自动搜索）
+    // FOCAS2 库路径（可选，为空时自动搜索）
     private String libPath;
 }

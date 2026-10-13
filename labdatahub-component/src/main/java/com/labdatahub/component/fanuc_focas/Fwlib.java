@@ -19,7 +19,7 @@ import java.util.List;
  *     句柄用值传递（Java short 即 16 位）
  * 注意：结构体映射为 FOCAS2 对接最关键环节，第一次真机/NCGuide 验证后需核对修正
  */
-public interface Fwlib32 extends Library {
+public interface Fwlib extends Library {
 
     // FOCAS2 返回码：成功
     short EW_OK = 0;

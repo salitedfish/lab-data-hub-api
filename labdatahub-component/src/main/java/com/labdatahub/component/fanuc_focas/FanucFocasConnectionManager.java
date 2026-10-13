@@ -18,7 +18,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * FANUC FOCAS2 连接管理器，维护多个组件的连接句柄（新增自动检查+定时重连）
- * FOCAS2 用 fwlib32 库建立连接，句柄（unsigned short）即连接，需保持有效；
+ * FOCAS2 用官方库建立连接，句柄（unsigned short）即连接，需保持有效；
  * 每 component 一把读锁，避免并发 fwlib 调用同一句柄冲突
  *
  * 由AI修改（根因修复）：FOCAS2 fwlib 连接"绑定创建线程"——cnc_allclibhndl3 在哪个线程建立连接，
@@ -131,11 +131,11 @@ public class FanucFocasConnectionManager {
         try {
             // 已有句柄（重连/重开场景）：先关闭旧句柄，避免泄漏
             closeHandle(componentId);
-            Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
+            Fwlib lib = FwlibLoader.get(config.getLibPath());
             ShortByReference handleRef = new ShortByReference();
             short ret = lib.cnc_allclibhndl3(config.getIpAddr(), config.getPort().shortValue(),
                     new NativeLong(toTimeoutSeconds(config.getTimeout())), handleRef);
-            if (ret != Fwlib32.EW_OK) {
+            if (ret != Fwlib.EW_OK) {
                 System.err.printf("[FOCAS2连接] componentId=%s 建连失败（返回码=%d），请确认机床 FOCAS2 选项已开启（端口8193）%n",
                         componentId, ret);
                 handleMap.remove(componentId);
@@ -224,11 +224,11 @@ public class FanucFocasConnectionManager {
         ReentrantLock lock = getReadLock(componentId);
         lock.lock();
         try {
-            Fwlib32 lib = Fwlib32Loader.get(config.getLibPath());
+            Fwlib lib = FwlibLoader.get(config.getLibPath());
             ShortByReference probeHandleRef = new ShortByReference();
             short ret = lib.cnc_allclibhndl3(config.getIpAddr(), config.getPort().shortValue(),
                     new NativeLong(toTimeoutSeconds(config.getTimeout())), probeHandleRef);
-            if (ret != Fwlib32.EW_OK) {
+            if (ret != Fwlib.EW_OK) {
                 // 探测建连失败：机床不可达，标记离线（消费线程会在下次读取时自愈重连）
                 System.out.printf("[FOCAS2重连] componentId=%s 探测建连失败（返回码=%d），机床可能不可达，标记离线（由消费线程自愈）%n",
                         componentId, ret);
@@ -236,9 +236,9 @@ public class FanucFocasConnectionManager {
                 return;
             }
             // 探测连接建立成功：读一次状态确认机床可用，随后立即释放（都在本线程，符合线程绑定）
-            short sret = lib.cnc_statinfo(probeHandleRef.getValue(), new Fwlib32.ODBST());
+            short sret = lib.cnc_statinfo(probeHandleRef.getValue(), new Fwlib.ODBST());
             lib.cnc_freelibhndl(probeHandleRef.getValue());
-            if (sret == Fwlib32.EW_OK || sret == Fwlib32.EW_BUSY) {
+            if (sret == Fwlib.EW_OK || sret == Fwlib.EW_BUSY) {
                 // 机床可达（EW_BUSY 表示机床忙但连接有效，不视为故障）
                 ComponentOnlineNotifier.markOnline(componentId);
             } else {
@@ -289,7 +289,7 @@ public class FanucFocasConnectionManager {
         Short handle = handleMap.remove(componentId);
         if (handle != null) {
             try {
-                Fwlib32 lib = Fwlib32Loader.get();
+                Fwlib lib = FwlibLoader.get();
                 // FOCAS2 断开连接用 cnc_freelibhndl（fwlib 无 cnc_close 函数）
                 lib.cnc_freelibhndl(handle);
             } catch (Exception e) {

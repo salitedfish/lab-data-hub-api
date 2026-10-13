@@ -45,6 +45,21 @@ public final class ParallelHealthCheck {
     /** 各协议的默认检查并发度：100 台设备同时离线时，一轮 100×1.5s/16 ≈ 10 秒，能追平 10 秒的调度周期 */
     private static final int DEFAULT_THREADS = 16;
 
+    /**
+     * 需要单独指定并发度的协议（键即 {@link #run} 的 protocolName，需与之完全一致）。
+     *
+     * <p>默认的 16 是按「单台探活 1.5 秒」定的（S7 那种建连超时）。<b>FANUC 是 3 秒</b>
+     * （{@code FanucFocasConnectionManager#toTimeoutSeconds} 把 3000ms 的配置超时折成 3 秒），
+     * 100 台同时离线时 16 线程一轮要 {@code 100×3÷16 ≈ 18.8} 秒 &gt; 10 秒调度周期 ——
+     * 结果是每轮都「跳过本轮」，断线感知与重连永久失效。给它 40：
+     * {@code 100×3÷40 ≈ 7.5} 秒，留出余量。
+     */
+    private static final Map<String, Integer> PROTOCOL_THREADS = new ConcurrentHashMap<>();
+
+    static {
+        PROTOCOL_THREADS.put("FANUC", 40);
+    }
+
     /** 按协议名缓存的执行器实例：各协议只需调一次静态 {@link #run}，无需自己维护字段 */
     private static final Map<String, ParallelHealthCheck> INSTANCES = new ConcurrentHashMap<>();
 
@@ -58,7 +73,8 @@ public final class ParallelHealthCheck {
      */
     public static void run(String protocolName, Collection<String> componentIds,
                            Consumer<String> checker, long timeoutSeconds) {
-        INSTANCES.computeIfAbsent(protocolName, k -> new ParallelHealthCheck(k, DEFAULT_THREADS))
+        INSTANCES.computeIfAbsent(protocolName,
+                        k -> new ParallelHealthCheck(k, PROTOCOL_THREADS.getOrDefault(k, DEFAULT_THREADS)))
                 .doRun(componentIds, checker, timeoutSeconds);
     }
 
@@ -85,7 +101,8 @@ public final class ParallelHealthCheck {
 
     /**
      * @param protocolName 协议名（如 "S7"），只用于日志和线程命名
-     * @param threads      并发检查线程数，建议 16：100 台设备同时离线时一轮约 10 秒，能追平 10 秒的调度周期
+     * @param threads      并发检查线程数，建议 16：100 台设备同时离线时一轮约 10 秒，能追平 10 秒的调度周期。
+     *                     静态入口 {@link #run} 会按协议取 {@link #PROTOCOL_THREADS}，未指定的协议才用 16
      */
     public ParallelHealthCheck(String protocolName, int threads) {
         this.protocolName = protocolName;

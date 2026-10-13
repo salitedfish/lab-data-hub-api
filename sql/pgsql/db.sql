@@ -36,9 +36,12 @@ ALTER TABLE labdatahub_device_logs SET (
     timescaledb.compress_segmentby = 'device_sn'
 );
 
+-- 压缩窗口必须**明显短于**保留窗口，否则压缩永远来不及生效（保留 7 天 + 压缩 7 天 = 刚压完就删）。
+-- 保留窗口改为 7 天后，这里同步收到 1 天：0~1 天未压缩，1~7 天压缩（实测约 17 倍），
+-- 7 天窗口稳态从约 6.8 GB 降到约 1.3 GB（按 100 台设备的量级估）。
 SELECT add_compression_policy(
     'labdatahub_device_logs',
-    INTERVAL '7 days',
+    INTERVAL '1 day',
     if_not_exists => TRUE
 );
 
@@ -46,10 +49,10 @@ SELECT add_compression_policy(
 
 -- ==================== 4. 配置数据保留策略 ====================
 
--- 4.1 设备日志保留 90 天
+-- 4.1 设备日志保留 7 天
 SELECT add_retention_policy(
     'labdatahub_device_logs',
-    INTERVAL '90 days',
+    INTERVAL '7 days',
     if_not_exists => TRUE
 );
 

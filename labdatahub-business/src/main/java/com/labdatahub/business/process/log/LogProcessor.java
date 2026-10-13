@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 极简高性能日志处理器（单例）
@@ -41,6 +42,18 @@ public final class LogProcessor {
     private int batchSize = 1000;
 
     private int maxQueueSize = 10000;
+
+    /** 攒批等待上限（毫秒）：不足一批时，最多再等这么久就把已到的先写掉 */
+    private static final long FLUSH_WAIT_MS = 200;
+
+    /** 队列满丢弃的汇总日志间隔（毫秒） */
+    private static final long DROP_LOG_INTERVAL_MS = 60000;
+
+    /** 累计丢弃条数（供汇总日志使用） */
+    private final AtomicLong droppedCount = new AtomicLong(0);
+
+    /** 上一次打印丢弃汇总的时刻（毫秒） */
+    private final AtomicLong lastDropLogMs = new AtomicLong(0);
 
     /**
      * 启动消费
@@ -131,8 +144,16 @@ public final class LogProcessor {
             return false;
         }
         boolean result = queue.offer(logs);
-        if(!result){
-            log.error("丢弃");
+        if (!result) {
+            // 队列满即丢弃。原先每丢一条打一行日志 —— 设备规模上来后（100 台）队列一旦压满，
+            // 就是每秒上百行的日志洪水，反而把磁盘 IO 一起拖垮。改成按分钟汇总一条。
+            long dropped = droppedCount.incrementAndGet();
+            long now = System.currentTimeMillis();
+            if (now - lastDropLogMs.get() >= DROP_LOG_INTERVAL_MS) {
+                lastDropLogMs.set(now);
+                log.error("设备日志入库队列已满（上限 {}），累计丢弃 {} 条。消费跟不上生产，需调大批量落库或降低采集频率",
+                        maxQueueSize, dropped);
+            }
         }
         return result; // 队列满时返回false，自动丢弃
     }
@@ -172,7 +193,7 @@ public final class LogProcessor {
 
                 // 如果有数据立即处理
                 if (drained > 0) {
-                    consumer.consume(batch);
+                    consumeAccumulated(batch);
                     continue;
                 }
 
@@ -182,7 +203,7 @@ public final class LogProcessor {
                     batch.add(first);
                     // 立即取剩余数据
                     queue.drainTo(batch, batchSize - 1);
-                    consumer.consume(batch);
+                    consumeAccumulated(batch);
                 }
 
             } catch (InterruptedException e) {
@@ -201,6 +222,39 @@ public final class LogProcessor {
 
         // 线程退出前清空批次
         batch.clear();
+    }
+
+    /**
+     * 攒够再落库：不足一批时再等一小段，把这段时间到达的补进来，一次性写。
+     *
+     * <p>{@code drainTo} 是<b>非阻塞</b>的 —— 稳态下（比如 100 台设备 × 5 点位 ÷ 5 秒 = 100 条/秒）
+     * 每次只拿到零星几条，直接 {@code consume} 等于「批量开关开着、实际一条一插」，
+     * 那时开关的唯一收益只剩「把 INSERT 收敛到一条线程」。
+     * 这里最多再等 {@link #FLUSH_WAIT_MS}，攒到一批或到点就写 —— 用 200 毫秒的入库延迟换真正的批量。
+     *
+     * @param batch 已取到的日志；方法内补齐并消费，返回后 batch 的内容不再有效
+     */
+    private void consumeAccumulated(List<LabdatahubDeviceLogs> batch) {
+        long deadline = System.currentTimeMillis() + FLUSH_WAIT_MS;
+        while (batch.size() < batchSize) {
+            long remainMs = deadline - System.currentTimeMillis();
+            if (remainMs <= 0) {
+                break;
+            }
+            LabdatahubDeviceLogs more;
+            try {
+                more = queue.poll(remainMs, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+            if (more == null) {
+                break;
+            }
+            batch.add(more);
+            queue.drainTo(batch, batchSize - batch.size());
+        }
+        consumer.consume(batch);
     }
 
     /**

@@ -67,8 +67,10 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
             // 4. 下发（协议层负责连接自愈、读写串行锁、响应逐项校验）
             PointWriter.write(meta, payload);
 
-            saveRecord(meta, source, value, payload, true, null, null, start);
-            return AjaxResult.success("写入成功", buildResult(meta, payload));
+            // 耗时只算一次，响应里的 costMs 与审计表的 cost_ms 是同一个值
+            int costMs = (int) (System.currentTimeMillis() - start);
+            saveRecord(meta, source, value, payload, true, null, null, costMs);
+            return AjaxResult.success("写入成功", buildResult(meta, payload, costMs));
 
         } catch (PointWriteException e) {
             // 400/404/409/422/500：匹配或编码阶段的可预期失败，异常里带着当时那份 meta
@@ -79,8 +81,11 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
 
         } catch (PointConnectionException e) {
             // 503：平台侧没连上，请求压根没发出去，重试是安全的
-            log.warn("[写值] 连接不可用 requestId={} msg={}", requestId, e.getMessage());
-            return fail(meta, source, value, payload, 503, e.getMessage(), start);
+            // 走 connectionFailMessage：组件停用时补一句确定的平台侧判定，其余保留协议层原文
+            String msg = connectionFailMessage(meta, e.getMessage());
+            log.warn("[写值] 连接不可用 requestId={} componentEnabled={} msg={}",
+                    requestId, meta == null ? null : meta.getComponentEnabled(), msg);
+            return fail(meta, source, value, payload, 503, msg, start);
 
         } catch (PointDeviceException e) {
             // 504：设备侧异常，语义含「结果不确定」——值可能已经写进去了
@@ -94,6 +99,32 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
     }
 
     /**
+     * 503 的文案细化：把「组件停用」从协议层那句含糊话里择出来
+     *
+     * <p>协议层（四个 {@code XxxPointWriter} 的 {@code noConnectionMessage}）拿不到
+     * {@code labdatahub_component.status}，也不该拿，所以它的兜底文案只能写成
+     * 「网络组件未开启，<b>或</b>开启时连接失败」——两种情况混在一句里，调用方只能猜。
+     * 而匹配阶段已经把 {@code component.status} 取到了（{@code meta.componentEnabled}），
+     * 组件<b>明确停用</b>时就能给一句确定的话。
+     *
+     * <p>⚠️ 只在明确为 {@code false} 时改写：为 null 或 true 时一律保留协议层原文，
+     * 否则「平台繁忙：等待读周期结束超过 5000ms」这类<b>与连接无关</b>的 503
+     * 会被套上「组件停用」的错误解释。
+     *
+     * <p>「连接已断」与「探测超时」的区分<b>做不到</b>：连接层的
+     * {@code getValidConnection()} 只返回 null / 连接对象，失败原因在内部就丢了，
+     * 要补得改 4~7 个连接管理器。响应里的 {@code componentEnabled} 加上原文里的
+     * {@code ip:port} 已够调用方定位。
+     */
+    private static String connectionFailMessage(PointWriteMeta meta, String rawMsg) {
+        if (meta != null && Boolean.FALSE.equals(meta.getComponentEnabled())) {
+            return "网络组件当前为停用状态，平台未与设备建立连接，请先在「网络组件」页面开启该组件后重试。协议层详情："
+                    + rawMsg;
+        }
+        return rawMsg;
+    }
+
+    /**
      * 失败收口：落审计 + 拼失败响应
      *
      * <p>失败响应同样带 data（只要 data 里有东西），调用方据此区分
@@ -101,9 +132,11 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
      */
     private AjaxResult fail(PointWriteMeta meta, String source, Object value, String payload,
                             int code, String msg, long start) {
-        saveRecord(meta, source, value, payload, false, code, msg, start);
+        // 耗时只算一次，响应里的 costMs 与审计表的 cost_ms 是同一个值
+        int costMs = (int) (System.currentTimeMillis() - start);
+        saveRecord(meta, source, value, payload, false, code, msg, costMs);
         AjaxResult ajax = AjaxResult.error(code, msg);
-        PointWriteResult result = buildResult(meta, payload);
+        PointWriteResult result = buildResult(meta, payload, costMs);
         boolean empty = result.getRequestId() == null && result.getDeviceSn() == null
                 && result.getCode() == null && result.getAddress() == null;
         if (!empty) {
@@ -134,10 +167,16 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
      * 拼响应体里的 data（成功与失败共用）
      *
      * <p>{@link PointWriteResult} 挂了 {@code @JsonInclude(NON_NULL)}，
-     * 没算出来的字段自然不输出——这正是同一种结构能同时表达「成功给十二个字段」
+     * 没算出来的字段自然不输出——这正是同一种结构能同时表达「成功给二十个字段」
      * 和「匹配前失败只给 requestId」的原因。
+     *
+     * <p>回显分三类：① 写入目标（{@code netType}/{@code address}/{@code count}/
+     * {@code dbNumber}/{@code areaCode}/{@code registers}）——其中 address/count/registers
+     * 以协议层实际编码出来的载荷为准；② 点位元信息（{@code code}/{@code pointName}/
+     * {@code dataType}/{@code unit}）；③ 平台侧状态快照（{@code deviceOnline}/
+     * {@code componentEnabled}/{@code costMs}），用来说明失败原因。
      */
-    private PointWriteResult buildResult(PointWriteMeta meta, String payload) {
+    private PointWriteResult buildResult(PointWriteMeta meta, String payload, int costMs) {
         PointWriteResult result = new PointWriteResult();
         if (meta == null) {
             return result;
@@ -149,10 +188,19 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
         result.setEndpoint(meta.getEndpoint());
         result.setSlaveId(meta.getSlaveId());
         result.setCode(meta.getCode());
+        result.setPointName(meta.getPointName());
+        result.setNetType(meta.getNetType());
         result.setDataType(meta.getDataType());
+        result.setUnit(meta.getUnit());
         result.setAddress(meta.getAddress());
         result.setCount(meta.getCount());
+        result.setDbNumber(meta.getDbNumber());
+        result.setAreaCode(meta.getAreaCode());
         result.setWriteFunctionCode(meta.getWriteFunctionCode());
+        // 平台侧状态快照：回显「当时」是什么状态，不是「现在」
+        result.setDeviceOnline(meta.getDeviceOnline());
+        result.setComponentEnabled(meta.getComponentEnabled());
+        result.setCostMs(costMs);
 
         RangeParserUtil.RangeItem rangeItem = ProtocolEncodeInvoker.parseWriteEcho(payload);
         if (rangeItem != null) {
@@ -175,7 +223,7 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
      * 单独传则无论走到哪一步失败都记得住。
      */
     private void saveRecord(PointWriteMeta meta, String source, Object value, String payload,
-                            boolean success, Integer errorCode, String errorMsg, long start) {
+                            boolean success, Integer errorCode, String errorMsg, int costMs) {
         LabdatahubPointWriteRecord record = new LabdatahubPointWriteRecord();
         record.setRequestId(meta == null ? null : meta.getRequestId());
         record.setDeviceSn(meta == null ? null : meta.getDeviceSn());
@@ -192,7 +240,7 @@ public class OpenApiPointValueServiceImpl implements IOpenApiPointValueService {
         record.setIsSuccess(success ? "1" : "0");
         record.setErrorCode(errorCode);
         record.setErrorMsg(StringUtils.substring(errorMsg, 0, 1000));
-        record.setCostMs((int) (System.currentTimeMillis() - start));
+        record.setCostMs(costMs);
         record.setCreateTime(new Date());
         labdatahubPointWriteRecordService.saveRecord(record);
     }

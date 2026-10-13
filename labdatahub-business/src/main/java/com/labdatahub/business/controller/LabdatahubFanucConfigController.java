@@ -52,6 +52,10 @@ public class LabdatahubFanucConfigController extends BaseController
     private ILabdatahubFanucConfigService labdatahubFanucConfigService;
     @Autowired
     private ILabdatahubDeviceService labdatahubDeviceService;
+
+    /** FOCAS2 单机轮询上限（次/秒）：走机床内嵌以太网、共享 CNC CPU，官方约束值，见 validatePollRate */
+    private static final int MAX_POLLS_PER_SECOND = 10;
+
     /**
      * 查询FANUC FOCAS2协议读取配置列表
      */
@@ -166,6 +170,47 @@ public class LabdatahubFanucConfigController extends BaseController
         }
         if (config.getIntervalTime() == null || config.getIntervalTime() <= 0) {
             return "读取间隔必须大于0";
+        }
+        return validatePollRate(config);
+    }
+
+    /**
+     * 校验该设备的整体轮询频率是否超出 FOCAS2 上限。
+     *
+     * <p>FOCAS2 走机床内嵌以太网、与 CNC CPU 共享资源，官方约束是<b>单机 ≤10 次/秒</b>；
+     * 而 {@code intervalTime} 是整数秒、最小 1，所以约束实际落在「这台机床配了多少个点位」上。
+     * <b>超限不会报错</b>，只表现为机床开始丢响应、读取变慢（看起来像"数据不刷新"），
+     * 所以在这里配置期就拦住，而不是等现场出问题再回头查。
+     *
+     * <p>按「该设备全部点位的 1/intervalTime 之和」判定（各点位间隔可以不同，不能只数个数）；
+     * 同 code 的那条是本次要保存的配置自身在库里的旧值，跳过不用，避免编辑时把自己算两遍。
+     *
+     * @param config 待校验配置
+     * @return 空串表示通过，否则为错误提示
+     */
+    private String validatePollRate(LabdatahubFanucConfig config)
+    {
+        if (StringUtils.isBlank(config.getBelongSn())) {
+            return "";
+        }
+        List<LabdatahubFanucConfig> existList = labdatahubFanucConfigService.list(
+                new LambdaQueryWrapper<LabdatahubFanucConfig>()
+                        .eq(LabdatahubFanucConfig::getBelongSn, config.getBelongSn()));
+        double pollsPerSecond = 0d;
+        for (LabdatahubFanucConfig item : existList) {
+            if (item.getIntervalTime() == null || item.getIntervalTime() <= 0) {
+                continue;
+            }
+            if (StringUtils.isNotEmpty(config.getCode()) && config.getCode().equals(item.getCode())) {
+                continue;
+            }
+            pollsPerSecond += 1d / item.getIntervalTime();
+        }
+        pollsPerSecond += 1d / config.getIntervalTime();
+        if (pollsPerSecond > MAX_POLLS_PER_SECOND) {
+            return String.format(
+                    "读取频率超限：该设备全部点位合计 %.2f 次/秒，FOCAS2 上限 %d 次/秒。请拉长读取间隔或减少点位",
+                    pollsPerSecond, MAX_POLLS_PER_SECOND);
         }
         return "";
     }

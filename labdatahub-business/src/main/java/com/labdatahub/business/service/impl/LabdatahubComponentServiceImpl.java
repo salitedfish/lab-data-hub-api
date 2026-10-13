@@ -149,6 +149,12 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
         if(component==null) {
             return false;
         }
+        // 协议包前置校验：必须放在建连接、起消费线程、注册调度之前。
+        // 各 netType 分支里原本是「先 addConnection → 再 initProtocol」，协议加载不了也照样把连接和
+        // 消费线程拉起来，只有解码那步永远失败 —— 组件停在「页面显示已开启、设备永不上线」的半成品状态，
+        // 下次点开启还得先清掉这堆残留。放到最前面，协议缺了就直接失败、什么都不起。
+        // 关闭（closeComponent）不加这道校验：协议缺包时组件更要能关得掉。
+        initProtocol(component.getProtocolId());
         switch (component.getNetType()){
             //MQTT服务端
             case "MQTT_BROKER" : {
@@ -657,15 +663,63 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
         }
     }
 
-    public void initProtocol(String protocolId){
-        //先加载相关协议
-        if (StringUtils.isNotEmpty(protocolId)) {
-            LabdatahubProtocol protocol = labdatahubProtocolMapper.selectById(protocolId);
-            try {
-                ProtocolManager.addProtocol(protocol.getId(),protocol.getProtocolType(), PROTOCOL_PATH + File.separator + protocol.getNewName(), protocol.getMainClassPath());
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
+    /**
+     * 加载组件绑定的协议包；<b>失败即抛出带排查指引的告警，绝不静默</b>。
+     *
+     * <p>原实现把异常 {@code e.printStackTrace()} 吞掉（协议行不存在时还会在 {@code protocol.getId()}
+     * 直接 NPE），于是「协议包缺失」——换机部署时漏拷 {@code protocol/} 下的 jar 最常见——会演变成
+     * 最难查的一种故障：组件照样置 {@code status=1}、连接照样建、消费线程照样起、调度照样注册，
+     * 只有解码那一步永远取不到 {@code DECODE_METHOD}（消费服务反射调用直接 NPE，再被分钟节流压成
+     * 一分钟一条）—— 页面显示「组件已开启」、设备却永远不上线，日志里只剩一行堆栈。
+     * 协议包是采集链路的第一环，缺了它整个组件都不该算开启成功。
+     *
+     * <p>「可能原因 / 处理办法」直接写进提示里：这类故障的关键现场（哪个文件、哪个目录）只有后端知道，
+     * 让人拿着页面上的提示就能自查，比翻服务器日志快得多。
+     *
+     * @param protocolId 组件绑定的协议ID；为空表示该组件本就不需要协议包（如数据库采集），直接跳过
+     * @throws CommonWarnException 协议记录不存在 / 协议包文件缺失 / 协议包解析失败时抛出（含原因与处理办法）
+     */
+    public void initProtocol(String protocolId) throws Exception {
+        if (StringUtils.isEmpty(protocolId)) {
+            return;
+        }
+        // 已加载过就不再重复加载：启动时 initComponentAndProtocol 已为 status=1 的组件注册过协议，
+        // 这里随组件开启再走一遍会重复建 URLClassLoader + 重复实例化（旧实例无人回收）
+        if (ProtocolManager.CLASS_INSTANCE.containsKey(protocolId)) {
+            return;
+        }
+        LabdatahubProtocol protocol = labdatahubProtocolMapper.selectById(protocolId);
+        if (protocol == null) {
+            throw new CommonWarnException("协议加载失败：组件绑定的协议记录不存在（protocolId=" + protocolId + "）\n"
+                    + "可能原因：1) 该协议记录已被删除；2) 组件是从别的环境导过来的，协议没跟着一起导过来\n"
+                    + "处理办法：到「协议管理」页重新上传协议包，回到本组件重新选择协议并保存，然后重新开启");
+        }
+        String jarName = protocol.getNewName();
+        // 协议包固定按「后端启动目录/protocol」查找（PROTOCOL_PATH = user.dir/protocol）；
+        // 库里的 local_url 是上传时的原始路径（可能是另一台机器的），换机后必然失效，不能拿它找文件
+        String jarPath = PROTOCOL_PATH + File.separator + jarName;
+        if (!new File(jarPath).exists()) {
+            throw new CommonWarnException("协议加载失败：「" + protocol.getProtocolName() + "」的协议包文件不存在\n"
+                    + "文件名：" + jarName + "\n"
+                    + "查找目录：" + PROTOCOL_PATH + "\n"
+                    + "可能原因：1) 协议包没上传到本机 —— 库里协议记录在、文件却不在，换机部署或迁移时最容易漏；"
+                    + "2) 后端不是从 labdatahub-admin 目录启动的 —— 协议包按「启动目录/protocol」查找；"
+                    + "3) 协议包被清理或移动过\n"
+                    + "处理办法：到「协议管理」页重新上传该协议包（网络类型选 " + protocol.getProtocolType() + "），"
+                    + "或把文件放到上述目录、文件名保持为 " + jarName + "，然后重新开启组件");
+        }
+        try {
+            ProtocolManager.addProtocol(protocol.getId(), protocol.getProtocolType(), jarPath, protocol.getMainClassPath());
+        } catch (Exception e) {
+            throw new CommonWarnException("协议加载失败：「" + protocol.getProtocolName() + "」的协议包解析不出来\n"
+                    + "文件名：" + jarName + "\n"
+                    + "主类：" + protocol.getMainClassPath() + "\n"
+                    + "错误：" + e + "\n"
+                    + "可能原因：1) 上传时网络类型选错了，包与协议类型不匹配；"
+                    + "2) 包内没有该主类（不是本平台 scprotocol 编译出来的）；"
+                    + "3) 包内依赖与后端版本冲突\n"
+                    + "处理办法：用 scprotocol 重新编译出 quickly_create.jar，到「协议管理」页按正确的网络类型（"
+                    + protocol.getProtocolType() + "）重新上传");
         }
     }
 }
