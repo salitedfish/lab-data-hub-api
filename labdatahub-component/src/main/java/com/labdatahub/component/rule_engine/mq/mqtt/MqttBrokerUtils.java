@@ -87,7 +87,17 @@ public class MqttBrokerUtils {
         }else {
             config.setProperty("allow_anonymous", "false");
         }
-        config.setProperty("persistence_enabled", "true");
+        // ⚠️ 必须保持 false（2026-10-14 改，勿改回 true）：moquette 0.17 只要持久化 store 里存在一条
+        // 「无 expiry instant 的会话」（外部客户端如 client_yin_shen_api 每次重连都会写进一条），
+        // Server.startServer 里的 SessionRegistry.recreateSessionPool 就抛
+        // "Can't track for expiration a session without expiry instant"，MQTT 服务直接起不来；
+        // 更糟的是它先 startServer 后 put 进 serverMap，失败的 Server 会攥着 H2 文件锁不放，
+        // 后续每次启动都只剩 "The file is locked" / OverlappingFileLockException，必须重启整个 JVM 才能救。
+        // false 走 moquette 的全内存分支（H2Builder 根本不构造、H2 文件不打开），上面两条一起断根。
+        // 代价（已确认接受）：断线期间的消息不再补发；broker 重启后外部客户端的订阅也不再由 broker 记住
+        // （重连时 sessionPresent=false，需客户端自行重新 SUBSCRIBE）。
+        config.setProperty("persistence_enabled", "false");
+        // 仅 persistence_enabled=true 时被使用，保留以便需要时切回
         config.setProperty("data_path", path.getAbsolutePath());
         config.setProperty("authenticator_class", "");
         config.setProperty("telemetry_enabled", "false");

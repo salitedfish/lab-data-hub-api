@@ -61,8 +61,13 @@ public class SpringEventBus implements EventBus {
                 try {
                     listener.onEvent(event);
                 } catch (Exception e) {
-                    // 处理异常，避免影响其他订阅者
-                    System.err.println("事件处理异常: " + e.getMessage());
+                    // 处理异常，避免影响其他订阅者。
+                    // ⚠️ 必须带上 topic 与完整堆栈：原先只打 e.getMessage()，NPE 的 message 是 null，
+                    //    日志里只剩一行「事件处理异常: null」—— 既不知道是哪个 topic，也不知道炸在哪一行，
+                    //    线上排查等于没有信息（2026-10-16 排查设备离线不生效时正是被这行挡住）。
+                    System.err.println("事件处理异常: topic=" + topic
+                            + ", eventType=" + (event == null ? "null" : event.getClass().getName()));
+                    e.printStackTrace();
                 }
             });
         }
@@ -75,7 +80,9 @@ public class SpringEventBus implements EventBus {
                     try {
                         filteredListener.listener.onEvent(event);
                     } catch (Exception e) {
-                        System.err.println("过滤事件处理异常: " + e.getMessage());
+                        System.err.println("过滤事件处理异常: topic=" + topic
+                                + ", eventType=" + (event == null ? "null" : event.getClass().getName()));
+                        e.printStackTrace();
                     }
                 }
             });

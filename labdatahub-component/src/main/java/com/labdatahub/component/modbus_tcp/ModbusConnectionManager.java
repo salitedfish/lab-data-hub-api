@@ -155,6 +155,17 @@ public class ModbusConnectionManager {
             // 组件重新连接，清掉同步重建的节流时刻，让它能立刻同步重建一次而不是先等满 10 秒
             lastSyncReconnectMs.remove(componentId);
 
+            // 首次建连同样先探一次端口 —— 与 reconnect() 里那句逐字一致。
+            // 不加这句的后果比漏在重连路径上更严重：本方法是被 LabdatahubComponentServiceImpl 的
+            // MODBUS_TCP 分支在 **HTTP 请求线程**上同步调用的，目标不可达时要等满操作系统的建连
+            // 超时（Windows 约 21 秒），期间用户就盯着一个转圈的「启动」按钮；而前端 axios 是
+            // timeout:10000，第 10 秒先放弃，页面只会弹「系统接口请求超时」，真实原因（端口不可达）
+            // 一个字都传不上来。探针把这段压到配置里的 timeout（默认 3000ms）。
+            if (!probeReachable(componentId, config)) {
+                throw new IOException("端口不可达（" + config.getIpAddr() + ":" + config.getPort()
+                        + "），建连探针超时 " + config.getTimeout() + "ms");
+            }
+
             InetAddress address = InetAddress.getByName(config.getIpAddr());
             connection = new TCPMasterConnection(address);
             connection.setPort(config.getPort());
@@ -439,7 +450,7 @@ public class ModbusConnectionManager {
      *
      * @param componentId 组件ID（仅用于日志）
      * @param config      连接配置
-     * @return true=端口可达（继续走正式建连）；false=不可达（直接判定本次重连失败）
+     * @return true=端口可达（继续走正式建连）；false=不可达（直接判定本次建连失败）
      */
     private static boolean probeReachable(String componentId, ModbusTcpConfig config) {
         int timeout = config.getTimeout();
@@ -451,7 +462,8 @@ public class ModbusConnectionManager {
             return true;
         } catch (IOException e) {
             // 含 UnknownHostException / ConnectException / SocketTimeoutException，一律按不可达处理
-            log.debug("[Modbus 重连] componentId={} 端口探针未通过：{}", componentId, e.getMessage());
+            // 前缀不带「重连」：本探针同时服务 reconnect() 与 addConnection()（首次建连）
+            log.debug("[Modbus 探针] componentId={} 端口探针未通过：{}", componentId, e.getMessage());
             return false;
         }
     }

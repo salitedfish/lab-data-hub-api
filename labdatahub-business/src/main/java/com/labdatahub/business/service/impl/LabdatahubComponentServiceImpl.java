@@ -78,6 +78,12 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
     @Autowired
     private TimerTask timerTask;
     /**
+     * 协议加载互斥锁（由AI修改）：见 {@link #initProtocol(String)}。
+     * 锁对象独立于本服务实例，不与别处对本 bean 的同步相互牵连；静态是因为协议表
+     * （{@link ProtocolManager} 的几个容器）本身就是静态的，锁要跟着数据走。
+     */
+    private static final Object PROTOCOL_LOAD_LOCK = new Object();
+    /**
      * 查询网络组件
      *
      * @param id 网络组件主键
@@ -688,6 +694,36 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
         if (ProtocolManager.CLASS_INSTANCE.containsKey(protocolId)) {
             return;
         }
+        // 由AI修改：加锁 + 锁内二次检查，把上面这个「检查-再执行」变成原子操作。
+        // 原写法在并发启动组件时会重复加载同一个协议包：两个线程都通过了上面的 containsKey，
+        // 就都会走完 addProtocol —— 各建一个 URLClassLoader、各实例化一个协议对象，后一次 put
+        // 覆盖前一次，前一个实例连同它的 ClassLoader 再无人引用（类加载器泄漏；且同时存在两个
+        // 活的协议实例，各持一份解码状态）。触发条件很现实：同一个协议被多个组件绑定，用户在
+        // 页面上连着点几个组件的「启动」；或 TimerTask 启动时批量注册 status=1 的组件撞上手动开启。
+        // 锁内只放「确实需要加载」的那一次，上面的快路径不抢锁 —— 绝大多数调用（协议已加载）
+        // 直接返回。锁内的操作是冷路径上的毫秒级动作（一次主键查询 + 文件存在性判断 + 反射装载），
+        // 相对启动组件本身（建连探针最长 3 秒）可以忽略。
+        // ⚠️ 本锁只管 initProtocol 这一条入口：TimerTask 启动时的注册、
+        //    LabdatahubProtocolServiceImpl 上传/删除协议包都是直调 ProtocolManager，
+        //    不经过这里 —— 那几处与这里的并发属于另一回事，本次未处理。
+        synchronized (PROTOCOL_LOAD_LOCK) {
+            // 二次检查：等锁期间可能已被别的线程加载完，此时直接返回，不做重复装载
+            if (ProtocolManager.CLASS_INSTANCE.containsKey(protocolId)) {
+                return;
+            }
+            loadProtocol(protocolId);
+        }
+    }
+
+    /**
+     * 真正执行协议包加载（由AI修改：从 {@link #initProtocol(String)} 里拆出来的纯执行部分）。
+     * 拆分的唯一目的是让互斥逻辑集中在 initProtocol 一处：本方法必须在持锁状态下调用，
+     * 不要绕过 initProtocol 直接调它。
+     *
+     * @param protocolId 组件绑定的协议ID，调用方已保证非空
+     * @throws CommonWarnException 协议记录不存在 / 协议包文件缺失 / 协议包解析失败时抛出
+     */
+    private void loadProtocol(String protocolId) throws Exception {
         LabdatahubProtocol protocol = labdatahubProtocolMapper.selectById(protocolId);
         if (protocol == null) {
             throw new CommonWarnException("协议加载失败：组件绑定的协议记录不存在（protocolId=" + protocolId + "）\n"

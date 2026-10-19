@@ -411,7 +411,21 @@ public class DeviceUpListener {
     public void functionDown(DecodeMessage decodeMessage) {
         List<FunctionDown> functionList = decodeMessage.getFunctionList();
         LabdatahubDevice device = CacheUtils.getDeviceBySn(decodeMessage.getDeviceSn());
+        // ⚠️ 设备可能不在 DEVICE_MAP 里（缓存与库不同步时），下一行原来是直接 device.getComponentId()，
+        //    设备为 null 时抛 NPE；异常从 dealDeviceUp 一路冒到 SpringEventBus，日志只剩
+        //    「事件处理异常: topic=device.up」+ 堆栈，认不出是哪台设备，还会连累同一条消息后面的
+        //    linkageWarnProperty 不执行（2026-10-16：gx-212 因缓存缺项连抛 900+ 条）。
+        //    设备查不到就没有下发目标，直接返回；组件查不到同理（它俩都来自缓存，缺项原因相同）。
+        if (device == null) {
+            log.warn("[指令下发] 设备不在缓存中，跳过下发。deviceSn={}", decodeMessage.getDeviceSn());
+            return;
+        }
         LabdatahubComponent component = CacheUtils.getComponentCache(device.getComponentId());
+        if (component == null) {
+            log.warn("[指令下发] 设备所属组件不在缓存中，跳过下发。deviceSn={}，componentId={}",
+                    decodeMessage.getDeviceSn(), device.getComponentId());
+            return;
+        }
         if (functionList != null && functionList.size() > 0) {
             threadPoolTaskExecutor.execute(() -> {
                 functionList.forEach(function -> {
@@ -521,6 +535,12 @@ public class DeviceUpListener {
                         .map(LabdatahubDevice::getDeviceSn)
                         .collect(Collectors.toSet());
                 if (deviceSns.isEmpty()) {
+                    // 诊断：组件离线事件收到了，但没筛出任何「在线的本组件设备」。
+                    // 三种可能：设备不在 DEVICE_MAP / 设备的 componentId 对不上 / 缓存里本就是在离线态。
+                    long sameComponent = CacheUtils.DEVICE_MAP.values().stream()
+                            .filter(d -> componentId.equals(d.getComponentId())).count();
+                    log.info("[组件离线] componentId={} 未筛出在线设备，跳过。DEVICE_MAP.size={}，同组件设备数={}",
+                            componentId, CacheUtils.DEVICE_MAP.size(), sameComponent);
                     return;
                 }
                 // 复用批量离线逻辑：置 DB 离线 + 更新缓存 + 保存离线日志 + 状态告警

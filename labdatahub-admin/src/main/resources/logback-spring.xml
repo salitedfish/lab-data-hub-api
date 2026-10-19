@@ -6,10 +6,15 @@
     <!-- 日志输出格式 -->
     <property name="log.pattern" value="%d{HH:mm:ss.SSS} [%thread] %-5level %logger{20} - [%method,%line] - %msg%n" />
 
-    <!-- 控制台输出 -->
+    <!-- 控制台输出
+         ⚠️ charset 必须写死 UTF-8：不写就取平台默认（本机是 GBK），Start-Process 重定向出来的
+         api_run.log 会变成 GBK，grep 中文要先套一层 iconv，排查时每次多一道工序（2026-10-19）。
+         注意 System.err 的 printStackTrace 走的是 JVM 默认编码，那些行仍是 GBK —— 但业务日志
+         全走 slf4j，排查以它为准。 -->
     <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>${log.pattern}</pattern>
+            <charset>UTF-8</charset>
         </encoder>
     </appender>
 
@@ -22,11 +27,14 @@
         </rollingPolicy>
         <encoder>
             <pattern>${log.pattern}</pattern>
+            <charset>UTF-8</charset>
         </encoder>
-        <filter class="ch.qos.logback.classic.filter.LevelFilter">
+        <!-- ⚠️ 这里原来是 LevelFilter(INFO)：只放行 INFO，WARN 被 DENY，而 file_error 又只收 ERROR
+             —— 结果 WARN 两边都不落盘，而 WARN 恰恰是排查最常看的一层（2026-10-19 实测
+             sys-info.log 里 WARN 行数为 0，api_run.log 里却有 11 条）。
+             改成 ThresholdFilter：INFO 及以上全收。 -->
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>INFO</level>
-            <onMatch>ACCEPT</onMatch>
-            <onMismatch>DENY</onMismatch>
         </filter>
     </appender>
 
@@ -39,6 +47,7 @@
         </rollingPolicy>
         <encoder>
             <pattern>${log.pattern}</pattern>
+            <charset>UTF-8</charset>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.LevelFilter">
             <level>ERROR</level>
@@ -56,6 +65,7 @@
         </rollingPolicy>
         <encoder>
             <pattern>${log.pattern}</pattern>
+            <charset>UTF-8</charset>
         </encoder>
     </appender>
 

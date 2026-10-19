@@ -91,7 +91,15 @@ public class CacheUtils {
     public static void updateDeviceCacheByProductSn(String productSn){
         List<LabdatahubDevice> list = SpringUtils.getBean(ILabdatahubDeviceService.class).list(new LambdaQueryWrapper<LabdatahubDevice>()
                 .eq(LabdatahubDevice::getProductSn,productSn));
-        DEVICE_MAP.clear();
+        // ⚠️ 这里原来是 DEVICE_MAP.clear()，是「设备已经断开、页面还一直显示在线」的根因（2026-10-16 定位）：
+        //    DEVICE_MAP 是**全平台**设备表，不是只装本产品的设备。清空后只补回本产品的那几台，
+        //    其余设备就从缓存里消失了；而组件掉线时 DeviceUpListener#componentOffline 正是遍历
+        //    DEVICE_MAP 去挑「本组件下在线的设备」，挑不到就得到空集合、静默 return ——
+        //    库里的 status 再也不会被置 0，页面于是永远显示在线，而且一行日志都不打。
+        //    触发条件极易踩到：产品编辑接口 LabdatahubProductController#edit 只要带了 componentId
+        //    就会调到这里，也就是**在页面上随便保存一次产品**，别的设备就集体失去离线判定。
+        //    改为只替换本产品的条目：新记录顶掉旧的，本产品内被删掉的设备随之消失，其他产品一律不动。
+        DEVICE_MAP.entrySet().removeIf(entry -> productSn.equals(entry.getValue().getProductSn()));
         list.forEach(device->{
             DEVICE_MAP.put(device.getDeviceSn(),device);
         });

@@ -12,6 +12,7 @@ import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
@@ -21,26 +22,36 @@ import java.util.jar.JarFile;
  * @CreateTime: 2025-09-19
  */
 public class ProtocolManager {
+    // 由AI修改：以下五个容器一律用 ConcurrentHashMap，不能用 HashMap。
+    // 写值发生在「启动/停止网络组件」「上传协议包」的 HTTP 请求线程里（addProtocol / removeProtocol），
+    // 与之并发的读取发生在另外两条线程上：① 每个协议的消费线程，每条消息都要查 DECODE_METHOD 做解码
+    // （13 个 XxxMessageConsumeService）；② 写值路径的 DeviceDownUtils / ProtocolEncodeInvoker 查
+    // ENCODE_METHOD。HashMap 在扩容（rehash）期间并发 get 可能返回 null —— key 明明在却读不到，
+    // 表现为那段窗口内该设备偶发解码失败/丢数，且完全不可复现。并发启动多个网络组件正是最容易撞上
+    // 这个窗口的场景（同时也可能读到只复制了一半的桶数组）。
+    // 注意：换容器只解决「单个操作原子」，跨多次操作的一致性（如先 containsKey 再 put）仍需外部串行，
+    // 见 LabdatahubComponentServiceImpl#initProtocol。
+
     /**
      * key:协议id value:解码方法
      */
-    public static Map<String,Method> DECODE_METHOD = new HashMap<>();
+    public static Map<String,Method> DECODE_METHOD = new ConcurrentHashMap<>();
     /**
      * key:协议id value:指令方法
      */
-    public static Map<String,Method> ENCODE_METHOD = new HashMap<>();
+    public static Map<String,Method> ENCODE_METHOD = new ConcurrentHashMap<>();
     /**
      * key:协议id value:协议包实例
      */
-    public static Map<String,Object> CLASS_INSTANCE = new HashMap<>();
+    public static Map<String,Object> CLASS_INSTANCE = new ConcurrentHashMap<>();
     /**
      * key:组件id value:协议id列表
      */
-    public static Map<String,String> PROTOCOL_MAP = new HashMap<>();
+    public static Map<String,String> PROTOCOL_MAP = new ConcurrentHashMap<>();
     /**
      * 类加载器
      */
-    public static Map<String,URLClassLoader> CLASSLOADER_MAP = new HashMap<>();
+    public static Map<String,URLClassLoader> CLASSLOADER_MAP = new ConcurrentHashMap<>();
     public static String redisPath = "com.labdatahub.protocol.utils.RedisContextHolder";
     public static boolean addProtocol(String id,String protocolType,String path,String mainClass) throws Exception {
         File file = new File(path);

@@ -19,7 +19,11 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * 三菱 CNC TCP（MELDAS MOCHA）连接管理器，维护多个设备的连接
  * MOCHA 协议 TCP 683，建连后需发 mochaCancelModal2 取消模态（取消系统弹窗，避免干扰后续点位读取）；
- * 新增自动检查+定时重连。待真机验证：握手帧结构（操作名长度/是否带 GetDataBody）以树根 IL 为准，若机床拒绝需按抓包校准。
+ * 新增自动检查+定时重连。
+ *
+ * 握手帧结构已于 2026-10-15 用真机 192.168.151.103:683 实测校准（见 MitsubishiCncDataReader 类注释）；
+ * 握手失败仍**不阻断建连**（与树根一致：树根的 Connect 也只把异常写进 out 参数、不据此判失败），
+ * 失败原因会打到 `[MITSUBISHI-CNC握手]` 那行日志里；连接是否真活着由健康检查与读失败时的 forceReconnect 兜底。
  */
 @Slf4j
 public class MitsubishiCncConnectionManager {

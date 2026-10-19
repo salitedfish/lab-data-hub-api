@@ -1,6 +1,8 @@
 package com.labdatahub.component.http;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.labdatahub.common.utils.spring.SpringUtils;
+import com.labdatahub.component.message.DecodeMessage;
 import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactory;
 import org.springframework.boot.web.embedded.tomcat.TomcatWebServer;
 import org.springframework.boot.web.servlet.ServletContextInitializer;
@@ -207,40 +209,74 @@ public class HttpServerManager {
     private static void handleDefaultRequest(String componentId,RequestContext context,boolean needReply){
         HttpServletResponse resp = context.getResponse();
         resp.setContentType("application/json;charset=utf-8");
-        resp.setStatus(HttpServletResponse.SC_OK);
-        
-        // 根据是否需要响应，选择同步或异步处理方式
-        if(needReply){
-            try {
-                // 同步处理：获取消费者 Bean 处理消息并返回结果
-                HttpResData result = SpringUtils.getBean(HttpServerConsumer.class).handleMessage(
-                        componentId,
-                        context.getRequest().getMethod(),
-                        context.getRequest().getRequestURI(),
-                        context.getContentType(),
-                        context.getHeaders(),
-                        context.getQueryParameters(),
-                        context.getRequestBody(),
-                        MultipartParser.parse(context.requestBody, context.getContentType()),
-                        context.getRequest().getRemoteAddr(),
-                        context.getRequest().getRemotePort());
-                if(result.getHttNeedReply()){
-                    resp.getWriter().write(new ObjectMapper().writeValueAsString(result.getData()));
-                }
-            }catch (Exception ignore){}
-        }else {
-            // 异步处理：仅发送消息，不等待响应
-            SpringUtils.getBean(HttpServerConsumer.class).message(
+        resp.setCharacterEncoding("UTF-8");
+
+        HttpServerConsumer consumer = SpringUtils.getBean(HttpServerConsumer.class);
+        HttpServletRequest req = context.getRequest();
+        String requestBody = context.getRequestBody();
+        String clientIp = req.getRemoteAddr();
+        Integer clientPort = req.getRemotePort();
+
+        // 解码 + 校验一律在**请求线程**上同步做：只有这一步还来得及把「请求体不是 JSON / 缺 deviceSn /
+        // 组件未绑协议」这些异常，以 4xx/5xx + JSON 说明的形式回给设备端。
+        // ⚠️ 不能挪进线程池 —— 异步分支原先在这里就把 200 空响应发出去了，解码发生在线程池里，
+        // 异常只能进日志，设备端收到的是「成功」。纯 JSON 解析，同步做的开销可忽略。
+        DecodeMessage decodeMessage;
+        try {
+            decodeMessage = consumer.decodeAndValidate(
                     componentId,
-                    context.getRequest().getMethod(),
-                    context.getRequest().getRequestURI(),
+                    req.getMethod(),
+                    req.getRequestURI(),
                     context.getContentType(),
                     context.getHeaders(),
                     context.getQueryParameters(),
-                    context.getRequestBody(),
-                    MultipartParser.parse(context.requestBody,context.getContentType()),
-                    context.getRequest().getRemoteAddr(),
-                    context.getRequest().getRemotePort());
+                    requestBody,
+                    MultipartParser.parse(requestBody, context.getContentType()),
+                    clientIp,
+                    clientPort);
+        } catch (HttpIngestException e) {
+            writeErrorResponse(resp, e.getStatus(), e.getMessage());
+            return;
+        } catch (Exception e) {
+            writeErrorResponse(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "平台内部错误：" + e.getMessage());
+            return;
+        }
+
+        resp.setStatus(HttpServletResponse.SC_OK);
+        // 下游入库/转发：needReply=true 时在请求线程同步做完（调用方在等结果），
+        // 为 false 时丢线程池，设备端立即拿到响应
+        if (needReply) {
+            consumer.ingest(decodeMessage, clientIp, clientPort);
+            if (Boolean.TRUE.equals(decodeMessage.getHttpNeedReply())) {
+                try {
+                    resp.getWriter().write(new ObjectMapper().writeValueAsString(decodeMessage.getHttpReply()));
+                } catch (Exception ignore) {
+                }
+            }
+        } else {
+            consumer.ingestAsync(decodeMessage, clientIp, clientPort);
+        }
+    }
+
+    /**
+     * 把接入异常写成 HTTP 状态码 + JSON 说明回给设备端
+     *
+     * <p>响应体形如 {@code {"code":400,"msg":"缺少 deviceSn（设备编码）……"}}；
+     * 状态码本身就是失败信号，设备端不解析 body 也能判。
+     *
+     * @param resp 响应对象
+     * @param status HTTP 状态码（400 报文问题 / 500 平台侧问题）
+     * @param msg 失败原因
+     */
+    private static void writeErrorResponse(HttpServletResponse resp, int status, String msg) {
+        resp.setStatus(status);
+        try {
+            JSONObject body = new JSONObject();
+            body.put("code", status);
+            body.put("msg", msg);
+            resp.getWriter().write(body.toJSONString());
+        } catch (IOException ignore) {
+            // 设备端可能已经断开，写不进去就算了，日志里那条 warn 已经留痕
         }
     }
 
