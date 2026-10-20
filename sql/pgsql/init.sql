@@ -6727,7 +6727,6 @@ INSERT INTO public.sys_menu VALUES (2043, '告警记录', 2041, 4, 'linkageRecor
 INSERT INTO public.sys_menu VALUES (2044, '定时任务', 2041, 3, 'scheduledEngine', 'business/scheduledEngine/index', NULL, 'ScheduledEngine', '1', '1', 'C', '0', '0', '', 'cascader', 'admin', '2025-12-08 17:54:22', 'admin', '2025-12-08 17:55:30', '');
 INSERT INTO public.sys_menu VALUES (2045, '地图服务', 2036, 3, 'map', 'business/map/index', NULL, 'Map', '1', '0', 'C', '0', '0', NULL, 'guide', 'admin', '2025-12-12 10:47:55', '', NULL, '');
 INSERT INTO public.sys_menu VALUES (2046, '数据转发', 2041, 1, 'engine', 'business/engine/index', NULL, 'Engine', '1', '1', 'C', '0', '0', NULL, 'engine', 'admin', '2025-12-23 13:35:44', '', NULL, '');
-INSERT INTO public.sys_menu VALUES (2047, '官方文档', 0, 5, 'http://47.109.145.72:18000/', NULL, NULL, '', '0', '0', 'M', '0', '0', '', 'documentation', 'admin', '2026-01-13 10:37:37', 'admin', '2026-01-14 09:21:25', '');
 INSERT INTO public.sys_menu VALUES (2050, '设备分组', 2036, 4, 'deviceGroup', 'business/deviceGroup/index', NULL, 'DeviceGroup', '1', '1', 'C', '0', '0', NULL, 'list', 'admin', '2026-01-18 18:58:13', '', NULL, '');
 
 

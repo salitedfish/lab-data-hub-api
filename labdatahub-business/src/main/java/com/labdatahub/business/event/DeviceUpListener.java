@@ -152,7 +152,50 @@ public class DeviceUpListener {
         if (lastData == null || lastData.getProperties() == null || lastData.getProperties().isEmpty()) {
             return JSONObject.toJSONString(decodeMessage);
         }
-        return JSONObject.toJSONString(lastData);
+        // 按物模型再过滤一道（2026-10-19）：点位被删除后，调度取消前已排队的旧消息仍可能被消费，
+        // 把已删除的标识重新写回最新数据缓存；只清缓存不足以杜绝，转发前再按模型裁一次才稳定。
+        List<PropertyNode> propertyTree = PropertyToJson.PROPERTY_TREE.get(decodeMessage.getDeviceSn());
+        if (propertyTree == null || propertyTree.isEmpty()) {
+            // 没有物模型（如自定义上报设备）：维持原样，不做裁剪
+            return JSONObject.toJSONString(lastData);
+        }
+        Set<String> identifiers = new HashSet<>();
+        collectIdentifiers(propertyTree, identifiers);
+        String raw;
+        // 与 MessageCache 的合并/清理共用同一把锁，避免序列化时 properties 被并发修改
+        synchronized (lastData) {
+            raw = JSONObject.toJSONString(lastData);
+        }
+        JSONObject json = JSONObject.parseObject(raw);
+        JSONObject properties = json.getJSONObject("properties");
+        if (properties != null) {
+            properties.keySet().removeIf(key -> !PAYLOAD_KEEP_KEYS.contains(key) && !identifiers.contains(key));
+        }
+        return json.toJSONString();
+    }
+
+    /**
+     * 转发载荷里永远保留的系统状态键（不经过物模型，删点位时不能被误裁掉）
+     */
+    private static final Set<String> PAYLOAD_KEEP_KEYS = new HashSet<>(Arrays.asList(
+            "device_online", "device_offline", "currentStatus", "changeStatus", "deviceProperty"));
+
+    /**
+     * 递归收集物模型属性树中的标识
+     *
+     * @param nodes 属性树
+     * @param out   收集结果
+     */
+    private void collectIdentifiers(List<PropertyNode> nodes, Set<String> out) {
+        if (nodes == null) {
+            return;
+        }
+        for (PropertyNode node : nodes) {
+            if (node.getIdentifier() != null) {
+                out.add(node.getIdentifier());
+            }
+            collectIdentifiers(node.getChildren(), out);
+        }
     }
 
     /**

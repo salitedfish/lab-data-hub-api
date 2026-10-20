@@ -233,7 +233,10 @@ public class BrotherTcpConnectionManager {
      * @return 重连是否成功
      */
     private static boolean reconnect(String componentId, BrotherTcpConfig config) {
-        // 先关闭旧连接（机床只服务一个活动数据连接，新旧并存会把正在使用的旧连接踢掉）
+        // 先关闭旧连接（机床的 LOD 服务同一时刻只服务一个数据连接）
+        // 2026-10-19 对真机实测：第二条连接不会踢掉第一条，而是被操作系统接进等待队列、
+        // 一个字节都不回；第一条断开后，机床会立刻开始服务队列里的下一条（含它已发出的请求）。
+        // 这里仍先关旧再连新，避免旧连接还占着唯一的会话位、新连接只能在队列里干等。
         Socket oldConn = connections.remove(componentId);
         if (oldConn != null) {
             try {

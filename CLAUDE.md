@@ -361,3 +361,17 @@ Modbus 是七个协议里**唯一**会对离线设备持续空转重连的：`ge
   - `DeviceUpListener#componentOffline` 保留那行 `[组件离线] … 未筛出在线设备，跳过。DEVICE_MAP.size=…，同组件设备数=…` 的 INFO 日志 —— 这次正是靠它把「静默空集合」变成可观测的。
 - **验收口径（修复后同一页面操作）**：`jcmd` 数 `LabdatahubDevice` = **14（不变）**；`api_err.log` 75 秒后**除 4 行 SLF4J 启动横幅外零内容**（两种消费线程帧都为 0）；同期 gx-212 / gx-262 消息量照常（205 / 125 条）。设备管理页 `device_code_04_01` 卡片显示「**离线**」。
 - ⚠️ **排查这一类问题的两条纪律**：① **别只看组件状态和日志** —— 缓存缺项的表现就是「什么都不发生」，先量 `jcmd` 的实例数、再看 `componentOffline` 有没有命中；② 日志编码：2026-10-19 起 logback appender 固定 UTF-8，可直接 grep；此前生成的日志仍是 GBK，翻旧文件才需 `iconv -f GBK -t UTF-8`。`System.out/err` 的 print（组件层存量）仍按平台 GBK 写，所以 `api_run.log` 可能混编 —— 逐行判断，或用 `health.mjs`。
+
+### 「物模型删了点位，MQTT 还在推」——删除只删了 properties 行，协议点位仍在轮询（2026-10-19 定位并修复，页面级实测）
+
+- **现象**：在设备详情页「物模型」tab 删掉 `cnc_ct` 并「全部保存」，页面与 `labdatahub_properties` 里都没了，但业务系统订阅的 MQTT 全量载荷里**一直带着** `cnc_ct`（实测 `{"deviceSn":"gx-212",...,"properties":{"cnc_ct":311.0,...}}`）。
+- **根因**：物模型 tab 的删除+保存走 `LabdatahubPropertiesController#saveBatch`，它**只操作 `labdatahub_properties`**；8 张协议点位表（`labdatahub_mitsubishi_cnc_config` 等）和轮询调度器完全无感知 —— 配置行还在 → `MitsubishiCncMessageScheduler` 继续按 3 秒读 → `MessageCache.DEVICE_LAST_DATA` 继续合并该 key → `DeviceUpListener` 把整个缓存序列化给 MQTT。**物模型删除与协议点位删除原本是两条互不相干的通路**（协议侧删点位会反向删物模型，见 `ProtocolPointModelSync#afterRemove`；反过来没有）。
+- **修法（business 模块 4 个文件，不动协议层/表结构/前端）**：
+  1. `LabdatahubPropertiesController#saveBatch`：**先留旧属性**（`oldList`）再整份替换，新旧 `identifier` 差集 = 本次删掉的点位；`#remove` 同理先 `listByIds` 再删。两处都调用 `ProtocolPointModelSync.afterPropertiesRemoved(belongSn, removedCodes)`。
+  2. `ProtocolPointModelSync#afterPropertiesRemoved`：belongSn 是设备 → 从 8 张协议点位表删 `belong_sn + code` 命中行、对 7 个 scheduler 调 `removeReadConfig`、db 协议整体重建调度、`MessageCache.removeProperties`、`cacheDeviceProperties` 刷新物模型树；belongSn 是产品 → **只删产品模板点位行**，不直接动设备（设备侧副本由「同步到所有设备」覆盖）。
+  3. `DeviceUpListener#buildFullDataPayload`：序列化前按 `PropertyToJson.PROPERTY_TREE` 过滤 `properties`（`device_online`/`device_offline`/`currentStatus`/`changeStatus`/`deviceProperty` 保留；树为空时照发）。这是兜底 —— 调度取消后队列里可能还有已排队的旧消息把 key 写回缓存，过滤保证任何情况下 MQTT 都不会再出现已删点位。
+  4. `MessageCache`：新增 `removeProperties(deviceSn, codes)`，与合并逻辑共用 `synchronized (oldData)` —— 消费线程与删除请求会同时改同一张 `properties`。
+- **验收口径（2026-10-19 页面级实测）**：gx-212 新增 `TEST_MECH_Y`（机械坐标、3s）→ MQTT 立即出现；物模型 tab 删除 + 全部保存 → `labdatahub_mitsubishi_cnc_config` / `labdatahub_properties` 均无该行、调度日志**只有一条 `已移除MC-CNC定时配置`（没有再次 `已添加`）**、15 秒窗口内 MQTT 不再出现；历史孤儿 `cnc_ct` 配置行再从「Mitsubishi_CNC_TCP配置」tab 删掉后，MQTT 载荷恢复为 4 个点位。删除前 148 条含 `TEST_MECH_` 的 `labdatahub_device_logs` 已按 device_sn + 内容清掉。
+- ⚠️ **两个坑**：
+  ① **物模型保存是整份替换**（`remove by belongSn` + `saveBatch`），`labdatahub_properties.id` 会全部换新、内容不变 —— 做前后快照比对时别按 id 认行；计算差集的 `oldList` 必须在 remove **之前**查。
+  ② **确认构建产物真的换新**：Windows 上只要**任何终端/进程的 cwd 在 `labdatahub-admin/target/` 里**，`mvn clean` 就删不掉那个（空）目录、直接 BUILD FAILURE —— 先 `cd` 出 target 再构建。更隐蔽的是 10:16 那次构建虽退出 0，`labdatahub-admin.jar` 仍是 8:09 的旧包、内嵌 `labdatahub-business-3.9.0.jar` 还是 10-16 的，重启后实际跑的是旧代码；**重启前必须核对** `unzip -l labdatahub-admin/target/labdatahub-admin.jar | grep labdatahub-business` 的时间戳（或 `javap` 确认新方法在包里），别只看 mvn 的退出码。

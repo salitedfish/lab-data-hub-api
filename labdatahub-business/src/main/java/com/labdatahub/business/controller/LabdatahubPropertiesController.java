@@ -3,7 +3,11 @@ package com.labdatahub.business.controller;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import javax.servlet.http.HttpServletResponse;
 
 import com.alibaba.fastjson2.JSONObject;
@@ -19,6 +23,7 @@ import com.labdatahub.business.service.ILabdatahubDeviceLogsService;
 import com.labdatahub.business.service.ILabdatahubDeviceService;
 import com.labdatahub.business.service.ILabdatahubProductService;
 import com.labdatahub.business.utils.PropertyConverter;
+import com.labdatahub.business.utils.ProtocolPointModelSync;
 import com.labdatahub.business.utils.ProtocolReadConfigRebuilder;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
@@ -117,7 +122,30 @@ public class LabdatahubPropertiesController extends BaseController
 	@DeleteMapping("/{ids}")
     public AjaxResult remove(@PathVariable String[] ids)
     {
-        return toAjax(labdatahubPropertiesService.deleteLabdatahubPropertiesByIds(ids));
+        // 先取被删行：删除后按 id 查不到 belongSn/identifier，协议点位的级联清理就没有依据
+        List<LabdatahubProperties> removedList = labdatahubPropertiesService.listByIds(Arrays.asList(ids));
+        AjaxResult result = toAjax(labdatahubPropertiesService.deleteLabdatahubPropertiesByIds(ids));
+        afterPropertiesRemoved(removedList);
+        return result;
+    }
+
+    /**
+     * 物模型属性删除后的级联：按归属分组，删除对应协议点位、取消轮询调度、清最新数据缓存
+     *
+     * @param removedList 已被删除的属性行
+     */
+    private void afterPropertiesRemoved(List<LabdatahubProperties> removedList) {
+        if (removedList == null || removedList.isEmpty()) {
+            return;
+        }
+        Map<String, List<String>> codesBySn = new HashMap<>();
+        for (LabdatahubProperties property : removedList) {
+            if (StringUtils.isBlank(property.getBelongSn()) || StringUtils.isBlank(property.getIdentifier())) {
+                continue;
+            }
+            codesBySn.computeIfAbsent(property.getBelongSn(), k -> new ArrayList<>()).add(property.getIdentifier());
+        }
+        codesBySn.forEach(ProtocolPointModelSync::afterPropertiesRemoved);
     }
 
     /**
@@ -133,6 +161,11 @@ public class LabdatahubPropertiesController extends BaseController
                     return AjaxResult.error("不能使用关键字作为属性值");
                 }
             }
+            // 保存前先留一份旧属性：本接口是「整份替换」，新旧差集就是用户删掉的点位，
+            // 必须连同协议点位与轮询调度一起清掉（否则被删点位仍在采集、仍会进 MQTT）
+            List<LabdatahubProperties> oldList = labdatahubPropertiesService.list(
+                    new LambdaQueryWrapper<LabdatahubProperties>()
+                            .eq(LabdatahubProperties::getBelongSn, propertyListDTO.getBelongSn()));
             labdatahubPropertiesService.remove(new LambdaUpdateWrapper<LabdatahubProperties>()
                     .eq(LabdatahubProperties::getBelongSn,propertyListDTO.getBelongSn()));
             list.forEach(property->{
@@ -144,6 +177,15 @@ public class LabdatahubPropertiesController extends BaseController
             });
             if(list.size()>0){
                 labdatahubPropertiesService.saveBatch(list);
+            }
+            // 本次从物模型中删掉的标识 → 级联删除协议点位、取消调度、清最新数据缓存
+            Set<String> newCodes = list.stream().map(LabdatahubProperties::getIdentifier).collect(Collectors.toSet());
+            List<String> removedCodes = oldList.stream()
+                    .map(LabdatahubProperties::getIdentifier)
+                    .filter(code -> StringUtils.isNotBlank(code) && !newCodes.contains(code))
+                    .collect(Collectors.toList());
+            if (!removedCodes.isEmpty()) {
+                ProtocolPointModelSync.afterPropertiesRemoved(propertyListDTO.getBelongSn(), removedCodes);
             }
             LabdatahubDevice device = labdatahubDeviceService.getOne(new LambdaQueryWrapper<LabdatahubDevice>()
                     .eq(LabdatahubDevice::getDeviceSn,propertyListDTO.getBelongSn()),false);
