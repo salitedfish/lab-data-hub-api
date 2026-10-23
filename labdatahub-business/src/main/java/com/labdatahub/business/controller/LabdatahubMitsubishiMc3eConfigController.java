@@ -117,6 +117,18 @@ public class LabdatahubMitsubishiMc3eConfigController extends BaseController
         if (config.getLength() == null || config.getLength() < 1) {
             return AjaxResult.error("读取数量 length 不能小于1");
         }
+        // 字内位点位（D150.0 形式）：三菱不支持对 D 区按位读，平台按「读 1 个字 + 取位」实现
+        if (config.getBitIndex() != null) {
+            if (!isWordDevice(config.getAreaCode())) {
+                return AjaxResult.error("字内位号 bitIndex 只能用于字设备（D/W/R/ZR/SD），当前软元件代码为：" + config.getAreaCode());
+            }
+            if (config.getBitIndex() < 0 || config.getBitIndex() > 15) {
+                return AjaxResult.error("字内位号 bitIndex 只能是 0-15，当前为：" + config.getBitIndex());
+            }
+            if (config.getLength() != 1) {
+                return AjaxResult.error("字内位点位（如 D150.0）的读取数量 length 必须为 1，当前为：" + config.getLength());
+            }
+        }
         if (isWordDevice(config.getAreaCode())) {
             if (config.getLength() > 960) {
                 return AjaxResult.error("字设备单次读取数量 length 不能超过 960");
@@ -145,10 +157,15 @@ public class LabdatahubMitsubishiMc3eConfigController extends BaseController
         }
         labdatahubMitsubishiConfig.setCreateTime(new Date());
         AjaxResult result = toAjax(labdatahubMitsubishiConfigService.save(labdatahubMitsubishiConfig));
+        // 由AI修改：自动生成对应物模型属性（identifier=code），无需再手动去物模型 tab 建同名属性
+        // 字内位点位（D150.0）读回来是 0/1，属性默认建成 bool；整字/整位点位保持 int
+        // 必须排在 syncConfigToScheduler 之前：调度器注册时 ParseMetaUtils 会从物模型取 dataType，
+        // 属性建晚了首个轮询周期拿到的还是 null（按 int 上报）
+        ProtocolPointModelSync.afterAdd(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig.getBelongType(),
+                labdatahubMitsubishiConfig.getCode(), labdatahubMitsubishiConfig.getName(),
+                labdatahubMitsubishiConfig.getBitIndex() != null ? "bool" : "int");
         // 由AI修改：保存成功后立即同步调度器（新增点位无需重启服务或重开关读取即生效）
         syncConfigToScheduler(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig, false);
-        // 由AI修改：自动生成对应物模型属性（identifier=code），无需再手动去物模型 tab 建同名属性
-        ProtocolPointModelSync.afterAdd(labdatahubMitsubishiConfig.getBelongSn(), labdatahubMitsubishiConfig.getBelongType(), labdatahubMitsubishiConfig.getCode(), labdatahubMitsubishiConfig.getName());
         return result;
     }
 
@@ -235,6 +252,7 @@ public class LabdatahubMitsubishiMc3eConfigController extends BaseController
         readConfig.setIntervalTime(config.getIntervalTime() == null ? 1 : config.getIntervalTime().intValue());
         readConfig.setAreaCode(config.getAreaCode());
         readConfig.setStartAddress(config.getStartAddress());
+        readConfig.setBitIndex(config.getBitIndex());
         readConfig.setLength(config.getLength());
         ParseMetaUtils.applyTo(readConfig, device.getDeviceSn(), device.getProductSn(), config.getCode());
         MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(), readConfig);
@@ -279,6 +297,7 @@ public class LabdatahubMitsubishiMc3eConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
+                    config.setBitIndex(o.getBitIndex());
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(),config);
@@ -317,6 +336,7 @@ public class LabdatahubMitsubishiMc3eConfigController extends BaseController
                 config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                 config.setAreaCode(o.getAreaCode());
                 config.setStartAddress(o.getStartAddress());
+                config.setBitIndex(o.getBitIndex());
                 config.setLength(o.getLength());
                 ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                 MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(),config);
@@ -354,6 +374,7 @@ public class LabdatahubMitsubishiMc3eConfigController extends BaseController
                     config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
+                    config.setBitIndex(o.getBitIndex());
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(),config);

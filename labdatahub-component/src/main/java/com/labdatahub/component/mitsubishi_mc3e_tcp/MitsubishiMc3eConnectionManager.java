@@ -1,6 +1,7 @@
 //由AI修改
 package com.labdatahub.component.mitsubishi_mc3e_tcp;
 
+import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -19,11 +20,18 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 三菱 MC 连接管理器，维护多个设备的连接（新增自动检查+定时重连，MC 3E 帧无需握手）
+ *
+ * <p><b>同一套 3E 帧跑两种传输</b>：TCP 组件（{@code MITSUBISHI_MC3E_TCP}）用长连接 socket，
+ * UDP 组件（{@code MITSUBISHI_MC3E_UDP}）用按组件绑定的 {@link DatagramSocket}，
+ * 走哪种由 {@link MitsubishiMc3eTcpConfig#usesUdp()} 决定（netType 由服务端写入 transport，不靠用户勾选）。
+ * 两条链路共用同一把读写锁：UDP 虽然无连接，但「发一帧收一帧」的问答语义与 TCP 完全一致。
  */
 @Slf4j
 public class MitsubishiMc3eConnectionManager {
     // 存储设备连接：key为componentId（线程安全）
     public static Map<String, Socket> connections = new ConcurrentHashMap<>();
+    // 存储 UDP 组件的数据报 socket：key为componentId（UDP 无连接，socket 只负责绑定本地端口与收发超时）
+    public static Map<String, DatagramSocket> udpConnections = new ConcurrentHashMap<>();
     // 存储每个componentId对应的连接配置（用于重连）
     public static final Map<String, MitsubishiMc3eTcpConfig> configMap = new ConcurrentHashMap<>();
 
@@ -98,6 +106,13 @@ public class MitsubishiMc3eConnectionManager {
         lock.lock();
         try {
             configMap.put(componentId, config);
+            // UDP 组件：先把可能残留的 TCP 连接关掉，再建数据报 socket
+            if (config.usesUdp()) {
+                closeQuietly(connections.remove(componentId), componentId);
+                return createUdpConnection(componentId, config);
+            }
+            // 从 UDP 改回 TCP 时，数据报 socket 也要关掉
+            closeQuietly(udpConnections.remove(componentId), componentId);
             // 先关闭旧连接（避免资源泄漏）
             Socket oldConn = connections.get(componentId);
             if (oldConn != null && !oldConn.isClosed()) {
@@ -142,6 +157,37 @@ public class MitsubishiMc3eConnectionManager {
     }
 
     /**
+     * 建立 UDP 数据报连接（调用方必须已持有该组件的锁）
+     *
+     * <p>UDP 没有握手，{@code DatagramSocket} 建出来永远成功，所以「连没连上」只能靠发一帧真实请求来判：
+     * 读 D0 一个字的 3E 帧，能收到结束码为 0 的回包才算成功。判失败时保留 configMap ——
+     * 与 TCP 首次连接失败同一口径，交给健康检查继续重试。
+     */
+    private static boolean createUdpConnection(String componentId, MitsubishiMc3eTcpConfig config) {
+        DatagramSocket socket = null;
+        // 不能重复绑定同一个 map 里的旧 socket：先摘再关
+        closeQuietly(udpConnections.remove(componentId), componentId);
+        try {
+            socket = new DatagramSocket();
+            socket.setSoTimeout(config.getTimeout());
+            udpConnections.put(componentId, socket);
+            // UDP 无握手：发一帧读 D0，收不到有效回包就视为连接失败
+            MitsubishiMc3eDataReader.probe(componentId);
+            System.out.printf("[MITSUBISHI连接] componentId=%s 首次连接成功（UDP %s:%d）%n",
+                    componentId, config.getIpAddr(), config.getPort());
+            ComponentOnlineNotifier.markOnline(componentId);
+            return true;
+        } catch (Exception e) {
+            System.err.printf("[MITSUBISHI连接] componentId=%s 首次连接失败（UDP %s:%d）：%s%n",
+                    componentId, config.getIpAddr(), config.getPort(), e.getMessage());
+            closeQuietly(socket, componentId);
+            udpConnections.remove(componentId);
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
+            return false;
+        }
+    }
+
+    /**
      * 关闭单个设备连接（兼容原有逻辑，新增配置清理）
      */
     public static void closeConnection(String componentId) {
@@ -150,9 +196,10 @@ public class MitsubishiMc3eConnectionManager {
         ReentrantLock lock = getLock(componentId);
         lock.lock();
         try {
-            // 1. 关闭连接
+            // 1. 关闭连接（TCP 与 UDP 两种都要关：改过 netType 的组件可能残留另一条）
             Socket socket = connections.remove(componentId);
             closeQuietly(socket, componentId);
+            closeQuietly(udpConnections.remove(componentId), componentId);
         } finally {
             lock.unlock();
         }
@@ -170,10 +217,12 @@ public class MitsubishiMc3eConnectionManager {
      * 关闭所有连接（兼容原有逻辑，新增调度器停止+配置清理）
      */
     public static void closeAllConnections() {
-        // 1. 关闭所有连接
+        // 1. 关闭所有连接（TCP + UDP）
         connections.forEach((id, conn) -> closeQuietly(conn, id));
+        udpConnections.forEach((id, conn) -> closeQuietly(conn, id));
         // 2. 清理所有映射
         connections.clear();
+        udpConnections.clear();
         configMap.clear();
         lockMap.clear();
         // 3. 停止健康检查调度器（避免资源泄漏）
@@ -208,9 +257,10 @@ public class MitsubishiMc3eConnectionManager {
         if (config == null) {
             return;
         }
-        Socket socket = connections.get(componentId);
-        // 校验连接是否有效
-        boolean isConnectionValid = isConnectionValid(socket);
+        // 校验连接是否有效：UDP 只看数据报 socket 是否还在（可达性由读写失败触发 forceReconnect 探测）
+        boolean isConnectionValid = config.usesUdp()
+                ? isUdpConnectionValid(udpConnections.get(componentId))
+                : isConnectionValid(connections.get(componentId));
         if (!isConnectionValid) {
             System.out.printf("[MITSUBISHI重连] componentId=%s 连接失效，开始重连（%s:%d）%n",
                     componentId, config.getIpAddr(), config.getPort());
@@ -245,6 +295,14 @@ public class MitsubishiMc3eConnectionManager {
     }
 
     /**
+     * UDP 连接有效性：数据报 socket 存在且未关闭即可。
+     * UDP 没有可探测的半开状态，真正的可达性由收发超时后的 {@link #forceReconnect} 负责。
+     */
+    private static boolean isUdpConnectionValid(DatagramSocket socket) {
+        return socket != null && !socket.isClosed();
+    }
+
+    /**
      * 单次重建：换掉 connections 里的 socket，必须持锁 ——
      * 不持锁的话「读线程刚取到旧 socket → 重连把旧 socket close 掉」，这一帧收发就落空。
      *
@@ -254,6 +312,9 @@ public class MitsubishiMc3eConnectionManager {
      * @return 重连是否成功
      */
     private static boolean reconnect(String componentId, MitsubishiMc3eTcpConfig config) {
+        if (config.usesUdp()) {
+            return reconnectUdp(componentId, config);
+        }
         ReentrantLock lock = getLock(componentId);
         lock.lock();
         Socket newSocket = null;
@@ -297,6 +358,46 @@ public class MitsubishiMc3eConnectionManager {
     }
 
     /**
+     * UDP 单次重建：换一个新的数据报 socket 并发帧探测（必须持锁，理由同 TCP）。
+     *
+     * <p>UDP 换 socket 不解决网络问题，但能丢掉上一个 socket 里积压的迟到响应；
+     * <b>真正的可达性靠 {@link MitsubishiMc3eDataReader#probe} 这一帧来判</b>，
+     * 探测失败即标记组件离线 —— 这是 UDP 链路唯一能感知「设备没了」的地方（收发超时只证明这一帧没回来）。
+     */
+    private static boolean reconnectUdp(String componentId, MitsubishiMc3eTcpConfig config) {
+        ReentrantLock lock = getLock(componentId);
+        lock.lock();
+        DatagramSocket newSocket = null;
+        DatagramSocket oldSocket = udpConnections.get(componentId);
+        boolean success = false;
+        try {
+            newSocket = new DatagramSocket();
+            newSocket.setSoTimeout(config.getTimeout());
+            udpConnections.put(componentId, newSocket);
+            MitsubishiMc3eDataReader.probe(componentId);
+            success = true;
+            // 探测成功才关旧 socket，避免新 socket 刚建好就遇到瞬时丢包时白丢一条本可复用的通道
+            closeQuietly(oldSocket, componentId);
+            System.out.printf("[MITSUBISHI重连] componentId=%s 重连成功（UDP %s:%d）%n",
+                    componentId, config.getIpAddr(), config.getPort());
+            ComponentOnlineNotifier.markOnline(componentId);
+            return true;
+        } catch (Exception e) {
+            System.err.printf("[MITSUBISHI重连] componentId=%s 重连失败（UDP %s:%d）：%s%n",
+                    componentId, config.getIpAddr(), config.getPort(), e.getMessage());
+            ComponentOnlineNotifier.markOfflineAndNotify(componentId);
+            return false;
+        } finally {
+            if (!success) {
+                // 探测失败：关掉本次新建的 socket，并把 map 里指向它的条目摘掉（旧 socket 此时已经无效）
+                closeQuietly(newSocket, componentId);
+                udpConnections.remove(componentId, newSocket);
+            }
+            lock.unlock();
+        }
+    }
+
+    /**
      * 强制重连（读/写异常时由消费端与写值链路调用：半开连接本地状态检测不出来，靠读超时触发重连，
      * 与 S7/FINS 的 forceReconnect 对齐）
      *
@@ -310,6 +411,11 @@ public class MitsubishiMc3eConnectionManager {
         MitsubishiMc3eTcpConfig config = configMap.get(componentId);
         if (config == null) {
             System.err.printf("[MITSUBISHI重连] componentId=%s 无连接配置，无法重连%n", componentId);
+            return;
+        }
+        // UDP 没有半开连接：换 socket + 探测一帧即可，不做指数退避（退避只会把消费线程多挂几秒）
+        if (config.usesUdp()) {
+            reconnectUdp(componentId, config);
             return;
         }
         // 先摘掉旧连接（持锁），让等在锁上的读线程立刻看到「没连接」而不是复用那个坏 socket
@@ -355,6 +461,39 @@ public class MitsubishiMc3eConnectionManager {
         } catch (Exception e) {
             System.err.printf("[MITSUBISHI连接] componentId=%s 关闭失败：%s%n", componentId, e.getMessage());
         }
+    }
+
+    /** 安静地关掉一个数据报 socket（记录异常但不外抛），null 安全 */
+    private static void closeQuietly(DatagramSocket socket, String componentId) {
+        if (socket == null) {
+            return;
+        }
+        try {
+            if (!socket.isClosed()) {
+                socket.close();
+            }
+        } catch (Exception e) {
+            System.err.printf("[MITSUBISHI连接] componentId=%s 关闭UDP连接失败：%s%n", componentId, e.getMessage());
+        }
+    }
+
+    /**
+     * 该组件当前是否有可用的连接（TCP socket 未断 / UDP socket 未关）
+     *
+     * <p>消费线程与写值链路原先各自判 {@code connections.get(id)}，UDP 组件在 TCP map 里永远是 null，
+     * 会被当成「未连接」直接静默跳过 —— 统一收口到这里，按配置决定看哪张表。
+     */
+    public static boolean hasConnection(String componentId) {
+        MitsubishiMc3eTcpConfig config = configMap.get(componentId);
+        if (config != null && config.usesUdp()) {
+            return isUdpConnectionValid(udpConnections.get(componentId));
+        }
+        return isConnectionValid(connections.get(componentId));
+    }
+
+    /** 取该组件的连接配置（写值链路用于区分 TCP/UDP 并给出正确提示） */
+    public static MitsubishiMc3eTcpConfig getConfig(String componentId) {
+        return configMap.get(componentId);
     }
 
     /**

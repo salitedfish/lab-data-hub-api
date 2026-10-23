@@ -41,6 +41,9 @@ public class PointWriter {
     /** 三菱 MC QnA 兼容 3E 帧 */
     private static final String NET_TYPE_MITSUBISHI_MC3E_TCP = "MITSUBISHI_MC3E_TCP";
 
+    /** 三菱 MC QnA 兼容 3E 帧（UDP 传输，报文与 TCP 完全一致） */
+    private static final String NET_TYPE_MITSUBISHI_MC3E_UDP = "MITSUBISHI_MC3E_UDP";
+
     private PointWriter() {
         throw new UnsupportedOperationException("该类为静态工具类，禁止实例化");
     }
@@ -64,7 +67,7 @@ public class PointWriter {
             FinsPointWriter.write(meta.getComponentId(), payload);
             return;
         }
-        if (NET_TYPE_MITSUBISHI_MC3E_TCP.equals(netType)) {
+        if (NET_TYPE_MITSUBISHI_MC3E_TCP.equals(netType) || NET_TYPE_MITSUBISHI_MC3E_UDP.equals(netType)) {
             MitsubishiMc3ePointWriter.write(meta.getComponentId(), payload);
             return;
         }

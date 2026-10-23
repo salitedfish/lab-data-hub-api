@@ -66,6 +66,9 @@ public class LabdatahubComponentController extends BaseController
     public TableDataInfo list(LabdatahubComponent labdatahubComponent)
     {
     	LambdaQueryWrapper<LabdatahubComponent> queryWrapper = new LambdaQueryWrapper<>();
+        // 组件名称搜索（此前忽略所有查询参数，列表页的搜索框一直无效）
+        queryWrapper.like(StringUtils.isNotEmpty(labdatahubComponent.getName()),
+                LabdatahubComponent::getName, labdatahubComponent.getName());
         queryWrapper.orderByAsc(LabdatahubComponent::getCreateTime);
         Page<LabdatahubComponent> page = new Page<LabdatahubComponent>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubComponent> pageList = labdatahubComponentService.page(page,queryWrapper);

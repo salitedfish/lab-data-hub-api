@@ -117,6 +117,8 @@ public class TimerTask {
     @Autowired
     private ThreadPoolTaskExecutor threadPoolTaskExecutor;
     @Autowired
+    private ComponentStartupRetryer componentStartupRetryer;
+    @Autowired
     private ILabdatahubDeviceService labdatahubDeviceService;
     @Autowired
     private ILabdatahubDeviceLogsService labdatahubDeviceLogsService;
@@ -187,40 +189,15 @@ public class TimerTask {
                 }
             }
 
-            // ===== 第二段：并发开启组件 =====
+            // ===== 第二段：并发开启组件 + 启动自愈 =====
             // 原先在一个线程上串行 openComponent。设备在线时无所谓，但 FANUC 的 addConnection 要
             // **同步等消费线程在本线程建连**（最长 8 秒，见 FanucFocasConnectionManager），
             // 100 台同时离线就是最多 800 秒才轮完，期间后面所有设备一个字节都不采。
-            // 提交到共享线程池并发开来（core 50 / queue 20000），100 台约两轮跑完。
-            for (LabdatahubComponent component : components) {
-                threadPoolTaskExecutor.execute(() -> openComponentSafely(component));
-            }
+            // 现在交给 ComponentStartupRetryer：首轮仍提交到共享线程池并发开（core 50 / queue 20000），
+            // 失败的组件按配置每 60 秒顺序重试一次、最长 10 分钟（设备上电比平台慢时靠这个自愈）；
+            // 窗口内用户手动关闭的组件立即移出重试（见 closeComponent）。
+            componentStartupRetryer.start(components);
         });
-    }
-
-    /**
-     * 开启单个组件；失败则把状态置为关闭并记日志，<b>不向上抛</b>。
-     *
-     * <p>⚠️ 不能把异常抛出去。本方法跑在线程池的任务里，抛出去等于这个组件「悄悄没了」：
-     * status 不会被置 0（页面上照常显示「已开启」），实际一个字节都不采，日志里只剩线程池吞掉的堆栈。
-     * 实测（2026-09-22）：S7 组件因模拟器没开而连不上时，若不兜住异常，其后的 MODBUS / MC3E / FINS
-     * 三个组件全部不会被开启，写值接口报「协议未注册或加载失败（protocolId=MODBUS 的协议id）」。
-     * 一台设备离线是产线上的常态，不能因此拖垮其余所有设备。
-     *
-     * @param component 待开启的网络组件
-     */
-    private void openComponentSafely(LabdatahubComponent component) {
-        try {
-            labdatahubComponentService.openComponent(component.getId());
-        } catch (Exception e) {
-            //开启失败则状态置为关闭
-            LabdatahubComponent closeComponent = new LabdatahubComponent();
-            closeComponent.setId(component.getId());
-            closeComponent.setStatus("0");
-            labdatahubComponentService.updateById(closeComponent);
-            log.error("[组件启动] componentId={} 开启失败，已置为关闭，继续启动其余组件：{}",
-                    component.getId(), e.getMessage(), e);
-        }
     }
 
     /**
@@ -498,7 +475,7 @@ public class TimerTask {
     }
 
     /**
-     * 初始化三菱MC定时读取（仅拉起 netType=MITSUBISHI_MC3E_TCP 组件的设备，避免对其它协议组件误调度）
+     * 初始化三菱MC定时读取（仅拉起 netType=MITSUBISHI_MC3E_TCP / MITSUBISHI_MC3E_UDP 组件的设备，避免对其它协议组件误调度）
      */
     @PostConstruct
     public void initMitsubishiTcpRead(){
@@ -511,7 +488,8 @@ public class TimerTask {
                     return;
                 }
                 LabdatahubComponent component = labdatahubComponentService.getById(device.getComponentId());
-                if(component == null || !"MITSUBISHI_MC3E_TCP".equals(component.getNetType())){
+                if(component == null || (!"MITSUBISHI_MC3E_TCP".equals(component.getNetType())
+                        && !"MITSUBISHI_MC3E_UDP".equals(component.getNetType()))){
                     return;
                 }
                 List<LabdatahubMitsubishiMc3eConfig> list = labdatahubMitsubishiConfigService.list(new LambdaQueryWrapper<LabdatahubMitsubishiMc3eConfig>()
@@ -525,6 +503,7 @@ public class TimerTask {
                     config.setIntervalTime(o.getIntervalTime() == null ? 1 : o.getIntervalTime().intValue());
                     config.setAreaCode(o.getAreaCode());
                     config.setStartAddress(o.getStartAddress());
+                    config.setBitIndex(o.getBitIndex());
                     config.setLength(o.getLength());
                     ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
                     MitsubishiMc3eMessageScheduler.addReadConfig(device.getComponentId(),config);

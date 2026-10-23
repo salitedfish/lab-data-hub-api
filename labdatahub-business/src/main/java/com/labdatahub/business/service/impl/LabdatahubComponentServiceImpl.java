@@ -17,6 +17,7 @@ import com.labdatahub.business.domain.LabdatahubComponent;
 import com.labdatahub.business.domain.LabdatahubProtocol;
 import com.labdatahub.business.mapper.LabdatahubComponentMapper;
 import com.labdatahub.business.mapper.LabdatahubProtocolMapper;
+import com.labdatahub.business.scheduled.ComponentStartupRetryer;
 import com.labdatahub.business.scheduled.TimerTask;
 import com.labdatahub.business.service.ILabdatahubComponentService;
 import com.labdatahub.business.utils.CacheUtils;
@@ -149,6 +150,36 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
         return labdatahubComponentMapper.deleteLabdatahubComponentById(id);
     }
 
+    /**
+     * 该网络类型是否必须绑定协议包才能开启。
+     *
+     * <p>判定依据是消费端是否依赖 {@code ProtocolManager.DECODE_METHOD} 解码并发布 {@code device.up}：
+     * 以下 8 个采集类协议全部走「调度 → 消费 → 反射 decode → device.up」链路，缺协议包时
+     * 设备永远不会被置在线；MQTT / TCP / UDP / HTTP / Websocket / CoAP 服务端与数据库采集
+     * 不依赖该链路，protocolId 为空是正常配置。
+     *
+     * @param netType 网络组件类型
+     * @return true=必须绑定协议包
+     */
+    private static boolean requiresProtocol(String netType) {
+        if (StringUtils.isEmpty(netType)) {
+            return false;
+        }
+        switch (netType) {
+            case "MODBUS_TCP":
+            case "S71200_TCP":
+            case "OMRONFINS_TCP":
+            case "BROTHER_TCP":
+            case "FANUC_TCP":
+            case "MITSUBISHI_MC3E_TCP":
+            case "MITSUBISHI_MC3E_UDP":
+            case "MITSUBISHI_CNC_TCP":
+                return true;
+            default:
+                return false;
+        }
+    }
+
     @Override
     public boolean openComponent(String id) throws Exception {
         LabdatahubComponent component = labdatahubComponentMapper.selectById(id);
@@ -160,6 +191,18 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
         // 消费线程拉起来，只有解码那步永远失败 —— 组件停在「页面显示已开启、设备永不上线」的半成品状态，
         // 下次点开启还得先清掉这堆残留。放到最前面，协议缺了就直接失败、什么都不起。
         // 关闭（closeComponent）不加这道校验：协议缺包时组件更要能关得掉。
+        // 上面这条「缺协议就不起」原写法有个漏洞：protocolId 为空时 initProtocol 直接 return，
+        // 连接、调度、消费线程照样全起来，只有消费端的 decode → MessageCache → device.up 整段被
+        // protocolId 闸门跳过 —— 表现是「组件开启成功、设备永远离线、库里一条数据都没有」。
+        // 2026-10-22 用户新建的 MC UDP 组件正是这个状态（组件 14:52 先建、协议包 16:08 才上传，
+        // 创建时「协议绑定」下拉里没有可选项，保存下来 protocol_id 为空）。采集类组件必须显式绑定，
+        // 在开启入口拒绝，让问题在页面上直接暴露。
+        if (StringUtils.isEmpty(component.getProtocolId()) && requiresProtocol(component.getNetType())) {
+            throw new CommonWarnException("开启失败：该网络组件还没有绑定协议包（网络类型 " + component.getNetType() + "）\n"
+                    + "可能原因：组件创建时「协议管理」里还没有上传该网络类型的协议包，保存时协议绑定为空\n"
+                    + "处理办法：先到「协议管理」上传对应网络类型的协议包，再回到本组件点「修改」，"
+                    + "在「协议绑定」里选中该协议并保存");
+        }
         initProtocol(component.getProtocolId());
         switch (component.getNetType()){
             //MQTT服务端
@@ -454,9 +497,12 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                     return false;
                 }
             }
-            case "MITSUBISHI_MC3E_TCP" : {
+            case "MITSUBISHI_MC3E_TCP" :
+            case "MITSUBISHI_MC3E_UDP" : {
                 if(StringUtils.isNotEmpty(component.getOtherConfig())){
                 	MitsubishiMc3eTcpConfig config = JSONObject.parseObject(component.getOtherConfig()).toJavaObject(MitsubishiMc3eTcpConfig.class);
+                	// 传输方式由组件 netType 决定，不靠 other_config 里的 transport 字段（用户无需、也不该手填）
+                	config.setTransport("MITSUBISHI_MC3E_UDP".equals(component.getNetType()) ? "udp" : "tcp");
                     boolean isOk = MitsubishiMc3eConnectionManager.addConnection(component.getId(), config);
                     // 组件开启后重建该协议下已开读开关设备的定时调度（修复后配点位/后绑组件时调度缺失）
                     timerTask.initMitsubishiTcpRead();
@@ -533,6 +579,9 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
         if(component==null) {
             return false;
         }
+        // 手动关闭即取消启动自愈对它的重试（静态调用，避免自愈器与本服务互相注入）。
+        // 不在启动快照里、或已开启不在重试集合里的组件，调用无副作用。
+        ComponentStartupRetryer.onManualClose(id);
         switch (component.getNetType()){
             //MQTT服务端
             case "MQTT_BROKER" : {
@@ -638,7 +687,8 @@ public class LabdatahubComponentServiceImpl extends ServiceImpl<LabdatahubCompon
                 CacheUtils.setComponentCache(component.getId(),component);
                 return true;
             }
-            case "MITSUBISHI_MC3E_TCP" : {
+            case "MITSUBISHI_MC3E_TCP" :
+            case "MITSUBISHI_MC3E_UDP" : {
             	MitsubishiMc3eConnectionManager.closeConnection(component.getId());
                 // 组件关闭视为离线，通知该组件下设备下线（节流，仅在线→离线转变时发一次）
                 ComponentOnlineNotifier.markOfflineAndNotify(component.getId());

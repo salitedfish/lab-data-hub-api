@@ -50,6 +50,8 @@ public class LabdatahubProtocolServiceImpl extends ServiceImpl<LabdatahubProtoco
         MAIN_CLASS_PATH.put("BROTHER_TCP","com.labdatahub.protocol.parent.BrotherTcpProtocol");
         MAIN_CLASS_PATH.put("FANUC_TCP","com.labdatahub.protocol.parent.FanucFocasProtocol");
         MAIN_CLASS_PATH.put("MITSUBISHI_MC3E_TCP","com.labdatahub.protocol.parent.MitsubishiMc3eTcpProtocol");
+        // UDP 与 TCP 共用同一套 3E 帧解码，协议 jar 还是同一个（只是上传时网络类型选 MITSUBISHI_MC3E_UDP）
+        MAIN_CLASS_PATH.put("MITSUBISHI_MC3E_UDP","com.labdatahub.protocol.parent.MitsubishiMc3eTcpProtocol");
         MAIN_CLASS_PATH.put("MITSUBISHI_CNC_TCP","com.labdatahub.protocol.parent.MitsubishiCncTcpProtocol");
         MAIN_CLASS_PATH.put("DATABASE_TCP","com.labdatahub.protocol.parent.DataBaseTcpProtocol");
     }

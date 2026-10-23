@@ -298,9 +298,14 @@ public class DeviceUpListener {
         //心跳设备
         if (device != null && "2".equals(device.getDeviceType())) {
             boolean status = CacheUtils.getDeviceStatusBySn(decodeMessage.getDeviceSn());
-            if (!status) {
+            // 自愈：缓存说"在线"、缓存里这行设备却不是 status=1（同 SN 删除后重建、或设备未注册时外部
+            // 推数据留下的脏 true），只看 DEVICE_STATUS 会让库里的 status 永远停在 0、页面永远离线
+            // （2026-10-21：catlwjc0003 实时数据能收到、状态一直离线）。
+            if (!status || !"1".equals(device.getStatus())) {
+                // 先同步刷新内存态再异步落库：避免一个消息突发里重复提交上线写库/重复 Online 日志
+                CacheUtils.updateDeviceStatusCache(decodeMessage.getDeviceSn(), true);
+                device.setStatus("1");
                 threadPoolTaskExecutor.execute(() -> {
-                    CacheUtils.updateDeviceStatusCache(decodeMessage.getDeviceSn(), true);
                     labdatahubDeviceService.update(new LambdaUpdateWrapper<LabdatahubDevice>()
                             .eq(LabdatahubDevice::getDeviceSn, decodeMessage.getDeviceSn())
                             .set(LabdatahubDevice::getStatus, "1"));
@@ -324,6 +329,14 @@ public class DeviceUpListener {
             DeviceHeartbeatManager.updateHeartbeat(device.getDeviceSn(), "1", device.getTimeoutSeconds());
         } else {
             //网关设备和直连设备
+            // 设备不在 DEVICE_MAP（设备表里没有这个 SN）：只落数据，不写状态缓存、不打上下线日志。
+            // 以前这里按 SN 直接 UPDATE 状态并置缓存 true —— 对不存在的设备 UPDATE 影响 0 行、日志照写，
+            // 等于给"幽灵 SN"发了在线凭证；设备后来真正注册上来时，这条脏 true 会把状态永久卡在离线
+            // （2026-10-21：catlwjc0003 先推数据、08:29 才建设备）。缓存缺项但仍然存在的设备，重启后重建即可恢复。
+            if (device == null) {
+                log.debug("[设备状态] 设备不在缓存中，跳过状态处理。deviceSn={}", decodeMessage.getDeviceSn());
+                return;
+            }
             boolean status = CacheUtils.getDeviceStatusBySn(decodeMessage.getDeviceSn());
             if (status != decodeMessage.getIsOnline()) {
                 threadPoolTaskExecutor.execute(() -> {
@@ -453,6 +466,12 @@ public class DeviceUpListener {
      */
     public void functionDown(DecodeMessage decodeMessage) {
         List<FunctionDown> functionList = decodeMessage.getFunctionList();
+        // 没有下发指令的普通数据消息直接返回：查缓存/打 warn 都应排在判空之后，
+        // 否则设备不在缓存时每条上行消息都刷一条"跳过下发"，纯噪音
+        //（2026-10-21：catlwjc0003 一个晚上刷了 1992 条，掩盖了真正的下发故障）。
+        if (functionList == null || functionList.isEmpty()) {
+            return;
+        }
         LabdatahubDevice device = CacheUtils.getDeviceBySn(decodeMessage.getDeviceSn());
         // ⚠️ 设备可能不在 DEVICE_MAP 里（缓存与库不同步时），下一行原来是直接 device.getComponentId()，
         //    设备为 null 时抛 NPE；异常从 dealDeviceUp 一路冒到 SpringEventBus，日志只剩
@@ -469,29 +488,27 @@ public class DeviceUpListener {
                     decodeMessage.getDeviceSn(), device.getComponentId());
             return;
         }
-        if (functionList != null && functionList.size() > 0) {
-            threadPoolTaskExecutor.execute(() -> {
-                functionList.forEach(function -> {
-                    try {
-                        if (StringUtils.isEmpty(function.getFunctionCode())) {
-                            return;
-                        }
-                        if (StringUtils.isEmpty(function.getDeviceSn())) {
-                            function.setDeviceSn(device.getDeviceSn());
-                        }
-                        DeviceDownUtils.functionDown(function.getDeviceSn(),
-                                function.getFunctionCode(),
-                                function.getFunctionParams(),
-                                component.getId(),
-                                component.getNetType(),
-                                device.getProtocolId(),
-                                device.getCustomConfig(), "0");
-                    } catch (InvocationTargetException | IllegalAccessException | MqttException e) {
-                        log.error("指令下发失败：" + e.getMessage());
+        threadPoolTaskExecutor.execute(() -> {
+            functionList.forEach(function -> {
+                try {
+                    if (StringUtils.isEmpty(function.getFunctionCode())) {
+                        return;
                     }
-                });
+                    if (StringUtils.isEmpty(function.getDeviceSn())) {
+                        function.setDeviceSn(device.getDeviceSn());
+                    }
+                    DeviceDownUtils.functionDown(function.getDeviceSn(),
+                            function.getFunctionCode(),
+                            function.getFunctionParams(),
+                            component.getId(),
+                            component.getNetType(),
+                            device.getProtocolId(),
+                            device.getCustomConfig(), "0");
+                } catch (InvocationTargetException | IllegalAccessException | MqttException e) {
+                    log.error("指令下发失败：" + e.getMessage());
+                }
             });
-        }
+        });
     }
 
 

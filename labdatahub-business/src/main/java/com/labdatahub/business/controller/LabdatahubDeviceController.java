@@ -119,6 +119,8 @@ public class LabdatahubDeviceController extends BaseController
         LabdatahubDevice newDevice = labdatahubDeviceService.getById(labdatahubDevice.getId());
         DeviceHeartbeatManager.updateHeartbeat(newDevice.getDeviceSn(),"1",newDevice.getTimeoutSeconds());
         CacheUtils.updateDeviceCache(newDevice.getDeviceSn());
+        // 设备状态缓存与库对齐（新增/编辑是同一 SN 重新开始的入口，缓存里可能有上一次生命周期的脏状态）
+        CacheUtils.updateDeviceStatusCache(newDevice);
         return AjaxResult.success();
     }
 
@@ -152,6 +154,9 @@ public class LabdatahubDeviceController extends BaseController
             labdatahubFunctionService.remove(new LambdaUpdateWrapper<LabdatahubFunction>()
                     .eq(LabdatahubFunction::getBelongSn,device.getDeviceSn()));
             CacheUtils.DEVICE_MAP.remove(device.getDeviceSn());
+            // ⚠️ 设备状态缓存必须一起删，否则同 SN 重建后残留的 true 会让心跳设备永远不写 status=1
+            //    （2026-10-21：catlwjc0003 实时数据能收到、页面一直离线）。
+            CacheUtils.DEVICE_STATUS.remove(device.getDeviceSn());
         }
         return AjaxResult.success();
     }

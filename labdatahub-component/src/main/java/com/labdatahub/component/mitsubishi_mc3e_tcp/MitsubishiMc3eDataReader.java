@@ -3,7 +3,11 @@ package com.labdatahub.component.mitsubishi_mc3e_tcp;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.Socket;
+import java.net.SocketTimeoutException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -283,6 +287,11 @@ public class MitsubishiMc3eDataReader {
      * @throws MitsubishiMc3eResponseException 结束码非 0（PLC 明确拒绝）
      */
     private static byte[] exchange(String componentId, byte[] request) throws Exception {
+        // UDP 组件走数据报链路；TCP 组件保持原逻辑
+        MitsubishiMc3eTcpConfig config = MitsubishiMc3eConnectionManager.configMap.get(componentId);
+        if (config != null && config.usesUdp()) {
+            return exchangeUdp(componentId, config, request);
+        }
         Socket socket = MitsubishiMc3eConnectionManager.connections.get(componentId);
         if (socket == null || socket.isClosed() || !socket.isConnected()) {
             throw new Exception("连接已断开，请重新连接");
@@ -317,5 +326,88 @@ public class MitsubishiMc3eDataReader {
             throw new MitsubishiMc3eResponseException(String.format("MC命令错误，结束码: 0x%04X", endCode));
         }
         return respBody;
+    }
+
+    /**
+     * UDP 收发一帧（语义与 TCP 版完全一致：返回「结束码 2 字节 + 数据」的响应体）
+     *
+     * <p>⚠️ UDP 无连接、无报文边界保证，<b>不能假设「发一次就收到这一帧的答复」</b>：
+     * 超时请求的迟到响应、重复响应都会留在 socket 里。所以：
+     * <ol>
+     *   <li>发之前先清空积压报文，避免把上一帧的旧回包当成本次结果；</li>
+     *   <li>收到包后校验副头部 {@code D0 00} 与长度字段，不合法的包直接丢弃继续等，
+     *       直到总超时耗尽 —— 与 TCP 的 readFully 严格按长度读满是对齐的。</li>
+     * </ol>
+     * 调用方必须持有该组件的锁（同 TCP）。
+     */
+    private static byte[] exchangeUdp(String componentId, MitsubishiMc3eTcpConfig config, byte[] request) throws Exception {
+        DatagramSocket socket = MitsubishiMc3eConnectionManager.udpConnections.get(componentId);
+        if (socket == null || socket.isClosed()) {
+            throw new Exception("UDP 连接未建立，请重新开启网络组件");
+        }
+        InetAddress address = InetAddress.getByName(config.getIpAddr());
+        int timeout = config.getTimeout() == null ? 3000 : config.getTimeout();
+        // 1. 清掉上一次超时请求残留的迟到响应
+        drainUdp(socket);
+        // 2. 发请求
+        socket.send(new DatagramPacket(request, request.length, address, config.getPort()));
+        // 3. 按总超时等待一帧合法响应
+        long deadline = System.currentTimeMillis() + timeout;
+        byte[] buffer = new byte[2048];
+        while (true) {
+            long remaining = deadline - System.currentTimeMillis();
+            if (remaining <= 0) {
+                throw new SocketTimeoutException("UDP 响应超时（" + timeout + "ms 内无有效回包）");
+            }
+            socket.setSoTimeout((int) remaining);
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+            try {
+                socket.receive(packet);
+            } catch (SocketTimeoutException e) {
+                throw new SocketTimeoutException("UDP 响应超时（" + timeout + "ms 内无有效回包）");
+            }
+            int len = packet.getLength();
+            // 太短 / 副头部不对 / 长度字段与报文不符：不是这一帧的响应，丢弃继续等
+            if (len < HEADER_LEN) {
+                continue;
+            }
+            if ((buffer[0] & 0xFF) != 0xD0 || (buffer[1] & 0xFF) != 0x00) {
+                continue;
+            }
+            int respLen = ((buffer[8] & 0xFF) << 8) | (buffer[7] & 0xFF);
+            if (respLen < 2 || len < HEADER_LEN + respLen) {
+                continue;
+            }
+            byte[] respBody = new byte[respLen];
+            System.arraycopy(buffer, HEADER_LEN, respBody, 0, respLen);
+            int endCode = ((respBody[1] & 0xFF) << 8) | (respBody[0] & 0xFF);
+            if (endCode != 0) {
+                throw new MitsubishiMc3eResponseException(String.format("MC命令错误，结束码: 0x%04X", endCode));
+            }
+            return respBody;
+        }
+    }
+
+    /**
+     * 丢弃数据报 socket 里已经到达的报文（把 soTimeout 临时压到 1ms，读空即返回）
+     */
+    private static void drainUdp(DatagramSocket socket) {
+        try {
+            socket.setSoTimeout(1);
+            byte[] buffer = new byte[2048];
+            while (true) {
+                socket.receive(new DatagramPacket(buffer, buffer.length));
+            }
+        } catch (Exception ignored) {
+            // 读空（SocketTimeoutException）即正常结束；其它异常也不影响后续收发
+        }
+    }
+
+    /**
+     * UDP 连接探测：读 D0 一个字的 3E 帧，收到有效回包即认为链路可用。
+     * 供连接管理器在「首次连接 / 重连」时判可达性用（UDP 没有握手，只能发真实请求）。
+     */
+    public static void probe(String componentId) throws Exception {
+        readMemoryArea(componentId, DEV_D, 0, 1);
     }
 }

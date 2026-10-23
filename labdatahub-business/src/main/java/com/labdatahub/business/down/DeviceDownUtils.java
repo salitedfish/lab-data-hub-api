@@ -118,7 +118,8 @@ public class DeviceDownUtils {
                     isOk = fanucFocasDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
                     break;
                 }
-                case "MITSUBISHI_MC3E_TCP":{
+                case "MITSUBISHI_MC3E_TCP":
+                case "MITSUBISHI_MC3E_UDP":{
                     isOk = mitsubishiMc3eTcpDown(deviceSn, functionCode,decodeMessage.getProperties(),params, componentId, protocolId,customConfig);
                     break;
                 }
@@ -222,7 +223,8 @@ public class DeviceDownUtils {
                     isOk = fanucFocasDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }
-                case "MITSUBISHI_MC3E_TCP": {
+                case "MITSUBISHI_MC3E_TCP":
+                case "MITSUBISHI_MC3E_UDP": {
                     isOk = mitsubishiMc3eTcpDown(deviceSn,  functionCode, decodeMessage.getProperties(), params, componentId, protocolId, customConfig);
                     break;
                 }

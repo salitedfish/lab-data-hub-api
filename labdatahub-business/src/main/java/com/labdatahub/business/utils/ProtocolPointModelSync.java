@@ -59,6 +59,16 @@ public class ProtocolPointModelSync {
      * @param name       点位名称（物模型属性名用，null/空则用 code 标识）
      */
     public static void afterAdd(String belongSn, String belongType, String code, String name) {
+        afterAdd(belongSn, belongType, code, name, "int");
+    }
+
+    /**
+     * 新增协议点位后自动建物模型属性，并指定默认数据类型
+     *
+     * <p>字内位点位（如三菱 D150.0）读回来是 0/1，属性应建成 bool；
+     * 不传类型的旧调用方仍按 int 建，行为不变。
+     */
+    public static void afterAdd(String belongSn, String belongType, String code, String name, String dataType) {
         if (StringUtils.isBlank(belongSn) || StringUtils.isBlank(code)) {
             return;
         }
@@ -74,7 +84,7 @@ public class ProtocolPointModelSync {
         property.setBelongType(belongType);
         property.setIdentifier(code);
         property.setName(StringUtils.isBlank(name) ? code : name);
-        property.setDataType("int");
+        property.setDataType(StringUtils.isBlank(dataType) ? "int" : dataType);
         property.setParentId("0");
         property.setSortNum(0L);
         // 设备级属性标设备自定义（可改），产品级属性默认值

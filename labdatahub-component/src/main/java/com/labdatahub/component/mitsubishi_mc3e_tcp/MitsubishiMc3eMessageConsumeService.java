@@ -17,8 +17,8 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.Socket;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.locks.ReentrantLock;
@@ -35,8 +35,8 @@ public class MitsubishiMc3eMessageConsumeService implements MitsubishiMc3eMessag
     private EventBus eventBus;
     @Override
     public void handle(String componentId, MitsubishiMc3eMessage message) throws Exception {
-        Socket connection = MitsubishiMc3eConnectionManager.connections.get(componentId);
-        if(connection==null||!connection.isConnected()||connection.isClosed()){
+        // TCP 看长连接、UDP 看数据报 socket，统一由连接管理器判定
+        if (!MitsubishiMc3eConnectionManager.hasConnection(componentId)) {
             return;
         }
         List<Integer> dataList = new ArrayList<>();
@@ -69,6 +69,20 @@ public class MitsubishiMc3eMessageConsumeService implements MitsubishiMc3eMessag
             if (needReconnect) {
                 MitsubishiMc3eConnectionManager.forceReconnect(componentId);
             }
+        }
+        // 字内位点位（D150.0 / D150.1）：三菱对字设备 D 不支持按位读（0xC05C），
+        // 所以轮询读的是整个字，这里再取出指定位，下游拿到的就是 0/1 单项列表
+        if (message.getBitIndex() != null) {
+            int bitIndex = message.getBitIndex();
+            if (bitIndex < 0 || bitIndex > 15) {
+                log.warn("componentId={} 点位code={}的bitIndex={}越界（只允许0-15），跳过本次",
+                        componentId, message.getCode(), bitIndex);
+                return;
+            }
+            if (dataList.isEmpty()) {
+                return;
+            }
+            dataList = Collections.singletonList((dataList.get(0) >> bitIndex) & 0x01);
         }
         //读取完成，按配置延迟再继续下次读取（单消费者读节奏限制）
         if (message.getDelayTime() != null && message.getDelayTime() > 0) {

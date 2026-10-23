@@ -13,6 +13,7 @@ import org.apache.commons.lang3.builder.ToStringStyle;
 import com.labdatahub.common.annotation.Excel;
 
 import java.util.Date;
+import java.util.List;
 
 /**
  * 产品对象 labdatahub_product
@@ -133,4 +134,7 @@ public class LabdatahubProduct {
     /**复制来源产品id（复制产品时携带，复制产品级点位模板用，不落库）*/
     @TableField(exist = false)
     private String copyFromId;
+    /**产品编码集合（列表查询按 IN 过滤用，不落库；规则引擎校验已选产品是否还存在时使用）*/
+    @TableField(exist = false)
+    private List<String> productSnList;
 }

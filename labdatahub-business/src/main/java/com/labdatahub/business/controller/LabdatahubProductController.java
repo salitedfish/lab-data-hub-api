@@ -71,6 +71,10 @@ public class LabdatahubProductController extends BaseController {
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubProduct.getGroupCode()),"group_code",labdatahubProduct.getGroupCode());
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubProduct.getProductName()),"product_name",labdatahubProduct.getProductName());
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubProduct.getProductSn()),"product_sn",labdatahubProduct.getProductSn());
+        // 按产品编码集合过滤（规则引擎打开节点时校验「产品范围」里已选产品是否仍存在，已删除的自动剔除）
+        if (labdatahubProduct.getProductSnList() != null && !labdatahubProduct.getProductSnList().isEmpty()) {
+            queryWrapper.in("product_sn", labdatahubProduct.getProductSnList());
+        }
         Page<LabdatahubProduct> page = new Page<LabdatahubProduct>(PageUtils.getPageNum(), PageUtils.getPageSize());
         Page<LabdatahubProduct> pageList = labdatahubProductService.page(page, queryWrapper);
         // 设备数量动态统计：deviceCount 按 labdatahub_device 真实统计回填，不直接信冗余列（由AI修改）

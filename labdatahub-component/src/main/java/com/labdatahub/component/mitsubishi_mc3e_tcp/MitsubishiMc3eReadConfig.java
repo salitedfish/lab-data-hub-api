@@ -16,6 +16,8 @@ public class MitsubishiMc3eReadConfig {
     private Integer areaCode;
     // 起始地址
     private Integer startAddress;
+    // 字内位号 0-15（D150.0 这种点位存 0）；null=整字/整位点位
+    private Integer bitIndex;
     // 读取数量
     private Integer length;
     // 间隔时间

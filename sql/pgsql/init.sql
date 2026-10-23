@@ -2,7 +2,10 @@
 -- lab-data-hub 平台初始化脚本（全量结构 + 框架初始数据）
 -- ----------------------------------------------------------------------------
 -- 生成方式：从本机在跑的 sc_1.0.0 库 pg_dump 导出（PostgreSQL 15.19），非手写，
---           结构与运行库完全一致。生成日期 2026-09-19。
+--           结构与运行库完全一致。生成日期 2026-09-19，2026-10-20 重新导出。
+--           2026-10-22 手工整合 labdatahub_mitsubishi_mc3e_config.bit_index 列与 CHECK
+--           约束（与 others/mitsubishi_mc3e_config_add_bit_index.sql 等价）；下次重新导出
+--           时会自然带上。**任何数据库结构修改都必须同步进本文件**，不能只留在 others/。
 --
 -- 【执行顺序】全新部署只跑前两个：
 --   1. init.sql   —— 本文件：全量结构 + 框架初始数据
@@ -1971,7 +1974,8 @@ CREATE TABLE public.labdatahub_mitsubishi_mc3e_config (
     length numeric(10,0),
     interval_time integer DEFAULT 1,
     delay_time integer DEFAULT 0,
-    name character varying(100)
+    name character varying(100),
+    bit_index integer
 );
 
 
@@ -2057,6 +2061,13 @@ COMMENT ON COLUMN public.labdatahub_mitsubishi_mc3e_config.delay_time IS '同一
 --
 
 COMMENT ON COLUMN public.labdatahub_mitsubishi_mc3e_config.name IS '点位名称（物模型属性名用，null 用标识 code）';
+
+
+--
+-- Name: COLUMN labdatahub_mitsubishi_mc3e_config.bit_index; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_mitsubishi_mc3e_config.bit_index IS '字内位号 0-15（D150.0 存 0）；NULL=整字/整位点位';
 
 
 --
@@ -7035,6 +7046,14 @@ ALTER TABLE ONLY public.labdatahub_mitsubishi_cnc_config
 
 ALTER TABLE ONLY public.labdatahub_mitsubishi_mc3e_config
     ADD CONSTRAINT labdatahub_mitsubishi_mc3e_config_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: labdatahub_mitsubishi_mc3e_config labdatahub_mitsubishi_mc3e_config_bit_index_check; Type: CHECK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.labdatahub_mitsubishi_mc3e_config
+    ADD CONSTRAINT labdatahub_mitsubishi_mc3e_config_bit_index_check CHECK (((bit_index IS NULL) OR ((bit_index >= 0) AND (bit_index <= 15))));
 
 
 --

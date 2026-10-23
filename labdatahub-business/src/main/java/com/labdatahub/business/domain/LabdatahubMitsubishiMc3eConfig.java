@@ -4,6 +4,8 @@ package com.labdatahub.business.domain;
 import java.io.Serializable;
 import java.util.Date;
 
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.labdatahub.common.annotation.Excel;
 
@@ -57,7 +59,17 @@ private static final long serialVersionUID = 1L;
     @Excel(name = "起始地址")
     private Integer startAddress;
 
-    /** 读取数量（字设备为字数，位设备为点数） */
+    /**
+     * 字内位号 0-15（D150.0 这种点位存 0，轮询读整字后取该位）；null=整字/整位点位
+     *
+     * <p>updateStrategy=IGNORED：MyBatis-Plus 默认 updateById 忽略 null 字段，
+     * 把 D150.0 改回整字 D150 时 bit_index 会残留旧值（点位继续按位取），必须显式写 null。
+     */
+    @Excel(name = "字内位号")
+    @TableField(updateStrategy = FieldStrategy.IGNORED)
+    private Integer bitIndex;
+
+    /** 读取数量（字设备为字数，位设备为点数；字内位点位恒为 1） */
     @Excel(name = "读取数量")
     private Integer length;
 }

@@ -151,3 +151,15 @@ mqtt:
     # 避免"每个点位每次采集就发一条消息"（100台×5点位/2秒=500条/2秒 → 节流后=100条/2秒）
     # 只作用于规则转发 MQTT 出口；HTTP/RabbitMQ/Kafka/RocketMQ 等其它出口仍按原频率
     flush-interval-seconds: 2
+# 网络组件启动自愈
+# 平台重启时，库中「启用」状态的组件会先并发开启一轮；首轮失败的组件按下面配置定时重试，
+# 直到全部开启或窗口结束。重试期间在页面上手动关闭某组件，会立即取消对它的重试。
+labdatahub:
+  component:
+    startup-retry:
+      # 是否启用重试（关闭后仍保留启动时的首轮开启）
+      enabled: true
+      # 重试间隔（秒）
+      interval-seconds: 60
+      # 重试窗口（秒），从启动首轮开始计时
+      window-seconds: 600

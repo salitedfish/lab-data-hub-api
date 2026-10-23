@@ -58,6 +58,15 @@ mvn spring-boot:run -pl labdatahub-admin
 **协议拆分（2026-09-19）：3E / 1E / A-1E 从「一个 netType + `protocol_mode` 配置列」改成三个独立 netType** —— 各自单独编译上传、各自注册 mainClass、互不依赖，也不复用彼此的软元件码表与命令常量。随之：`labdatahub_mitsubishi_mc3e_config` 表的 **`protocol_mode` 列已删除**（拆开后一个 netType 一种帧，帧模式不再是配置项，逐行留一个恒为 `'3E'` 的死列只会误导），老库用 `sql/pgsql/mitsubishi_mc3e_config_rename.sql` 迁移（改名 + 删列，**用 RENAME 不用 DROP+CREATE，点位配置不丢**），全新部署用 `mitsubishi_mc3e_config.sql` 建新表，**二者不要同时执行**；`MitsubishiMc3eDataReader` 里原来按 `protocolMode` 走 1E 的分支**已一并删除**，`protocolMode` 字段也已从 Config/ReadConfig/Controller/`ProtocolReadConfigRebuilder` 全部摘掉。`MITSUBISHI_MC1E_TCP`（QnA 系列 1E 帧）与 `MITSUBISHI_A1E_TCP`（A 兼容 1E 帧）目前**只有 scprotocol 侧的协议文件，没有 api 侧帧层、也没有任何平台接线**（`NetType`/`MAIN_CLASS_PATH`/component case/建表/前端下拉一概未加），**既上传不了也选不到**，不会被误选。详见 `scprotocol/CLAUDE.md` 的三菱段落。
 **写值（2026-09-19 实装，与 Modbus/S7/FINS 同一条四步链路）**：地址真源 `labdatahub_mitsubishi_mc3e_config`，`count` 语义**字设备 = 字数（取点位 `length`，读几个字就写几个字，与读方向严格对称）、位设备恒 1**（位点位 `length≠1` 在 `fillMitsubishiMc3ePoint` 就被 422 拦下，不拖到协议层）；响应里 `writeFunctionCode` 为 **null**（MC 没有 Modbus 那种功能码，字写/位写都是批量写命令 `0x1401`、只有子命令不同，拿它当功能码回显只会误导）。载荷形态 `{areaCode,startAddress,count,words[],dataType}` 由协议 jar 产出，`MitsubishiMc3ePointWriter` 是 api 侧解析该载荷的唯一出处，**不做任何值与类型的转换**（物模型 dataType/字序/有符号/缩放全在协议库 `encode` 里消化完）—— 这点与 FINS、S7 一致。**写响应带结束码**，所以 504 的「设备明确拒绝、本次未写入」子情况与 FINS 相同（S7 拿不到回执，做不到）。**⚠️ 字设备/位设备的判据 `isWordDevice` 在 api 侧 `MitsubishiMc3eDataReader` 与协议库 `MitsubishiMc3eTcpDeal` 各有一份**（两个编译单元共享不了），判错不报错、只是写错地方，改一处必须同步另一处。
 **MC3E 写值验证（2026-09-19，ProtoForge 模拟器 + 页面真实操作）**：7 个点位（D 区 4 字 + M 区 3 位）开定时读取后实时数据全对；页面「物模型」tab 行内「写值」——D100←6666（`{"areaCode":168,"startAddress":100,"count":1,"words":[6666],"dataType":"int"}`）、M11←true（`{"areaCode":144,"startAddress":11,"count":1,"words":[1],"dataType":"bool"}`）**写入后读回一致、邻点 D101/D200/M10/M13 不变**；写值记录落 `manual` 来源。反例：**422 越界**（D 区写 70000）、**422 位设备 length≠1**、**503 停组件**（文案含「网络组件未开启，或开启时连接失败」，`address/count/registers` 照样回传）、openapi 侧 400 缺 deviceSn / 404 设备与点位不存在 / 409 非准入（BROTHER_TCP）/ 422 非法值（`abc`/`1.5`/`null`/`true`）全部符合预期。**⚠️ MC 的 504 未直接验证**（可用 `scprotocol/CLAUDE.md` 或 FINS 段落里那套「挂起模拟器进程」的办法造）。**⚠️ 三菱 MC 的多字点位（`length≥2`，即 int32/float32/double64）物模型必须显式选「小端」** —— `byte_order` 库默认是 `'big'`，而 MC 是低字在前，选错字序会反（读侧同一判据，「读得出来就写得进去」）。
+**三菱 MC UDP 传输（2026-10-22）**：现场供应商网关只开 UDP（`192.168.3.15:5040`，同端口 TCP 是 ECONNREFUSED），新增**独立 netType `MITSUBISHI_MC3E_UDP`** —— 不是给 TCP 组件加传输开关。与 TCP 共用同一套 3E 帧、同一个协议 jar（`LabdatahubProtocolServiceImpl.MAIN_CLASS_PATH` 里两个 netType 都指向 `MitsubishiMc3eTcpProtocol`），差别只在传输层：
+- 组件开启/关闭分支 `LabdatahubComponentServiceImpl` 合并两个 case，`transport` 由后端按 netType **服务端写入**（tcp/udp），`other_config` 里不填（`MitsubishiMc3eTcpConfig#usesUdp` 大小写不敏感；历史组件没有该键按 TCP 处理）。
+- `MitsubishiMc3eConnectionManager` 新增 `udpConnections`（componentId → `DatagramSocket`），与 TCP 共用同一把读写锁；**UDP 没有握手，建连/重连都靠发一帧真实「读 D0」探针判可达**（`MitsubishiMc3eDataReader#probe`），探针失败才 `markOffline`；健康检查对 UDP 只看 socket 是否未关，可达性由读写超时 → `forceReconnect` → `reconnectUdp`（换 socket + 探针）兜底。
+- `MitsubishiMc3eDataReader#exchangeUdp`：发前 `drainUdp`（soTimeout 压到 1ms 读空积压），收到包后校验副头 `D0 00` 与长度字段，不合法就丢弃继续等，直到总超时 —— UDP 的迟到/重复包不能被当成本次响应。
+- 接线点：`NetType`、组件开启/关闭 case、`TimerTask#initMitsubishiTcpRead` 的 netType 门、`DeviceDownUtils` 两处 switch、`PointWriter`/`PointWriteMetaResolver` 的准入与分派、组件页 netType 下拉与共享配置模板、协议管理页 netType 下拉、设备/产品详情页 MC 配置 tab 显示条件。
+- 实测（`开发测试脚本/mc3e-udp-verify/UdpReadVerify.java`，用组件里真实的收发代码直连网关）：probe 读 D0 成功、**D150=2、D150.0=0、D150.1=1**、D150 连读两字 `[2,0]`。
+- ⚠️ **组件必须绑定协议包，否则「开启成功、设备永远离线」（2026-10-22 修）**：`openComponent` 开头的 `initProtocol(protocolId)` 在 protocolId 为空时**直接 return**，后面的建连、消费线程、调度照常起来，只有消费端 `ProtocolManager.PROTOCOL_MAP` 映射缺失 → `decode → MessageCache → device.up` 整段被跳过，于是设备不上线、库里无数据、日志里没有任何报错（只有一行「首次连接成功」）。现场触发方式很现实：**先建组件、后上传协议包** —— 建组件时「协议绑定」下拉按 `protocol.protocolType === netType` 过滤、此时为空，保存下来 protocol_id 就是空串（用户 2026-10-22 的 MC UDP 组件：14:52 建、16:08 才上传协议）。修法两层：① `openComponent` 增加 `requiresProtocol(netType)` 前置校验，8 个采集类 netType（MODBUS_TCP/S71200_TCP/OMRONFINS_TCP/BROTHER_TCP/FANUC_TCP/MITSUBISHI_MC3E_TCP/MITSUBISHI_MC3E_UDP/MITSUBISHI_CNC_TCP）未绑协议直接抛 `CommonWarnException`（页面上能看到原因和处理办法，启动自愈会把它置为停用）；MQTT/TCP/UDP/HTTP/Websocket/CoAP 服务端与 DATABASE_TCP 不受影响。② 正确操作顺序：**先「协议管理」上传协议包，再建组件并在「协议绑定」里选中**；已建错的回组件「修改」补选协议（status=启用保存时会 close→open，从而 `PROTOCOL_MAP.put`）。**注意 `bindProtocol` 接口只写库+缓存、不注册 `PROTOCOL_MAP`，绑完必须重开组件才生效。**
+
+**字内位点位 `D150.0`（2026-10-22，与 UDP 同一轮）**：三菱对字设备 **不支持按位读**（位单位读 D150 返回结束码 `0xC05C`），平台实现为「读整字 + 取位」：`labdatahub_mitsubishi_mc3e_config` 新增 `bit_index int4`（0-15；NULL=整字/整位点位，行为不变），增量脚本 `sql/pgsql/others/mitsubishi_mc3e_config_add_bit_index.sql`（幂等，带取值 CHECK）。链路：点位配置 → `MitsubishiMc3eReadConfig/Message.bitIndex`（scheduler 用 `BeanUtil.copyProperties` 自动带过去）→ 消费端读 1 个字后 `(word >> bitIndex) & 1`，下游拿到 `[0/1]`；物模型属性在 `add` 时建成 bool（`ProtocolPointModelSync.afterAdd(..., "bool")`，**必须排在 `syncConfigToScheduler` 之前**，否则首个轮询周期 dataType 还是 null）。`checkConfig` 校验：bitIndex 只能用于字设备、0-15、`length` 必须为 1。**写入不支持**：`PointWriteMetaResolver#fillMitsubishiMc3ePoint` 对带 bitIndex 的点位直接 **422**（整字写会覆盖同字其它位）。前端 `MitsubishiMc3eTcpConfig.vue` 起始地址改为接受 `150` / `D150` / `D150.0`：字母前缀自动映射 areaCode、`.n` 映射 bitIndex、位点位 length 强制 1，列表回显 `D150.0`。
 - **三菱 CNC TCP（`MITSUBISHI_CNC_TCP`，MELDAS MOCHA）**：机床直连平台采集，TCP **683** 只读（2026-08-29 参照树根 `MitsubishiNcTcpPacket.dll` 未混淆 IL 逆向实现，见 `TestFwlib/cnc_tcp_protocol.md`）。**帧结构（2026-10-15 真机 192.168.151.103:683 实测校正，原逆向稿两处错）**：请求 = `[GIOPHead 12B][MessageHead 24B][操作名块][GetDataBody 7×uint32=28B]` 全小端。GIOPHead：`"GIOP"` + **Version u16**（`01 00`）+ LittenEnd u8(1) + ReplyType u8(0=请求/1=应答) + MessageSize u32 LE（= 24 + 操作名块长 + 参数体长）。⚠️ **Version 原来写成 1 个字节，整帧因此左移 1 字节、比 messageSize 少 1 字节，机床一律不应答 —— 这就是「设备一直离线」的根因**（2026-10-15 修）。MessageHead 24B：serviceContextList u4(0) + requestId u4 + isExpectResponse u1(1) + reserved u1[3] + Length u4(4) + Key u4(1) + OperationLength u4（**= 操作名长度 + 1**，原稿写成 -1）。操作名块 = ASCII 操作名 + NUL，再补 0 到 4 的整数倍（`calcLen(n) = ceil((n+1)/4)*4`）。响应 = `[GIOPHead 12B][ResponseHead 16B][DataResponseHead 8B][数据]`，`body[8:12]`=code、`body[16:20]`=respDataType、`body[20:24]`=dataLength、数据自偏移 24 起。连接成功后发 `mochaCancelModal2` 握手（失败不阻断建连）。⚠️ **握手/取消的参数体不能省**：不带参数体、或只带 1~2 个 u32 时机床回 `code=2` + `IDL:omg.org/CORBA/MARSHAL:1.0`（编组失败、这次取消没生效）；带 **≥5 个 u32**（代码里用 GetDataBody 同形状的 7 个 0，见 `CANCEL_MODAL_BODY`）才回 `code=0`(ms=20)。
 **点位寻址表（2026-10-15 真机逐条读通；语义按树根 `MitsubishiNcTcpPacket.dll` 各读点方法的错误串校准，不按名字猜）**：非轴键 19 个 —— `pst` CNC状态(35.10)、`opm` 运行模式(35.11)、`al` 报警(35.203)、`fre` 进给速度(33.1)、`pn` 主程序名(45.101)、`spn` 子程序名(45.201)、`cc` 工件总计数(126.8002)、`sl1` 主轴负载(63.4)、`ss1` 主轴转速(63.3)、`tn` 刀具号(21.1)、`stn` 程序步序号(45.103)、`po` 上电时间(40.1)、`opt` 运行时间(40.2)、`cut` 切削时间(40.3)、`ct` 计时(40.8)、`sv` S代码(43.1)、`fv` F代码(42.1)、`st` 主轴温度(63.221)，外加 **`axc`(35.10) —— 与 `pst` 同址的重复项**（树根点位表里没有这个键，保留只为让老配置仍读得到；前端语义表已移除）；轴点 `mechpos/currpos/remapos`（Section 37.1/37.2/37.3）+ `cu/sp`（Section 59.4/59.3），axisNo 1-6=X/Y/Z/A/B/C。datatype 3/5/6 取数据区末尾 8 字节 double（dData 在结构末尾，兼容 16/20/24 对齐）；datatype 4 按 4/8 字节读 int/long。
 ⚠️ **机床忽略请求里指定的 DataType** —— 回包的 respDataType 是**数据区自己的类型**，与请求无关（真机实测：`axc` 请求 1 回 2、`cc` 请求 4 回 3、`st` 请求 3 回 2、`fv` 请求 3 回 6）。所以 `ADDRESS_MAP` 里的 dataType **只影响组出来的请求帧**，改它不会改变返回值类型（前端下拉的「建议数据类型」同理，仅供物模型对齐）。
@@ -232,7 +241,40 @@ Modbus 是七个协议里**唯一**会对离线设备持续空转重连的：`ge
 - **短路分支**：对两个**已经处于目标状态**的组件点批量停止 → 提示「所选组件均已处于「停用」状态」，**XHR 探针实测一个请求都没发**（不是「发了被后端拒」——本地就拦下了）。
 - **全选/取消**：「全选本页」→ 5/5 勾选 + `已选 5 个` + 两个批量按钮解除 `disabled`；再点一次 → 0 勾选、提示消失、两个按钮回到 `disabled`。
 
-> ⚠️ **本轮排查中顺带确认的一处既有缺陷（不是本次引入、未修）**：`LabdatahubComponentController#list` **完全忽略所有查询参数** —— 它构造的是一个空 `LambdaQueryWrapper`，只加 `orderByAsc(createTime)` 就分页，所以组件页那个「组件名称」搜索框**从来没生效过**。mapper XML 里 `selectLabdatahubComponentList` 确实写了 `name like concat('%',#{name},'%')`，但那个语句只被 `/export` 用。（造数排查时想靠搜索框定位会白费功夫 —— 按 `createTime` 升序排，新造的行都在**最后一页**。）
+> ⚠️ **`LabdatahubComponentController#list` 曾经完全忽略所有查询参数**（2026-10-21 已修）—— 它构造的是一个空 `LambdaQueryWrapper`，只加 `orderByAsc(createTime)` 就分页，所以组件页那个「组件名称」搜索框**从来没生效过**（mapper XML 里 `selectLabdatahubComponentList` 写了 `name like`，但那个语句只被 `/export` 用）。现按 `name` 做了 `like` 过滤（其余查询参数仍未接，页面目前只用到名称）。
+
+> **`LabdatahubProductController#list` 新增 `productSnList` IN 过滤（2026-10-21）**：`LabdatahubProduct` 加了一个 `@TableField(exist = false)` 的 `List<String> productSnList` 字段。规则引擎「设备日志/预警」节点打开时，把已选产品 SN 以逗号串（`productSnList=sn1,sn2`）传给 `GET /business/product/list`，后端按 `product_sn IN (...)` 返回**仍然存在的**产品 —— 前端拿回结果与已选 SN 做差集，就是「产品管理里已删除」的那些，自动从节点配置里剔除。这样一次请求完成校验，不用按 SN 逐个查；前端仍保留逐个查的回退分支，以便后端未同步升级时不误删。
+
+### 组件启动自愈：重启后首轮失败每 60 秒重试、10 分钟封顶（2026-10-21 实装并实测）
+
+**背景**：平台重启时 `TimerTask#initComponentAndProtocol` 会并发开启所有 `status=1` 的网络组件，但**首轮失败就是终局** —— 失败点在建连/起消费线程之前，`PROTOCOL_MAP` 里没有它，连接管理器的健康探测救不回来（它只对已建连的组件做重连）。常见诱因是设备/模拟器比平台后起：平台先跑、设备端口还没监听，这一批组件就永远停用，得人工逐张点「启动」。
+
+**实现**（`business/scheduled/ComponentStartupRetryer.java`，`TimerTask` 第二段改为调它）：
+
+- **首轮**：所有 `status=1` 组件并发开启（与原逻辑一致，仍是 `threadPoolTaskExecutor`）。失败即记 `FAILED`，并把 `status=0` 写回数据库、同步改内存里缓存实例的状态。
+- **重试**：失败集合非空时起一条守护单线程 `component-startup-retry`，`scheduleWithFixedDelay` **每 60 秒**跑一轮，串行逐个重开；**窗口 10 分钟**（从自愈器启动算），到点打 WARN `窗口 600 秒已到，放弃重试，仍停用 N 个：…` 并终止调度，**之后不再重试**，未开启的组件保持停用。全部开启则直接 `结束：全部组件已开启` 并停调度。
+- **手动关闭即取消**：`LabdatahubComponentServiceImpl#closeComponent` 调静态方法 `ComponentStartupRetryer.onManualClose(id)`，把该组件状态原子地转为 `CANCELLED`；重试期间用户点「关闭」后，不会被下一轮又拉起来。若取消恰好发生在一次 `openComponent` 飞行中，成功返回后会检测到已取消并补一次 `closeComponent` 收尾。
+- **单飞**：同一组件同一时刻只有一个 `attempt` 在跑（`ConcurrentHashMap.compute` 判 `IN_FLIGHT`），首轮与定时轮不会撞车。
+- **取消优先于失败**：`markFailed` 落状态时若发现已是 `CANCELLED` 就只打 DEBUG、不再写回 `FAILED` —— 否则「`openComponent` 飞到一半时用户点关闭」这条窄竞态会让刚取消的组件在下一轮又被拉起来。
+- **配置**（`application.yml`，均可覆盖，默认即 60s/600s）：
+  ```yaml
+  labdatahub:
+    component:
+      startup-retry:
+        enabled: true
+        interval-seconds: 60
+        window-seconds: 600
+  ```
+  ⚠️ 生产用的是外部 `D:\hub-server\application.yml`，**里面没有这三项，走的是 `@Value` 兜底默认值**；要调参数得改外部 yml 或加 CLI 参数。
+- **`openComponent` 返回 `false` 也算失败** —— 空 `otherConfig` 等场景它不抛异常只回 false，自愈器按失败处理（`openComponent 返回 false（配置为空或该网络类型不支持）`）。
+
+**实测口径**（本地隔离库，CLI 覆盖参数缩短周期）：
+
+- 成功路径（`--interval-seconds=5 --window-seconds=120`）：http 组件 18080 被占 → 首轮 `开启失败：端口被占用`；第 1/2/3 轮均 `成功0个，仍失败1个`；释放端口后第 4 轮 `成功1个，仍失败0个` + `结束：全部组件已开启`，数据库 `status` 由 0 变 1、端口 18080 起来。
+- 放弃路径（`--interval-seconds=5 --window-seconds=20`）：3 轮失败后 `窗口 20 秒已到，放弃重试，仍停用 1 个：…`；之后 15 秒无新轮次，`jstack` 里 `component-startup-retry` 线程已消失，数据库 `status` 保持 0。
+- **手动关闭取消分支只做了代码审查**（走 `closeComponent` → `onManualClose`，路径简单、无需页面配合），未做页面级实测。
+
+⚠️ 改这块时注意三件事：① 自愈器与 `LabdatahubComponentServiceImpl` **不能互相 `@Autowired`**（循环依赖），取消入口所以是静态方法；② `markFailed` 必须同时改数据库和 `CacheUtils` 里缓存的组件对象，否则页面卡片仍显示「运行中」；③ 重试轮次日志是 INFO、单次失败在静默轮次里降为 DEBUG，别为「日志里看不到为什么失败」而把它们改成 WARN —— 首轮那条 WARN 带原因（如「端口被占用」）已经足够定位。
 
 ### TimescaleDB 连续聚合视图**从没建成过** —— `GROUP BY` 写成了函数名（2026-09-20 实测修复）
 - **现象**：每次启动刷两条 `TimescaleDbInitializer - 连续聚合视图创建失败：device_logs_hourly_mat / device_logs_daily_mat`，而 `select * from timescaledb_information.continuous_aggregates` 始终是**空的** —— 这两个视图**从来没建成过**。紧接着的 `add_continuous_aggregate_policy` 报「关系 device_logs_hourly_mat 不存在」，是第 1 条失败后的连锁，不是独立问题。
@@ -340,7 +382,7 @@ Modbus 是七个协议里**唯一**会对离线设备持续空转重连的：`ge
 - **实时数据 tab 靠物模型行，不靠数据到没到**：页面只渲染 `labdatahub_properties` 里该 SN 的行，值从 WS 的 `properties` 按 **identifier** 取。**实测**：0 条物模型 → tab 一片空白（哪怕日志里数据已经落了）；在「物模型」tab 手工加 2 行（identifier 必须**逐字等于** POST body 里的 key）→ 卡片立刻出现，且后续 POST 的值**经 WebSocket 实时刷新、不用刷新页面**。
 - **在线/离线是心跳倒计时**：该设备的 `device_type='2'`（**页面上叫「无状态设备」**，后端注释写「心跳设备」，是同一个值）时，任何一条上报置在线，超过 `timeout_seconds`（列默认 10）自动置离线 —— **实测 10.1s 的 ONLINE→OFFLINE 跳动**，`timeout_seconds=15` 时实测 15.006s。要长期在线就调大 `timeout_seconds` 或让外部系统定期上报。计时的实现在 `DeviceHeartbeatManager`（进程内 `ConcurrentHashMap` + `DelayQueue`，**不走 Redis**），超时任务**一次性、触发后不再重排**。
 - **一个 HTTP 组件可以同时服务多个产品、每产品多台设备（2026-10-16 实测）**：组件的 `servers` 是 `Map<componentId, TomcatWebServer>`，与产品/设备无绑定关系 —— 同一次实测里 **1 个组件 ← 3 个产品 ← 3 台设备**，三台都用同一个 `TEST_temperature` 标识符**各自推不同值**，MQTT 出口三条载荷**各归各的 SN，零串扰**，实时数据 tab 也各显各的。路由**只认 body 里的 `deviceSn`**：`labdatahub_component` 没有产品列、`HttpClientManager.DEVICE_CLIENT` 里也没有「IP → 设备」的反查，所以**同一台设备换 IP 不用改配置**、**外部系统只用一个常量端口**。
-  - ⚠️ **「没发编码」和「编码发错」是两回事**：没发 / `null` / 空串 / 纯空格 → **400 拒绝**（2026-10-16 加）；而**非空但不存在的** SN **照收不误**（实测推 `TEST_not_exist_sn`：HTTP 200、`PROPERTY` + `ONLINE` 两条日志照写、`CacheUtils.DEVICE_STATUS` 里多一条内存态）—— 设备库里根本没有这台设备，数据落在一个没有任何页面能看到的 SN 下。**外部系统拼错 SN 平台不会报错**，排查只能靠 `labdatahub_device_logs` 里出现陌生 SN。要拦「不存在的 SN」得查设备表，而**组件模块不依赖 business，拿不到「设备是否存在」的结论**，只能在下游 `DeviceUpListener` 里静默丢弃 —— 那样反而没有响应可回，所以没做。
+  - ⚠️ **「没发编码」和「编码发错」是两回事**：没发 / `null` / 空串 / 纯空格 → **400 拒绝**（2026-10-16 加）；而**非空但不存在的** SN **照收不误**（HTTP 200）—— 设备库里根本没有这台设备，数据落在一个没有任何页面能看到的 SN 下。**外部系统拼错 SN 平台不会报错**，排查只能靠 `labdatahub_device_logs` 里出现陌生 SN。要拦「不存在的 SN」得查设备表，而**组件模块不依赖 business，拿不到「设备是否存在」的结论**，只能在下游 `DeviceUpListener` 里静默丢弃 —— 那样反而没有响应可回，所以没做。⚠️ **2026-10-21 起 PROPERTY 照写，但不再为不存在的 SN 写上下线日志、也不再污染 `CacheUtils.DEVICE_STATUS`**（此前 UNKNOWN SN 的 UPDATE 影响 0 行、ONLINE 日志与缓存 true 却照写，同 SN 后来注册设备时会被这张脏 true 永久卡成离线，见下面「设备实时数据能收到、状态一直离线」）。
   - **MQTT 出口发的是「设备全量缓存」不是「本次报文」**：`DeviceUpListener#buildFullDataPayload` 取 `MessageCache.getDeviceLastData(deviceSn)`（各协议 consume 在发 `device.up` 前已把本点位合并进设备缓存）。所以**同一台设备早前推过的点位会一直跟着后续每条消息走**（实测：`http_device_code` 的载荷里带着前一小时测试残留的 `TEST_program_no`/`TEST_run_status`，而新设备没有）。缓存是进程内的，**重启后端才清**。`MqttForwardThrottler` 按设备节流（`mqtt.forward.flush-interval-seconds`，默认 3 秒）：**同一设备一个窗口只发一条全量**，不同设备各自一条。
 - **写值（下行）不支持**：`PointWriteMetaResolver` 只放行 `MODBUS_TCP / S71200_TCP / OMRONFINS_TCP / MITSUBISHI_MC3E_TCP` 四种 netType ⇒ 页面「物模型 → 写值」对 HTTP 设备报 **409**（**实测**：HTTP 状态码 200、body `code=409`，文案点名四个可写协议与当前 netType，同时落一条 `labdatahub_point_write_record`）。出厂 `HttpServerDeal.encode` 是**空壳**，`DeviceDownUtils#httpServerDown` **忽略 encode 返回值、恒返回 true**（即"静默成功"）。`HttpClientManager.DEVICE_CLIENT` 记的 `deviceSn → clientIp_port` 对 HTTP_SERVER 用不上。
 - **要改接口形状**（嵌套 JSON、签名校验、非 JSON、按路径分发）：改 `scprotocol` 的 `HttpServerDeal`（或新写一个 deal 类并在协议上传时配 `mainClass`），重编 `quickly_create.jar` → 前端「协议管理」**重新上传注册**（直接放文件不注册不生效，见根 CLAUDE.md「协议 jar 部署」）。改完 `decode` 必须返回非 null 的 `DecodeMessage`，否则平台回 **400**（`请求体未解析出有效数据`）、不发 `device.up`。
@@ -361,6 +403,19 @@ Modbus 是七个协议里**唯一**会对离线设备持续空转重连的：`ge
   - `DeviceUpListener#componentOffline` 保留那行 `[组件离线] … 未筛出在线设备，跳过。DEVICE_MAP.size=…，同组件设备数=…` 的 INFO 日志 —— 这次正是靠它把「静默空集合」变成可观测的。
 - **验收口径（修复后同一页面操作）**：`jcmd` 数 `LabdatahubDevice` = **14（不变）**；`api_err.log` 75 秒后**除 4 行 SLF4J 启动横幅外零内容**（两种消费线程帧都为 0）；同期 gx-212 / gx-262 消息量照常（205 / 125 条）。设备管理页 `device_code_04_01` 卡片显示「**离线**」。
 - ⚠️ **排查这一类问题的两条纪律**：① **别只看组件状态和日志** —— 缓存缺项的表现就是「什么都不发生」，先量 `jcmd` 的实例数、再看 `componentOffline` 有没有命中；② 日志编码：2026-10-19 起 logback appender 固定 UTF-8，可直接 grep；此前生成的日志仍是 GBK，翻旧文件才需 `iconv -f GBK -t UTF-8`。`System.out/err` 的 print（组件层存量）仍按平台 GBK 写，所以 `api_run.log` 可能混编 —— 逐行判断，或用 `health.mjs`。
+
+### 「设备实时数据能收到、状态一直离线」——设备状态缓存只在启动时重建（2026-10-21 定位并修复，生产实测）
+
+- **现象**：`catlwjc0003` 的 PROPERTY 日志持续增长（外部系统一直在推），但 `labdatahub_device.status` 恒为 `0`、设备页一直显示离线；同 SN 在 07:03 还落过 ONLINE 日志。
+- **两条互不相干的通路**：数据落库走 `DeviceUpListener#saveMessage`，**不查设备缓存**，SN 对不上设备表也照写；状态走 `#deviceStatus`，心跳设备（`device_type='2'`）**只有 `CacheUtils.DEVICE_STATUS[sn] == false` 时才写 `status=1`**。
+- **根因**：`DEVICE_STATUS` **只在启动时**由 `TimerTask#initDeviceProperty` 从库重建；删/增/改设备都不同步它（`LabdatahubDeviceController#remove` 只删 `DEVICE_MAP`，`saveDevice`/`edit` 只刷新 `DEVICE_MAP`，`CacheUtils` 里根本没有从 `DEVICE_STATUS` 删条目的代码）。同时设备**不存在**时，`deviceStatus` 的 else 分支按 SN 直接 UPDATE（影响 0 行）却照打 ONLINE 日志、把缓存置 `true` —— 幽灵 SN 因此留下一张「在线凭证」。
+- **时间线（catlwjc0003）**：10-20 16:36 起外部系统先推数据（设备表还没有此 SN）→ 每条消息把缓存写成 `true`，`functionDown` 刷一条「设备不在缓存中」WARN → 10-21 08:29:11 / 08:29:37 才建产品/设备（新行 status 默认 `0`）→ 之后每条消息看到缓存 `true` → 跳过写库 → 永远离线；心跳每条都刷新，所以连「超时置离线」都不会触发。08:29 前的 WARN 共 1992 条（964 + 1028），都是下发链路的噪音。
+- **修法（business 模块 4 处，不动协议层/表结构/前端）**：
+  1. `LabdatahubDeviceController#remove` 同步 `DEVICE_STATUS.remove(sn)`；`saveDevice` / `saveDeviceByProductSn` / `edit` 用 `CacheUtils.updateDeviceStatusCache` 与库对齐。
+  2. `DeviceUpListener#deviceStatus` 心跳分支**自愈**：判断改成 `!status || !"1".equals(device.getStatus())`；内存态（`DEVICE_STATUS` 与缓存里 device.status）**先置位再异步落库**，避免一个消息突发里重复提交上线/重复 ONLINE 日志。⚠️ 上线成功后必须把缓存 device 的 status 一并置 `"1"`，否则每条消息都会重新判为「未同步」。
+  3. `#deviceStatus` 的 else 分支：`device == null` 直接返回（只落数据），不再为幽灵 SN 写状态缓存/上下线日志。缓存缺项但库中存在的设备，靠重启重建缓存恢复（这里刻意不逐条查库，避免每条消息一次 SELECT）。
+  4. `#functionDown` 把 `functionList` 判空**提到查缓存之前**：没有下发指令的普通数据消息直接返回，不再打「设备不在缓存中」。
+- **验收（生产）**：发版重启后 `catlwjc0003` 库中 `status='1'`、09:02:11 新增一条 ONLINE、PROPERTY 继续增长；`不在缓存中` 的最后一条停在 08:29:37（设备创建时刻），之后无新增。
 
 ### 「物模型删了点位，MQTT 还在推」——删除只删了 properties 行，协议点位仍在轮询（2026-10-19 定位并修复，页面级实测）
 

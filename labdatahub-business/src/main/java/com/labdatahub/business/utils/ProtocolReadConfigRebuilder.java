@@ -207,6 +207,7 @@ public class ProtocolReadConfigRebuilder {
             config.setIntervalTime(o.getIntervalTime().intValue());
             config.setAreaCode(o.getAreaCode());
             config.setStartAddress(o.getStartAddress());
+            config.setBitIndex(o.getBitIndex());
             config.setLength(o.getLength());
             ParseMetaUtils.applyTo(config, device.getDeviceSn(), device.getProductSn(), o.getCode());
             MitsubishiMc3eMessageScheduler.addReadConfig(componentId, config);

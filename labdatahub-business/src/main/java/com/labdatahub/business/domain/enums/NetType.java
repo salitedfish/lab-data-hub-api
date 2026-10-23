@@ -47,5 +47,9 @@ public enum NetType {
     /**
      * MITSUBISHI_MC3E_TCP
      */
-    MITSUBISHI_MC3E_TCP;
+    MITSUBISHI_MC3E_TCP,
+    /**
+     * MITSUBISHI_MC3E_UDP（同一套 3E 帧，走数据报；供应商网关常用，如 192.168.3.15:5040）
+     */
+    MITSUBISHI_MC3E_UDP;
 }

@@ -205,6 +205,8 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
             }
         }
         CacheUtils.updateDeviceCache(labdatahubDevice.getDeviceSn());
+        // 设备状态缓存同步：新建设备默认 status=0，覆盖掉同 SN 可能残留的在线态
+        CacheUtils.updateDeviceStatusCache(labdatahubDevice);
         return AjaxResult.success();
     }
 
@@ -238,6 +240,8 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
         labdatahubProductService.syncDeviceCount(labdatahubProduct.getProductSn());
         syncProductToDevice(labdatahubDevice.getDeviceSn());
         CacheUtils.updateDeviceCache(labdatahubDevice.getDeviceSn());
+        // 设备状态缓存同步（自注册同理，见 saveDevice）
+        CacheUtils.updateDeviceStatusCache(labdatahubDevice);
         return AjaxResult.success();
     }
 

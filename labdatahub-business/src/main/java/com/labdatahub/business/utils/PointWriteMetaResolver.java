@@ -62,6 +62,9 @@ public class PointWriteMetaResolver {
     /** 三菱 MC QnA 兼容 3E 帧（TCP，默认 5007） */
     private static final String NET_TYPE_MITSUBISHI_MC3E_TCP = "MITSUBISHI_MC3E_TCP";
 
+    /** 三菱 MC 3E（UDP 传输） */
+    private static final String NET_TYPE_MITSUBISHI_MC3E_UDP = "MITSUBISHI_MC3E_UDP";
+
     /** FINS 单条读/写命令的项数上限（读侧 length 与写侧 count 同一个上限） */
     private static final int FINS_MAX_ITEMS = 1000;
     /** FINS 位号上限（地址字段第 3 字节只有 0-15 有效） */
@@ -133,11 +136,12 @@ public class PointWriteMetaResolver {
         boolean isModbus = NET_TYPE_MODBUS_TCP.equals(netType);
         boolean isS7 = NET_TYPE_S71200_TCP.equals(netType);
         boolean isFins = NET_TYPE_OMRONFINS_TCP.equals(netType);
-        boolean isMc3e = NET_TYPE_MITSUBISHI_MC3E_TCP.equals(netType);
+        boolean isMc3e = NET_TYPE_MITSUBISHI_MC3E_TCP.equals(netType)
+                || NET_TYPE_MITSUBISHI_MC3E_UDP.equals(netType);
         if (!isModbus && !isS7 && !isFins && !isMc3e) {
             throw new PointWriteException(409, "该接口暂只支持 " + NET_TYPE_MODBUS_TCP + " / "
                     + NET_TYPE_S71200_TCP + " / " + NET_TYPE_OMRONFINS_TCP + " / "
-                    + NET_TYPE_MITSUBISHI_MC3E_TCP
+                    + NET_TYPE_MITSUBISHI_MC3E_TCP + " / " + NET_TYPE_MITSUBISHI_MC3E_UDP
                     + " 协议，当前设备所在组件的网络类型为：" + component.getNetType(), meta);
         }
 
@@ -482,6 +486,14 @@ public class PointWriteMetaResolver {
                     + config.getStartAddress(), meta);
         }
         meta.setAddress(config.getStartAddress());
+
+        // 字内位点位（D150.0）：写单个位需要对整个字做读-改-写，本期不实现。
+        // 直接拒绝比「悄悄写整个字」安全 —— 后者会把同字里其它位一起覆盖掉。
+        if (config.getBitIndex() != null) {
+            throw new PointWriteException(422, "点位 " + code + " 是字内位点位（第 " + config.getBitIndex()
+                    + " 位，如 D150." + config.getBitIndex() + "），本期不支持写入；"
+                    + "如需写入请把整字配置成独立点位（读 1 个字、按字写）", meta);
+        }
 
         if (MitsubishiMc3eDataReader.isWordDevice(config.getAreaCode())) {
             if (config.getLength() == null || config.getLength() < 1) {

@@ -1,7 +1,6 @@
 //由AI修改
 package com.labdatahub.component.mitsubishi_mc3e_tcp;
 
-import java.net.Socket;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -147,8 +146,8 @@ public class MitsubishiMc3ePointWriter {
      * 连接是否可用（本地状态检查，不发探测帧 —— 见 {@code MitsubishiMc3eConnectionManager#isConnectionValid} 注释）
      */
     private static boolean hasUsableConnection(String componentId) {
-        Socket socket = MitsubishiMc3eConnectionManager.connections.get(componentId);
-        return socket != null && socket.isConnected() && !socket.isClosed();
+        // TCP / UDP 两种传输统一由连接管理器判定（UDP 在 connections 里永远是 null）
+        return MitsubishiMc3eConnectionManager.hasConnection(componentId);
     }
 
     /**
@@ -227,12 +226,12 @@ public class MitsubishiMc3ePointWriter {
      * configMap 一起清掉，「组件没开」和「开了但连不上」在 connections 里长得一模一样。
      */
     private static String noConnectionMessage(String componentId) {
-        MitsubishiMc3eTcpConfig config = MitsubishiMc3eConnectionManager.configMap.get(componentId);
+        MitsubishiMc3eTcpConfig config = MitsubishiMc3eConnectionManager.getConfig(componentId);
         if (config == null) {
             return "无可用连接：该设备没有可用的连接配置（网络组件未开启，或开启时连接失败），请检查网络组件状态";
         }
         return "连接已断开：无法连接 " + config.getIpAddr() + ":" + config.getPort()
-                + "，请检查设备网络与网络组件状态";
+                + (config.usesUdp() ? "（UDP）" : "") + "，请检查设备网络与网络组件状态";
     }
 
 }
