@@ -119,6 +119,67 @@ mvn spring-boot:run -pl labdatahub-admin
 
 ## 踩坑经验记录
 
+### 统一采集引擎（2026-10-24 起全协议唯一链路，**不再有任何开关或配置**）
+
+- **范围**：MODBUS / S7 / FINS / MC3E（含 UDP）/ BROTHER / FANUC / CNC / DATABASE 八个协议族（`CollectionFamily`）全部走 `labdatahub-component/.../collect/` 这一套管道。旧的 `XxxMessageScheduler` 只保留 `addReadConfig/removeReadConfig` 门面（一行委托给 `CollectionEngine`），`XxxMessage` / `XxxMessageConsumeHandler` / `XxxMessageConsumeService` 已删除。**没有 `labdatahub.collect.*` 配置项**：`unified-net-types`、`queue-capacity`、`metrics-enabled` 三个历史配置已彻底移除，`CollectionFamily` 里连读取它们的代码都不存在了，新增协议也不需要加配置。
+- **管道**：`TimerTask#initXxxTcpRead`（`@PostConstruct`，**只在启动时跑一次**）把各协议点位表注册进 `CollectionEngine` → `CollectionScheduler#rebuild` 按「间隔 → `adapter.unitKey(point)`」两层分组成 `ReadTask` → `PRODUCER.scheduleAtFixedRate(..., interval, SECONDS)` → `CollectionQueue`（容量 **200**，按 taskKey 去重：同一任务还没被消费时再入队会被丢弃）→ 每个组件**一条** `ConsumeThread`（名字 `<family 小写>-loop-consumer-<componentId>`）串行执行 → `CollectionAdapter#execute` 读设备 → `CollectionPublisher#publish` 逐点 `ProtocolManager` 反射 `decode` → `MessageUtils.parseMessage` → 设备 WS + `MessageCache` + EventBus `device.up`。
+- **固定参数（不要去调）**：`QUEUE_CAPACITY=200`（一条任务现在覆盖一批点位，不需要旧链路的 1000）；`MERGE_GAP=0`（只合并重叠/相邻地址，绝不补读设备未实现的地址——中间踩到未实现地址会让整块读失败）；`POLL_TIMEOUT_MS=1000`（消费者到点回来重查连接，实现自愈）；无 `delayTime` 停顿（前端默认值已从 100 改成 0，字段保留但引擎不读）。
+- **各协议的合并粒度（决定「一个组件一轮发几次请求」）**：
+
+  | 协议族 | 采集单元 `unitKey` | 单次读上限 | 备注 |
+  |---|---|---|---|
+  | MODBUS | 设备 + 寄存器区 + 功能码 | 125 个寄存器 / 2000 个位 | 连续/相邻地址才合并 |
+  | S7 | 设备 + DB 块/区 + 类型 | 200 字节 | DBD 4 字节/点 → 50 点/次 |
+  | FINS | 设备 + 区码 | 1000 项 | 位区逐点 |
+  | MC3E | 设备 + 区码 | 960 字 | 位设备逐点 |
+  | BROTHER | 设备 + 数据区 | 1 个数据区一条 LOD | 最多 9 个数据区 → ≤9 次/轮，点位再多也不加请求 |
+  | FANUC | 设备 + 点位 code | 无批量接口，**一点一次 FOCAS2 调用** | 机床侧官方上限 **10 次/秒**，`LabdatahubFanucConfigController#validatePollRate` 按「Σ 1/间隔」在保存时拦截 |
+  | CNC | 设备 + 点位 code | 一点一次 | — |
+  | DATABASE | 设备 | 一次「取最新一条」查询 | 同设备点位共用 |
+
+- ⚠️ **FOCAS2 句柄绑定建连线程**：`cnc_allclibhndl3` 在哪个线程建连，就只有那个线程能读，换线程读返回 `EW_BUSY(-8)`。所以建连只能由 `FanucCollectionAdapter#ensureConnection`（跑在该组件的消费线程上）发起，**绝不能在 HTTP 线程或健康检查线程建共享句柄**。健康检查是另一条独立句柄、自己建自己用。
+- ⚠️ **点位增删改是热生效的**：走 REST 的 `add/edit/remove` 会即时 `CollectionEngine.addPoint/removePoint`（150ms 防抖重建），不用重启。但**直接改数据库表不会生效**——启动时的 `@PostConstruct` 是唯一注册入口，改表必须重启后端。做基准测试时就是靠这一点（写表 + 重启）。
+- **已知瓶颈（扩容前先看这里）**：每个点位每个周期产出**一条** `labdatahub_device_logs` 行（`DeviceUpListener#saveMessage` → `LogProcessor`，队列 10000、批 1000、满了丢并每 60 秒汇总一次）。所以「点位数 × 频率」直接等于落库 TPS，这是统一引擎之后的第一瓶颈，而不是协议 I/O。单机实测见下节。
+
+### 统一采集引擎实测容量（2026-10-24，本机 / `-Xmx1024m` / ProtoForge 模拟器）
+
+- **测法**：`开发测试脚本/perf-bench-sql.mjs <协议> <点位数> [间隔] [窗口秒]` —— 直插点位表 + 重启后端（登录要验证码，避开 REST），20 秒窗口同时统计**落库行**（`labdatahub_device_logs`）与**设备 WS 上报**（无损，高压下落库会丢行，只认 WS 判采集是否达标）。结果逐行追加 `开发测试脚本/perf-results.jsonl`。多轮跑完用 `<协议> 0` 收尾（删 `TEST_PERF_%` 点位与物模型属性并重启）。
+- **单点间隔**：`interval_time` 是**整数秒**，UI 最小 1 —— 即**每点最快 1 秒采一次**，没有亚秒选项。唯一例外是 FANUC：该机床全部点位 Σ(1/interval) 必须 ≤ **10 次/秒**（`LabdatahubFanucConfigController#validatePollRate`，超出保存即被拒），例如 100 个点最快也只能配 10 秒/点。**下表 FANUC 的 50/100 点 @1s 是直插点位表绕过该校验测出来的，页面配不出来**，只用于验证引擎吞吐。
+- **实测结果**（均为本机稳定态、20 秒窗口，最后一批 16:26 之后重测；16:11–16:20 那几轮因上一轮日志积压未清、`rowsPerSec` 偏低，不作为结论）：
+
+| 协议 | 点位数 | 间隔 | WS 上报/秒（达标率） | 落库行/秒（达标率） | 每点周期间隔 中位/p95 |
+|---|---|---|---|---|---|
+| MODBUS_TCP | 3000 | 1s | 3080.5（105%） | 2379（80%） | 1s / 2.01s |
+| MODBUS_TCP | 5000 | 10s | 500（100%） | 500（100%） | 9.91s / 9.98s |
+| S71200_TCP | 1000 | 1s | 1085（110%） | 1050（105%） | 1s / 1.07s |
+| S71200_TCP | 2000 | 1s | 2079（105%） | 2098（105%） | 1s / 1.05s |
+| S71200_TCP | 3000 | 1s | 3100（105%） | 3082.6（105%） | 1s / 1.07s |
+| OMRONFINS_TCP | 500 | 1s | 525（105%） | 500（100%） | 1s / 1.02s |
+| OMRONFINS_TCP | 1000 | 1s | 1049（105%） | 1050（105%） | 1s / 1.01s |
+| OMRONFINS_TCP | 2000 | 1s | 2073（105%） | 2017（100%） | 1s / 1.10s |
+| OMRONFINS_TCP | 3000 | 1s | 3123（100%） | 2838（95%） | 1s / 1.26s |
+| MITSUBISHI_MC3E_TCP | 500 | 1s | 525（105%） | 500（100%） | 1s / 1.01s |
+| MITSUBISHI_MC3E_TCP | 1000 | 1s | 1000（100%） | 1050（105%） | 1s / 1.03s |
+| MITSUBISHI_MC3E_TCP | 2000 | 1s | 2100（105%） | 2000（100%） | 1s / 1.12s |
+| MITSUBISHI_MC3E_TCP | 3000 | 1s | 3121（105%） | 3106（105%） | 1s / 1.23s |
+| BROTHER_TCP | 20 | 1s | 21（105%） | 20（100%） | 1s / 1.07s |
+| BROTHER_TCP | 200 | 1s | 210（105%） | 200（100%） | 1s / 1.03s |
+| FANUC_FOCAS | 50 | 1s | 52.5（105%） | 50（100%） | 1s / 1.02s |
+| FANUC_FOCAS | 100 | 1s | 105（105%） | 100（100%） | 1s / 1.03s |
+
+  （「达标率」= 每点实际采集周期数 ÷ 窗口/间隔；>100% 是窗口边界多算一拍，属测量噪声。`MITSUBISHI_CNC_TCP` 没有模拟器，未测。）
+
+- **结论**：
+  1. **采集侧不设点位上限**：合并读把点位压成读任务（MODBUS 125 寄存器/次、S7 200 字节/次、FINS 1000 项/次、MC 960 字/次，BROTHER 一个数据区一次、FANUC 一点一次），单协议 3000 点 @1s 全部跑满周期（中位 1s、p95 ≤1.3s），5000 点的 MODBUS @10s 也 100% 达标。**「每设备能加多少点位」由采集间隔和落库能力共同决定，不由引擎的队列/线程数决定。**
+  2. **第一瓶颈是落库**：本机（PG 15 + TimescaleDB，本地盘）稳定在 **2400–3100 行/秒**。MODBUS 3000 点 @1s（3000 行/秒）那轮落库只到 80%，同尺寸的 S7/FINS/MC 能到 95–105% —— 说明已贴着上限、受批次与磁盘抖动影响；超过就丢 `device_logs` 行（WS 不断）。按 1 秒间隔算，**单组件 3000 点以内是安全区**，再往上要拉长间隔或减少点位；多点位的推荐做法是 5–10 秒/点。
+  3. **协议差异**：BROTHER 一条 LOD 命令返回整个数据区（≤9 区），点位多也不增加往返；FANUC 一点一次调用，100 点 @1s = 100 次/秒（模拟器跟得上，真机受上面 10 次/秒的硬约束）；FINS/MC/S7/MODBUS 都是块合并，成本随「读任务数」增长而不是点位数。
+  4. **点位数统计口径**：WS 上报是采集是否达标的唯一依据；`labdatahub_device_logs` 在积压时 `create_time` 仍是入队时间，按窗口计数会低估，别用落库行数反推采集频率。
+
+- **正确性验收（2026-10-24，六协议 34/34）**：
+  - `开发测试脚本/collect-correctness.mjs`（写值型，MODBUS / S7 / FINS / MC）：向模拟器写入已知值 → 等一个采集周期 → 比对平台落库解码值。**等待必须 < 30 秒**（ProtoForge 外部写入只冻结 30 秒，等满 30 秒比对到的是解冻后的发生器值），脚本用 12 秒。结果：MODBUS 3/3（字符串 A/B/C）、S7 6/6（bool/int/int32/real）、FINS 7/7（int16/int32/位写字内位）、MC 6/6（字 + 位）全对。
+  - `开发测试脚本/collect-static-check.mjs`（只读型，BROTHER / FANUC）：模拟器 `fixed_value` ↔ 平台最新解码值。结果各 6/6 全对。注意 FANUC `op_state` 是平台按 `status` 规则折算的（`run==3 START → 1`），模拟器存原始码，比对时要转换，不是平台错。
+  - 这几个脚本的失败模式要分清：**写值不落地先查模拟器写冻结**（见根目录 CLAUDE.md「ProtoForge 外部写入传播」），**相邻点位值相同**多半是模拟器点位用了同参数 `triangle`/`square` 生成器（同拍同步推进），不是平台合并读串位。
+
 ### 规则引擎「数据转发」：输入侧设备范围**不决定**输出服务起不起（2026-10-07 实测修复）
 - **现象**：`labdatahub_rule_engine` 的「数据转发」配好 MQTT 出口、点「启动」，页面提示「操作成功」，但出口端口根本没有监听——**报成功而服务没起**。
 - **根因两层**：① `LabdatahubRuleEngineServiceImpl#startRuleEngine` 在输入节点 `configData` 为空、或 `deviceScope=all` 且 `productScope` 为空、或 `deviceScope=part` 且 `deviceSnList` 为空时，**直接 `return` 掉整个规则组**，连 `MqttBrokerUtils.addBroker` 一起跳过（注意：查询出来 `deviceList` 为空**不会**跳过，只有"范围没配"才跳）；② `LabdatahubRuleEngineController#controlEngine` 丢弃 `startRuleEngine` 的返回值、无条件 `AjaxResult.success()`，且 `isEnable` 在方法末尾无条件写 `"1"`。

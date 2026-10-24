@@ -13,7 +13,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.labdatahub.component.utils.ParallelHealthCheck;
 
@@ -146,7 +145,7 @@ public class FinsConnectionManager {
         //   连接由健康检查在设备回来后自动重建（见 checkAndReconnect），届时数据即可正常被消费。
         //   （消费线程对「队列不存在」自带退避重试，见 FinsLoopConsumer#run 的 QUEUE_MISSING_RETRY_MS）
         try {
-            FinsLoopConsumer.startConsume(componentId, SpringUtils.getBean(FinsMessageConsumeService.class));
+            FinsLoopConsumer.startConsume(componentId);
         } catch (IllegalStateException e) {
             log.warn("[FINS连接] componentId={} 已存在消费线程，跳过重复启动", componentId);
         }

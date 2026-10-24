@@ -4,7 +4,6 @@ package com.labdatahub.component.s7_tcp;
 
 import com.github.s7connector.api.S7Connector;
 import com.github.s7connector.api.factory.S7ConnectorFactory;
-import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.labdatahub.component.utils.ParallelHealthCheck;
 import lombok.extern.slf4j.Slf4j;
@@ -129,7 +128,7 @@ public class S7ConnectionManager {
         //   消费线程不起来，队列只会被灌满到上限、恢复后还要回放一堆过期快照。
         //   连接由健康检查在设备回来后自动重建（见 checkAndReconnect），届时数据即可正常被消费。
         try {
-            S7LoopConsumer.startConsume(componentId, SpringUtils.getBean(S7MessageConsumeService.class));
+            S7LoopConsumer.startConsume(componentId);
         } catch (IllegalStateException e) {
             log.warn("[S7连接] componentId={} 已存在消费线程，跳过重复启动", componentId);
         }

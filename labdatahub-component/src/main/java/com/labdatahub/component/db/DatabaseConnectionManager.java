@@ -11,7 +11,6 @@ import java.util.concurrent.TimeUnit;
 
 import javax.sql.DataSource;
 
-import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -75,7 +74,7 @@ public class DatabaseConnectionManager {
             // 连接成功，清除离线节流标记（允许后续断连再次通知离线）
             ComponentOnlineNotifier.markOnline(componentId);
             // 启动消费线程
-            DatabaseLoopConsumer.startConsume(componentId, SpringUtils.getBean(DatabaseMessageConsumeService.class));
+            DatabaseLoopConsumer.startConsume(componentId);
             return true;
         } catch (Exception e) {
             log.error("[DB] 数据源注册失败: {}", componentId, e);

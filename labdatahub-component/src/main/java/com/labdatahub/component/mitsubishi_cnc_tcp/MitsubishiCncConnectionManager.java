@@ -10,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.labdatahub.component.utils.ParallelHealthCheck;
 
@@ -71,7 +70,7 @@ public class MitsubishiCncConnectionManager {
         //   连接由健康检查在机床回来后自动重建（见 checkAndReconnect），届时数据即可正常被消费。
         //   （消费线程对「队列不存在」自带退避重试，见 MitsubishiCncLoopConsumer#run 的 QUEUE_MISSING_RETRY_MS）
         try {
-            MitsubishiCncLoopConsumer.startConsume(componentId, SpringUtils.getBean(MitsubishiCncMessageConsumeService.class));
+            MitsubishiCncLoopConsumer.startConsume(componentId);
         } catch (IllegalStateException e) {
             System.out.printf("[MITSUBISHI-CNC连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);
         }

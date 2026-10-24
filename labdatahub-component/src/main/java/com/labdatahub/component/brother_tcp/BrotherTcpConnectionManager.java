@@ -10,7 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.labdatahub.component.utils.ParallelHealthCheck;
 
@@ -67,7 +66,7 @@ public class BrotherTcpConnectionManager {
         //   （消费线程对「队列不存在」自带退避重试，见 BrotherTcpLoopConsumer#run 的 QUEUE_MISSING_RETRY_MS）
         try {
             if (!BrotherTcpLoopConsumer.isConsuming(componentId)) {
-                BrotherTcpLoopConsumer.startConsume(componentId, SpringUtils.getBean(BrotherTcpMessageConsumeService.class));
+                BrotherTcpLoopConsumer.startConsume(componentId);
             }
         } catch (IllegalStateException e) {
             System.out.printf("[Brother连接] componentId=%s 已存在消费线程，跳过重复启动%n", componentId);

@@ -8,7 +8,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.labdatahub.common.utils.spring.SpringUtils;
 import com.labdatahub.component.event.ComponentOnlineNotifier;
 import com.labdatahub.component.utils.ParallelHealthCheck;
 import com.sun.jna.NativeLong;
@@ -81,7 +80,7 @@ public class FanucFocasConnectionManager {
             // 否则：关闭旧连接，启动消费线程（线程内部先 establishConnection 建连）
             closeHandle(componentId);
             try {
-                FanucFocasLoopConsumer.startConsume(componentId, SpringUtils.getBean(FanucFocasMessageConsumeService.class));
+                FanucFocasLoopConsumer.startConsume(componentId);
             } catch (IllegalStateException e) {
                 // 已存在消费线程（但句柄缺失）：其循环顶部检测到句柄缺失会自行在本线程重建连接
                 System.out.printf("[FOCAS2连接] componentId=%s 已存在消费线程，跳过重复启动，等待其重建连接%n", componentId);
