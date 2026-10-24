@@ -26,6 +26,8 @@ import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
 import com.labdatahub.common.enums.BusinessType;
 import com.labdatahub.business.domain.LabdatahubRuleEngine;
+import com.labdatahub.business.domain.LabdatahubRuleEngineControlLog;
+import com.labdatahub.business.mapper.LabdatahubRuleEngineControlLogMapper;
 import com.labdatahub.business.service.ILabdatahubRuleEngineService;
 import com.labdatahub.common.utils.poi.ExcelUtil;
 import com.labdatahub.common.core.page.TableDataInfo;
@@ -42,6 +44,9 @@ public class LabdatahubRuleEngineController extends BaseController
 {
     @Autowired
     private ILabdatahubRuleEngineService labdatahubRuleEngineService;
+
+    @Autowired
+    private LabdatahubRuleEngineControlLogMapper labdatahubRuleEngineControlLogMapper;
 
     /**
      * 查询规则引擎配置列表
@@ -146,6 +151,21 @@ public class LabdatahubRuleEngineController extends BaseController
             result = labdatahubRuleEngineService.startRuleEngine(id);
         }
         return result ? AjaxResult.success() : AjaxResult.error("规则引擎不存在");
+    }
+
+    /**
+     * 查询规则引擎启停日志（按引擎分页，时间倒序）
+     *
+     * @param engineId 规则引擎id
+     */
+    @GetMapping("/controlLog")
+    public TableDataInfo controlLog(@RequestParam String engineId)
+    {
+        QueryWrapper<LabdatahubRuleEngineControlLog> queryWrapper = new QueryWrapper<>();
+        queryWrapper.eq("engine_id", engineId);
+        queryWrapper.orderByDesc("oper_time");
+        Page<LabdatahubRuleEngineControlLog> page = new Page<LabdatahubRuleEngineControlLog>(PageUtils.getPageNum(), PageUtils.getPageSize());
+        return getDataTable(labdatahubRuleEngineControlLogMapper.selectPage(page, queryWrapper));
     }
 
 }

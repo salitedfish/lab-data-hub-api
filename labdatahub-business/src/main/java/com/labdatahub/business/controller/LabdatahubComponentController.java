@@ -33,6 +33,7 @@ import com.labdatahub.business.utils.CacheUtils;
 import com.labdatahub.common.core.controller.BaseController;
 import com.labdatahub.common.core.domain.AjaxResult;
 import com.labdatahub.common.core.page.TableDataInfo;
+import com.labdatahub.common.exception.ServiceException;
 import com.labdatahub.common.utils.PageUtils;
 import com.labdatahub.common.utils.StringUtils;
 import com.labdatahub.common.utils.poi.ExcelUtil;
@@ -101,6 +102,7 @@ public class LabdatahubComponentController extends BaseController
     @PostMapping
     @Transactional(rollbackFor = Exception.class)
     public AjaxResult add(@RequestBody LabdatahubComponent labdatahubComponent) throws Exception {
+        checkEndpointNotUsed(labdatahubComponent);
     	labdatahubComponent.setCreateTime(new Date());
         syncDisplayAddress(labdatahubComponent);
         labdatahubComponentService.save(labdatahubComponent);
@@ -123,6 +125,7 @@ public class LabdatahubComponentController extends BaseController
     @PutMapping
     @Transactional(rollbackFor = Exception.class)
     public AjaxResult edit(@RequestBody LabdatahubComponent labdatahubComponent) throws Exception {
+        checkEndpointNotUsed(labdatahubComponent);
         syncDisplayAddress(labdatahubComponent);
         labdatahubComponentService.updateById(labdatahubComponent);
         if("1".equals(labdatahubComponent.getStatus())) {
@@ -237,6 +240,97 @@ public class LabdatahubComponentController extends BaseController
         if (StringUtils.isNotEmpty(port)) {
             component.setPort(port);
         }
+    }
+
+    /**
+     * 校验「同一个端点」有没有被别的网络组件占用 —— 同一网络类型下，IP + 端口不允许重复。
+     *
+     * <p>为什么必须拦：组件是「一条到设备/服务的连接」。两个组件配同一个 IP:端口，就等于对同一台设备
+     * 开了两份客户端，两个消费线程各自排队去抢同一个连接，数据会被切成两半、队列堆积丢消息
+     * （2026-10-24 银申卡特 gx-115/gx-122 就是这么来的：产品上选错了组件，两台设备挤进同一个 FANUC 组件，
+     * 队列长期满载、数据延迟 9 分钟）。这种配置在页面上没有任何提示，只能靠人事后发现。
+     *
+     * <p>判定口径（与 {@link #syncDisplayAddress} 取同一套键名）：
+     * <ul>
+     *   <li>只比 <b>同 netType</b> 的组件 —— 同一端口号上跑不同协议是合法的，例如三菱 3E 的
+     *       {@code MITSUBISHI_MC3E_TCP} 与 {@code MITSUBISHI_MC3E_UDP} 可以用同一个端口号。</li>
+     *   <li>数据库类组件额外比 {@code databaseName} —— 同一台数据库服务器、同一个端口下可以配多个库。</li>
+     *   <li>MQTT 客户端 / 各类服务端组件不参与：它们没有 {@code ipAddr}（服务端绑 0.0.0.0，
+     *       MQTT 客户端配的是 {@code brokerUrl}，同一 broker 上多个客户端订阅不同主题是正常用法）。</li>
+     * </ul>
+     *
+     * @param target 待新增/修改的组件
+     */
+    private void checkEndpointNotUsed(LabdatahubComponent target) {
+        if (target == null) {
+            return;
+        }
+        String netType = StringUtils.trim(target.getNetType());
+        String[] endpoint = resolveEndpoint(target.getOtherConfig());
+        if (StringUtils.isEmpty(netType) || endpoint == null) {
+            return;
+        }
+        String ip = endpoint[0];
+        String port = endpoint[1];
+        String databaseName = endpoint[2];
+        for (LabdatahubComponent other : labdatahubComponentService.list()) {
+            // 编辑自己时不能被自己挡住
+            if (target.getId() != null && target.getId().equals(other.getId())) {
+                continue;
+            }
+            if (!netType.equals(StringUtils.trim(other.getNetType()))) {
+                continue;
+            }
+            String[] otherEndpoint = resolveEndpoint(other.getOtherConfig());
+            if (otherEndpoint == null) {
+                continue;
+            }
+            if (!ip.equalsIgnoreCase(otherEndpoint[0]) || !port.equals(otherEndpoint[1])) {
+                continue;
+            }
+            // 数据库组件：同一台服务器上的不同库是两个端点，不算重复；库名为空则按端口算重复
+            if (StringUtils.isNotEmpty(databaseName) && !databaseName.equalsIgnoreCase(otherEndpoint[2])) {
+                continue;
+            }
+            throw new ServiceException(String.format(
+                    "IP %s 端口 %s 已被网络组件「%s」（%s，%s）使用，同一个端点不能重复配置；"
+                            + "如果就是要连这台设备，请直接在产品上引用那个组件，不要再建一个",
+                    ip, port,
+                    StringUtils.isNotEmpty(other.getName()) ? other.getName() : other.getId(),
+                    other.getNetType(),
+                    "1".equals(other.getStatus()) ? "已启用" : "已停用"));
+        }
+    }
+
+    /**
+     * 从 other_config 里取「目标端点」：{IP, 端口, 数据库名}。
+     *
+     * <p>键名与 {@link #syncDisplayAddress} 一致：客户端类组件用 {@code ipAddr} + {@code port}，
+     * 少数用 {@code serverPort}；数据库类组件再取 {@code databaseName}。
+     * 解析不了、没有 IP 或没有端口的一律返回 null —— 这类组件不参与重复校验，交给 openComponent 报错。
+     */
+    private static String[] resolveEndpoint(String otherConfig) {
+        if (StringUtils.isEmpty(otherConfig)) {
+            return null;
+        }
+        JSONObject config;
+        try {
+            config = JSONObject.parseObject(otherConfig);
+        } catch (Exception e) {
+            return null;
+        }
+        if (config == null) {
+            return null;
+        }
+        String ip = StringUtils.trim(config.getString("ipAddr"));
+        String port = StringUtils.trim(config.getString("port"));
+        if (StringUtils.isEmpty(port)) {
+            port = StringUtils.trim(config.getString("serverPort"));
+        }
+        if (StringUtils.isEmpty(ip) || StringUtils.isEmpty(port)) {
+            return null;
+        }
+        return new String[] { ip, port, StringUtils.trim(config.getString("databaseName")) };
     }
 
     /**

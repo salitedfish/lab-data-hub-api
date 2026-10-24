@@ -36,7 +36,11 @@ import com.labdatahub.component.utils.PortChecker;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import com.labdatahub.business.mapper.LabdatahubRuleEngineMapper;
+import com.labdatahub.business.mapper.LabdatahubRuleEngineControlLogMapper;
 import com.labdatahub.business.domain.LabdatahubRuleEngine;
+import com.labdatahub.business.domain.LabdatahubRuleEngineControlLog;
+import com.labdatahub.common.utils.SecurityUtils;
+import com.labdatahub.common.utils.uuid.IdUtils;
 import com.labdatahub.business.service.ILabdatahubRuleEngineService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 
@@ -52,6 +56,8 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
 {
     @Autowired
     private LabdatahubRuleEngineMapper labdatahubRuleEngineMapper;
+    @Autowired
+    private LabdatahubRuleEngineControlLogMapper labdatahubRuleEngineControlLogMapper;
     @Autowired
     private ILabdatahubDeviceService labdatahubDeviceService;
 
@@ -130,6 +136,26 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
 
     @Override
     public boolean startRuleEngine(String id) {
+        try {
+            boolean result = doStartRuleEngine(id);
+            if (result) {
+                saveControlLog(id, "start", "0", "启用成功");
+            }
+            return result;
+        } catch (RuntimeException e) {
+            //启动失败同样要留痕：页面只弹错误提示，事后查不到是谁、在什么时候启的、为什么失败
+            saveControlLog(id, "start", "1", e.getMessage() == null ? e.toString() : e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * 规则引擎启用（不含启停日志记录）
+     *
+     * @param id 规则引擎id
+     * @return 结果
+     */
+    private boolean doStartRuleEngine(String id) {
         LabdatahubRuleEngine labdatahubRuleEngine = labdatahubRuleEngineMapper.selectById(id);
         if(labdatahubRuleEngine == null){
             log.warn("启动规则引擎失败，规则不存在：id={}", id);
@@ -277,6 +303,25 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
 
     @Override
     public boolean stopRuleEngine(String id) {
+        try {
+            boolean result = doStopRuleEngine(id);
+            if (result) {
+                saveControlLog(id, "stop", "0", "停用成功");
+            }
+            return result;
+        } catch (RuntimeException e) {
+            saveControlLog(id, "stop", "1", e.getMessage() == null ? e.toString() : e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * 规则引擎停用（不含启停日志记录）
+     *
+     * @param id 规则引擎id
+     * @return 结果
+     */
+    private boolean doStopRuleEngine(String id) {
         LabdatahubRuleEngine labdatahubRuleEngine = labdatahubRuleEngineMapper.selectById(id);
         if(labdatahubRuleEngine == null){
             log.warn("关闭规则引擎失败，规则不存在：id={}", id);
@@ -328,5 +373,48 @@ public class LabdatahubRuleEngineServiceImpl extends ServiceImpl<LabdatahubRuleE
         engine.setIsEnable("0");
         baseMapper.updateById(engine);
         return true;
+    }
+
+    /**
+     * 记录一次规则引擎启停（失败原因一并落库）
+     *
+     * @param engineId 规则引擎id
+     * @param action   操作 start-启用 stop-停用
+     * @param status   结果 0-成功 1-失败
+     * @param message  说明（失败原因）
+     */
+    private void saveControlLog(String engineId, String action, String status, String message) {
+        try {
+            LabdatahubRuleEngine engine = labdatahubRuleEngineMapper.selectById(engineId);
+            LabdatahubRuleEngineControlLog controlLog = new LabdatahubRuleEngineControlLog();
+            controlLog.setId(IdUtils.fastSimpleUUID());
+            controlLog.setEngineId(engineId);
+            controlLog.setEngineName(engine == null ? null : engine.getEngineName());
+            controlLog.setAction(action);
+            controlLog.setOperName(getCurrentOperName());
+            controlLog.setOperTime(new Date());
+            controlLog.setStatus(status);
+            if (message != null && message.length() > 500) {
+                message = message.substring(0, 500);
+            }
+            controlLog.setMessage(message);
+            labdatahubRuleEngineControlLogMapper.insert(controlLog);
+        } catch (Exception e) {
+            //日志表写失败不能反过来影响启停本身
+            log.error("记录规则引擎启停日志失败：id={}，action={}", engineId, action, e);
+        }
+    }
+
+    /**
+     * 当前操作人，无登录态（启动时自动恢复规则引擎）记为 system
+     *
+     * @return 操作人
+     */
+    private String getCurrentOperName() {
+        try {
+            return SecurityUtils.getUsername();
+        } catch (Exception e) {
+            return "system";
+        }
     }
 }

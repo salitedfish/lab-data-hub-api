@@ -138,6 +138,16 @@ mvn spring-boot:run -pl labdatahub-admin
 - **遗留的三个 store 目录已在 2026-10-15 删除**（`labdatahub-admin/data/mqtt/` 下：活的 `2089632540892631042_ja1m6fpxxu` + 两次故障隔离出来的 `.bak-20261009` / `.bak-20261014`，各 65M、合计 195M；删时后端在跑，实测 8085/8181 照常、MQTT 端口照常可连——关掉持久化后它们不被任何进程打开，删不会有 `EBUSY`）。两点后果：① 上面那条「mtime 一直不变」的验收证据**不能再复现**（文件没了），要重验只能临时开持久化造一次；② `data/mqtt/` 目录本身保留（`MqttBrokerUtils` 静态块及 `addBroker` 的 `path.mkdirs()` 都会按 `<brokerId>` 重建，缺了就建、建出来是空库），**下次真要用持久化时拿到的是干净空库**（不再带那条无 expiry 的毒会话）。注意这只是"清了库"，**上面第 2 层的泄漏写法（[line 126]）没动**。
 - **遗留未改**：`addBroker` 那个「先 startServer 后 put」的泄漏写法没动。关掉持久化后它泄漏的不再是文件锁，只剩端口/线程（端口那侧有 `PortChecker` 前置检查，页面会直接报「端口被占用」，是可读的错）。要彻底干净就把 `put` 挪到 `startServer` 之前，或在 catch 里兜底 `stopServer`。
 
+### 规则引擎启停日志（2026-10-23 实装）
+
+- **背景**：`PUT /business/ruleEngine/control`（列表页「启用/停用」）**没有 `@Log`**，`sys_oper_log` 查不到谁在什么时候启停；而停用会把 8181 的 MQTT broker 整个停掉，外部接收方在停用期间判设备离线（银申卡特 2026-10-23 13:46–13:48 那次的排查就卡在这里，最后只能翻 nginx `access.log`）。现在每次启停都落库、页面可查。
+- **表**：`labdatahub_rule_engine_control_log`（`id` / `engine_id` / `engine_name` / `action`（`start`、`stop`）/ `oper_name` / `oper_time` / `status`（`0` 成功、`1` 失败）/ `message`），索引 `(engine_id, oper_time DESC)`。增量脚本 `sql/pgsql/others/rule_engine_control_log.sql`，同步在 `init.sql`。
+- **记录点**：`LabdatahubRuleEngineServiceImpl#startRuleEngine` / `#stopRuleEngine` 各包一层，**原逻辑原样挪进私有 `doStartRuleEngine` / `doStopRuleEngine`，一行未改**；成功记 `status=0`，抛异常时先记 `status=1`（`message` 取异常信息，截断 500）再原样 `throw`，异常语义（`controlEngine` 的 500、启动自愈的 `log.error`）保持不变。`engineId` 不存在时仍返回 `false`（controller 回「规则引擎不存在」），**不记日志**。
+- **操作人**：`SecurityUtils.getUsername()`，无登录态抛异常 → 记 `system`（`TimerTask#initRuleEngine` 启动自愈线程无登录态，这条路也会留痕，别以为日志里出现 `system` 是异常）。写日志表自身失败只 `log.error`，**绝不影响启停**。
+- **接口**：`GET /business/ruleEngine/controlLog?engineId=&pageNum=&pageSize=` → `TableDataInfo`，按 `oper_time` 倒序。
+- **页面**：「规则引擎 / 数据转发」列表每张卡片 `.card-actions` 加「启停日志」按钮（`el-icon-document`，`logLoading[item.id]` 独立 loading），点开 `el-dialog` 表格：操作时间 / 操作 / 操作人 / 结果 / 说明，带分页。
+- **注意**：删除规则引擎时 `remove()` 也会逐个调 `stopRuleEngine`，因此删除动作会留下一条 `stop` 记录（`engine_name` 保留），属预期，不是脏数据。
+
 ### ProtoForge 模拟器会把 S7 位地址的 bit 部分丢掉（2026-09-18 实测，S7 位读对不上时先查这里）
 - **现象**：模拟器点位配 `M0.3`、`fixed_value=true`，页面显示 true；平台侧配「区类型=M、起始地址=0、位偏移=3」读出来是 **false**，且不报错——看起来像"我们读位读错了"。
 - **根因在模拟器侧**：`protoforge/protocols/s7/server.py` 的 `_parse_address` 解析位地址时只取字节号（`M0.3` → `(MARKERS, 0, offset=0)`，`DB1.DBX0.0` 同理），**bit 被丢掉**；`_sync_value_to_area` 对 bool 走 `struct.pack("<?", value)` 写 1 字节 → 值实际落在 **M0.0 / DBX?.0**。所以非 0 位偏移的点位在模拟器上都读不到期望值。
@@ -430,3 +440,28 @@ Modbus 是七个协议里**唯一**会对离线设备持续空转重连的：`ge
 - ⚠️ **两个坑**：
   ① **物模型保存是整份替换**（`remove by belongSn` + `saveBatch`），`labdatahub_properties.id` 会全部换新、内容不变 —— 做前后快照比对时别按 id 认行；计算差集的 `oldList` 必须在 remove **之前**查。
   ② **确认构建产物真的换新**：Windows 上只要**任何终端/进程的 cwd 在 `labdatahub-admin/target/` 里**，`mvn clean` 就删不掉那个（空）目录、直接 BUILD FAILURE —— 先 `cd` 出 target 再构建。更隐蔽的是 10:16 那次构建虽退出 0，`labdatahub-admin.jar` 仍是 8:09 的旧包、内嵌 `labdatahub-business-3.9.0.jar` 还是 10-16 的，重启后实际跑的是旧代码；**重启前必须核对** `unzip -l labdatahub-admin/target/labdatahub-admin.jar | grep labdatahub-business` 的时间戳（或 `javap` 确认新方法在包里），别只看 mvn 的退出码。
+
+### 设备日志容量治理：查询兜底范围、导出上限、索引与 TimescaleDB 策略（2026-10-24，银申卡特生产实测）
+
+- **触发**：生产 13,852,263 行 / 库 6,990MB（超表 6,971MB，其中索引 3,523MB），写入 5,507 行/分钟、日增约 477 万行；Druid 慢 SQL 日志里反复出现 `getDeviceLastData` 一类「取设备最新一条」的查询，EXPLAIN 实测 **5,892ms / 扫 4,293,755 条索引项 / 读约 147MB**。
+- **代码改动（business + component，不动表结构）**：
+  1. `LabdatahubDeviceLogsController`：抽出私有 `buildQueryWrapper(...)`，`list` 与 `export` 共用。**`startTime` 与 `endTime` 都为空时默认回看 24 小时**（`DEFAULT_LOOKBACK_HOURS`）—— 超表不设兜底范围就是全表扫；`export` 新增 `startTime/endTime/propertyName` 入参、按 `create_time` 倒序、`last("limit 50001")`，超过 `MAX_EXPORT_ROWS = 50000` 抛 `ServiceException`（`ExcelUtil` 整批读进内存，百万行直接把堆打满）。前端只有 `device/detail.vue` 调 `list` 且本来就带当天范围，**无需改前端**。
+  2. `LabdatahubPropertiesController#getDeviceLastData`、`DeviceDownUtils#functionDown`（**两处重载**）的「取最新一条 PROPERTY」查询：`orderByDesc(getReportTime)` → **`getCreateTime`**。`report_time` 上没有可用索引（`idx_device_logs_report_time` 被删，见下），而 `create_time` 有 `idx_device_logs_device_sn (device_sn, create_time DESC)`。**改后生产 EXPLAIN：gx-122 1.8ms / gx-339 8.7ms / catsj0002 3.8ms**。
+  3. `ParallelHealthCheck`：`PROTOCOL_THREADS.put("FANUC", 40)` → **80**（61 个 FANUC 组件在 40 线程下单轮 >10 秒、连续跳过 12+ 轮，日志刷「上一轮未完成，跳过本轮」）。
+- **索引**：删 `idx_device_logs_report_time (report_time DESC)`（527MB）与 `idx_device_sn (device_sn)`（86MB，被 `idx_device_logs_device_sn` 最左前缀完全覆盖）。`init.sql` 已同步删掉两段 `CREATE INDEX`；老库用 `sql/pgsql/others/device_logs_drop_redundant_index.sql`（超表上索引会传播到每个 chunk，`DROP INDEX` 打父表名即可；**超表不支持 `DROP INDEX CONCURRENTLY`**，普通 DROP 会短暂持 ACCESS EXCLUSIVE，挑低峰执行）。
+- **TimescaleDB 策略**：生产原为 compress **7 days** / drop **90 days**，与 `db.sql` 的 1 天 / 7 天不一致。已改为 **compress 1 day / drop 7 days**（用户 2026-10-24 明确批准缩短保留期，**不可逆**）。脚本 `sql/pgsql/others/device_logs_policy_compress1_drop7.sql`：**改 yml / 重跑建表脚本都无效**（`add_*_policy` 带 `if_not_exists => TRUE`），必须 `alter_job`；`alter_job` 的 `config` 是**整体替换**，所以脚本用 `原 config || 新值` 合并写回。⚠️ 本版本 TimescaleDB 的 `timescaledb_information.jobs` **没有 `hypertable_id` 列**，`SELECT ... hypertable_id` 会报列不存在；`hypertable_index_size(name)` 函数也不存在（量索引大小改用 `pg_class`/`pg_relation_size` 聚合）。⚠️ 压缩窗口必须小于保留窗口：两者都是 7 天时 chunk 到 7 天直接被删、压缩策略永远打不到，这也是把压缩从 7 天调回 1 天的原因。
+- **PostgreSQL 调优（生产，需重启服务）**：`shared_buffers` 128MB → **8GB**、`effective_cache_size` 4GB → **24GB**（64GB 机器）。⚠️ 业务账号 `sc_1.0.0` **不是 superuser、没有 `pg_read_all_settings`**，`ALTER SYSTEM` 用不了、`current_setting('data_directory')` 也读不了 —— 直接改 `C:\Program Files\PostgreSQL\15\data\postgresql.conf`（末尾追加一块，已留 `.bak-20261024`）再 `Restart-Service postgresql-x64-15`。
+- **验收（生产 2026-10-24 08:0x–08:14）**：删索引后父表只剩 `idx_device_logs_device_sn / idx_device_logs_log_type / labdatahub_device_logs_create_time_idx / pkey`、**chunk 级残留 0 条**；`shared_buffers=8GB`、`effective_cache_size=24GB` 已生效；重启后 `Started LabdatahubApplication`、`sys-error.log` 零新增、`logQueueFull` 零条。
+- ⚠️ **同一个表里被删的 6 行重复 `labdatahub_properties`（catsj0002 的 run_status/gz_status、gx-339 的 cnc_pst/cnc_cc/cnc_pn/cnc_al，各 2 条）**：删的是每组 id 较大的那条（守卫：同 `belong_sn + identifier` 存在更小 id 才删）。**没有任何表按 property id 外键引用**（`information_schema.columns` 里只有 `labdatahub_device_logs.properties` 这个正文字段），删前已把 12 行原始数据备份到 `备份/2026-10-24-生产容量治理/`。
+
+### 网络组件不允许重复端点：新增/编辑保存时校验同 netType 的 IP+端口（2026-10-24 实装）
+
+- **背景**：组件就是「一条到设备/服务的连接」。两个组件配同一个 IP:端口 = 对同一台设备开两份客户端，两个消费线程抢同一个端点，数据被切成两半、队列堆满丢消息（2026-10-24 银申卡特 gx-115/gx-122 就是产品上选错组件、两台设备挤进同一个 FANUC 组件，队列长期满载、延迟 9 分钟）。此前**前端和后端都没有任何重复判断**：`/business/component/checkPort` 只查本机端口是否被别的进程占用（而且页面根本没调它），删除时才有「组件已被产品使用」的保护。
+- **实现**：`LabdatahubComponentController#checkEndpointNotUsed`，在 `add` / `edit` 的**最前面**调用（早于 `save` / `updateById`，失败时事务里什么都没写）。取端点用私有 `resolveEndpoint(otherConfig)`，键名与 `syncDisplayAddress` 同一套：`ipAddr` + `port`（兜底 `serverPort`）。
+- **判定口径（改之前先想清楚这四条）**：
+  1. **只比同 `netType`** —— 同一端口号跑不同协议是合法的，最典型的是三菱 3E：`MITSUBISHI_MC3E_TCP` 与 `MITSUBISHI_MC3E_UDP` 本来就可能配同一个端口号。
+  2. **数据库类组件额外比 `databaseName`** —— 同一台数据库服务器、同一端口下配多个库是正常用法，只有库名也相同才算重复。
+  3. **没有 `ipAddr` 的组件不参与** —— 各类 `*_SERVER`（绑 0.0.0.0）、`MQTT_BROKER`（只有 tcpPort/wsPort）、`MQTT_CLIENT`（配 `brokerUrl`，同一 broker 上多个客户端订阅不同主题是正常用法）。
+  4. **编辑时排除自己**（按 id）；停用的组件也算占用 —— 现在不冲突，启用时就冲突了。
+- **报错文案**带占用方组件名、netType、启用状态，例如「IP 192.168.151.145 端口 8194 已被网络组件「FANUC_FOCAS网络组件gx-122」（FANUC_TCP，已启用）使用，同一个端点不能重复配置…」，抛 `ServiceException`，前端 `request.js` 拦截后直接弹这条消息，**前端无需改动**。
+- **对存量数据无影响**：2026-10-24 核对生产 84 个组件，按 `(net_type, ip_addr, port)` 分组 **0 组重复**（gx-115 已在当天上午归位到自己的组件），所以编辑任何现有组件都不会被这条校验挡住。生产组件 `other_config` 的键实测为 `ipAddr,port,timeout`（+ FANUC 的 `libPath`、三菱 CNC 的 `model`、S7 的 `rack/slot`），与 `resolveEndpoint` 的取键一致。

@@ -213,7 +213,8 @@ public class LabdatahubPropertiesController extends BaseController
         if(decodeMessage==null){
             LabdatahubDeviceLogs log = labdatahubDeviceLogsService.getOne(new LambdaQueryWrapper<LabdatahubDeviceLogs>()
                     .eq(LabdatahubDeviceLogs::getDeviceSn,deviceSn)
-                    .orderByDesc(LabdatahubDeviceLogs::getReportTime)
+                    // 走 create_time：有 (device_sn, create_time DESC) 组合索引；report_time 无可用索引，会退化成扫该设备全部历史
+                    .orderByDesc(LabdatahubDeviceLogs::getCreateTime)
                     .eq(LabdatahubDeviceLogs::getLogType,"PROPERTY")
                     .last(" limit 1 "));
             if(log!=null){

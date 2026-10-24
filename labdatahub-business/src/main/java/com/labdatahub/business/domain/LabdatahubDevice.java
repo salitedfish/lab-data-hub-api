@@ -84,6 +84,24 @@ public class LabdatahubDevice {
      */
     @Excel(name = "网络组件名称")
     private String componentName;
+
+    /**
+     * 网络组件IP（列表展示与搜索用，来自 labdatahub_component.ip_addr，不落库）
+     */
+    @TableField(exist = false)
+    private String componentIp;
+
+    /**
+     * 网络组件端口（列表展示用，来自 labdatahub_component.port，不落库）
+     */
+    @TableField(exist = false)
+    private String componentPort;
+
+    /**
+     * 网络组件备注（列表展示与搜索用，来自 labdatahub_component.remark，不落库）
+     */
+    @TableField(exist = false)
+    private String componentRemark;
     /**
      * 协议id
      */

@@ -2996,6 +2996,85 @@ COMMENT ON COLUMN public.labdatahub_rule_engine.is_enable IS '0-停止 1-启用'
 
 
 --
+-- Name: labdatahub_rule_engine_control_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.labdatahub_rule_engine_control_log (
+    id character varying(64) NOT NULL,
+    engine_id character varying(64) NOT NULL,
+    engine_name character varying(255) DEFAULT NULL::character varying,
+    action character varying(16) NOT NULL,
+    oper_name character varying(64) DEFAULT NULL::character varying,
+    oper_time timestamp(6) without time zone,
+    status character(1) DEFAULT '0'::bpchar,
+    message character varying(500) DEFAULT NULL::character varying
+);
+
+
+--
+-- Name: TABLE labdatahub_rule_engine_control_log; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON TABLE public.labdatahub_rule_engine_control_log IS '规则引擎启停日志';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.id IS 'id';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.engine_id; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.engine_id IS '规则引擎id';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.engine_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.engine_name IS '引擎名称';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.action; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.action IS '操作 start-启用 stop-停用';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.oper_name; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.oper_name IS '操作人（无登录态时为 system）';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.oper_time; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.oper_time IS '操作时间';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.status; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.status IS '结果 0-成功 1-失败';
+
+
+--
+-- Name: COLUMN labdatahub_rule_engine_control_log.message; Type: COMMENT; Schema: public; Owner: -
+--
+
+COMMENT ON COLUMN public.labdatahub_rule_engine_control_log.message IS '说明（失败原因）';
+
+
+--
 -- Name: labdatahub_s71200_config; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7113,6 +7192,14 @@ ALTER TABLE ONLY public.labdatahub_rule_engine
 
 
 --
+-- Name: labdatahub_rule_engine_control_log labdatahub_rule_engine_control_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.labdatahub_rule_engine_control_log
+    ADD CONSTRAINT labdatahub_rule_engine_control_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: labdatahub_omronfins_config labdatahub_s71200_config_copy1_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7413,18 +7500,11 @@ CREATE INDEX idx_device_logs_log_type ON public.labdatahub_device_logs USING btr
 
 
 --
--- Name: idx_device_logs_report_time; Type: INDEX; Schema: public; Owner: -
+-- 2026-10-24 删除两条冗余索引（生产实测 idx_device_logs_report_time 527MB、idx_device_sn 86MB）：
+--   · idx_device_logs_report_time (report_time DESC) —— 查询已统一改按 create_time 排序，无语句再用它
+--   · idx_device_sn (device_sn) —— 被 idx_device_logs_device_sn (device_sn, create_time DESC) 完全覆盖
+-- 老库升级脚本：sql/pgsql/others/drop_device_logs_redundant_index.sql
 --
-
-CREATE INDEX idx_device_logs_report_time ON public.labdatahub_device_logs USING btree (report_time DESC);
-
-
---
--- Name: idx_device_sn; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX idx_device_sn ON public.labdatahub_device_logs USING btree (device_sn);
-
 
 --
 -- Name: idx_func_record_device_sn; Type: INDEX; Schema: public; Owner: -
@@ -7459,6 +7539,13 @@ CREATE INDEX idx_point_write_record_device ON public.labdatahub_point_write_reco
 --
 
 CREATE INDEX idx_qrtz_triggers_job ON public.qrtz_triggers USING btree (sched_name, job_name, job_group);
+
+
+--
+-- Name: idx_rule_engine_control_log_engine; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_rule_engine_control_log_engine ON public.labdatahub_rule_engine_control_log USING btree (engine_id, oper_time DESC);
 
 
 --

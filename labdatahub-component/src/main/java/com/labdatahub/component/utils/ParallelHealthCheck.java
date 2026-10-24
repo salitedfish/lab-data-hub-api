@@ -51,13 +51,14 @@ public final class ParallelHealthCheck {
      * <p>默认的 16 是按「单台探活 1.5 秒」定的（S7 那种建连超时）。<b>FANUC 是 3 秒</b>
      * （{@code FanucFocasConnectionManager#toTimeoutSeconds} 把 3000ms 的配置超时折成 3 秒），
      * 100 台同时离线时 16 线程一轮要 {@code 100×3÷16 ≈ 18.8} 秒 &gt; 10 秒调度周期 ——
-     * 结果是每轮都「跳过本轮」，断线感知与重连永久失效。给它 40：
-     * {@code 100×3÷40 ≈ 7.5} 秒，留出余量。
+     * 结果是每轮都「跳过本轮」，断线感知与重连永久失效。给它 80：
+     * {@code 100×3÷80 ≈ 3.75} 秒。2026-10-24 从 40 提到 80 —— 银申卡特生产实测 61 个 FANUC 组件
+     * 在 40 线程下单轮仍 &gt;10 秒、连续跳过 12+ 轮（日志 WARN「上一轮未完成，跳过本轮」刷屏）。
      */
     private static final Map<String, Integer> PROTOCOL_THREADS = new ConcurrentHashMap<>();
 
     static {
-        PROTOCOL_THREADS.put("FANUC", 40);
+        PROTOCOL_THREADS.put("FANUC", 80);
     }
 
     /** 按协议名缓存的执行器实例：各协议只需调一次静态 {@link #run}，无需自己维护字段 */

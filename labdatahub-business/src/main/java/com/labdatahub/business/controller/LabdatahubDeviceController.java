@@ -2,15 +2,21 @@ package com.labdatahub.business.controller;
 
 import java.util.Arrays;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import javax.servlet.http.HttpServletResponse;
 
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.labdatahub.business.domain.*;
 import com.labdatahub.business.event.DeviceHeartbeatManager;
+import com.labdatahub.business.service.ILabdatahubComponentService;
 import com.labdatahub.business.service.ILabdatahubFunctionService;
 import com.labdatahub.business.service.IOpenApiPointValueService;
 import com.labdatahub.business.service.ILabdatahubProductService;
@@ -48,6 +54,8 @@ public class LabdatahubDeviceController extends BaseController
     private ILabdatahubFunctionService labdatahubFunctionService;
     @Autowired
     private IOpenApiPointValueService openApiPointValueService;
+    @Autowired
+    private ILabdatahubComponentService labdatahubComponentService;
     /**
      * 查询设备列表
      */
@@ -61,9 +69,130 @@ public class LabdatahubDeviceController extends BaseController
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDevice.getProductSn()),"product_sn",labdatahubDevice.getProductSn());
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDevice.getStatus()),"status",labdatahubDevice.getStatus());
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDevice.getGroupCode()),"group_code",labdatahubDevice.getGroupCode());
+        applyComponentFilter(queryWrapper, labdatahubDevice);
         Page<LabdatahubDevice> page = new Page<LabdatahubDevice>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubDevice> pageList = labdatahubDeviceService.page(page,queryWrapper);
+        fillComponentInfo(pageList.getRecords());
         return getDataTable(pageList);
+    }
+
+    /**
+     * 按网络组件属性过滤设备：名称 / IP / 备注。
+     *
+     * <p>设备表只有 component_id、component_name 两个派生列，IP、端口、备注都在 labdatahub_component 上，
+     * 所以先按条件把命中的组件 ID 查出来，再用 component_id IN (...) 过滤设备。
+     * 一个组件都没命中时直接让设备查询恒假 —— 不能用空 IN，MP 对空集合的处理是忽略该条件，
+     * 那样就会把全部设备返回，搜索形同失效。
+     */
+    private void applyComponentFilter(QueryWrapper<LabdatahubDevice> queryWrapper, LabdatahubDevice query) {
+        String componentName = StringUtils.trim(query.getComponentName());
+        String componentIp = StringUtils.trim(query.getComponentIp());
+        String componentRemark = StringUtils.trim(query.getComponentRemark());
+        if (StringUtils.isEmpty(componentName) && StringUtils.isEmpty(componentIp) && StringUtils.isEmpty(componentRemark)) {
+            return;
+        }
+        LambdaQueryWrapper<LabdatahubComponent> componentWrapper = new LambdaQueryWrapper<>();
+        componentWrapper.like(StringUtils.isNotEmpty(componentName), LabdatahubComponent::getName, componentName);
+        componentWrapper.like(StringUtils.isNotEmpty(componentIp), LabdatahubComponent::getIpAddr, componentIp);
+        componentWrapper.like(StringUtils.isNotEmpty(componentRemark), LabdatahubComponent::getRemark, componentRemark);
+        List<LabdatahubComponent> components = labdatahubComponentService.list(componentWrapper);
+        if (components.isEmpty()) {
+            queryWrapper.apply("1 = 0");
+            return;
+        }
+        Set<String> componentIds = new HashSet<>();
+        for (LabdatahubComponent component : components) {
+            componentIds.add(component.getId());
+        }
+        queryWrapper.in("component_id", componentIds);
+    }
+
+    /**
+     * 回填设备对应的网络组件 IP / 端口 / 备注（仅本页数据，一次批量查询）。
+     *
+     * <p>ip_addr / port 是 labdatahub_component 上的派生展示列，正常保存时都会同步；
+     * 老数据若为空，再从 other_config 里取一次，避免卡片上明明有组件却显示 "--"。
+     */
+    private void fillComponentInfo(List<LabdatahubDevice> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        Set<String> componentIds = new HashSet<>();
+        for (LabdatahubDevice device : records) {
+            if (StringUtils.isNotEmpty(device.getComponentId())) {
+                componentIds.add(device.getComponentId());
+            }
+        }
+        if (componentIds.isEmpty()) {
+            return;
+        }
+        Map<String, LabdatahubComponent> componentMap = new HashMap<>();
+        for (LabdatahubComponent component : labdatahubComponentService.listByIds(componentIds)) {
+            componentMap.put(component.getId(), component);
+        }
+        for (LabdatahubDevice device : records) {
+            LabdatahubComponent component = componentMap.get(device.getComponentId());
+            if (component == null) {
+                continue;
+            }
+            device.setComponentIp(resolveComponentIp(component));
+            device.setComponentPort(resolveComponentPort(component));
+            device.setComponentRemark(component.getRemark());
+        }
+    }
+
+    /**
+     * 组件 IP：优先取派生列，老数据没同步过则回退 other_config.ipAddr / brokerUrl
+     */
+    private String resolveComponentIp(LabdatahubComponent component) {
+        if (StringUtils.isNotEmpty(component.getIpAddr())) {
+            return component.getIpAddr();
+        }
+        JSONObject config = parseOtherConfig(component.getOtherConfig());
+        if (config == null) {
+            return null;
+        }
+        String ipAddr = config.getString("ipAddr");
+        return StringUtils.isNotEmpty(ipAddr) ? ipAddr : config.getString("brokerUrl");
+    }
+
+    /**
+     * 组件端口：优先取派生列，老数据回退 other_config，键名与组件保存时的同步逻辑一致
+     */
+    private String resolveComponentPort(LabdatahubComponent component) {
+        if (StringUtils.isNotEmpty(component.getPort())) {
+            return component.getPort();
+        }
+        JSONObject config = parseOtherConfig(component.getOtherConfig());
+        if (config == null) {
+            return null;
+        }
+        String port = config.getString("port");
+        if (StringUtils.isEmpty(port)) {
+            port = config.getString("serverPort");
+        }
+        if (StringUtils.isEmpty(port)) {
+            String tcpPort = config.getString("tcpPort");
+            if (StringUtils.isNotEmpty(tcpPort)) {
+                String wsPort = config.getString("wsPort");
+                port = StringUtils.isNotEmpty(wsPort) ? tcpPort + "," + wsPort : tcpPort;
+            }
+        }
+        return port;
+    }
+
+    /**
+     * 解析组件的动态配置，非法 JSON 返回 null
+     */
+    private JSONObject parseOtherConfig(String otherConfig) {
+        if (StringUtils.isEmpty(otherConfig)) {
+            return null;
+        }
+        try {
+            return JSONObject.parseObject(otherConfig);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
