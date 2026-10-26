@@ -67,9 +67,15 @@ public class LabdatahubComponentController extends BaseController
     public TableDataInfo list(LabdatahubComponent labdatahubComponent)
     {
     	LambdaQueryWrapper<LabdatahubComponent> queryWrapper = new LambdaQueryWrapper<>();
+        // id 精确过滤：设备列表点组件名跳转过来时用（组件名称可能重名，名称模糊匹配不够）
+        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubComponent.getId()),
+                LabdatahubComponent::getId, labdatahubComponent.getId());
         // 组件名称搜索（此前忽略所有查询参数，列表页的搜索框一直无效）
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubComponent.getName()),
                 LabdatahubComponent::getName, labdatahubComponent.getName());
+        // 状态筛选：启用 / 停用
+        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubComponent.getStatus()),
+                LabdatahubComponent::getStatus, labdatahubComponent.getStatus());
         queryWrapper.orderByAsc(LabdatahubComponent::getCreateTime);
         Page<LabdatahubComponent> page = new Page<LabdatahubComponent>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubComponent> pageList = labdatahubComponentService.page(page,queryWrapper);
