@@ -3,7 +3,10 @@ package com.labdatahub.business.utils;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -106,14 +109,29 @@ public class ProtocolPointCopyUtil {
         if (StringUtils.isEmpty(sourceList)) {
             return;
         }
+        // 由AI修改：目标归属已有的 identifier 不再复制。设备创建时 syncPropertyToDevice 已经把产品属性继承过来，
+        // 源设备的设备级副本若同 identifier 再插一遍就是重复行（物模型重复、点位不重复的来源）。
+        Set<String> targetIdentifiers = labdatahubPropertiesService.list(new LambdaQueryWrapper<LabdatahubProperties>()
+                        .eq(LabdatahubProperties::getBelongSn, newSn))
+                .stream()
+                .map(LabdatahubProperties::getIdentifier)
+                .filter(StringUtils::isNotBlank)
+                .collect(Collectors.toSet());
         List<LabdatahubProperties> copyList = new ArrayList<>();
         for (LabdatahubProperties source : sourceList) {
+            String identifier = source.getIdentifier();
+            if (StringUtils.isNotBlank(identifier) && !targetIdentifiers.add(identifier)) {
+                continue;
+            }
             LabdatahubProperties copy = new LabdatahubProperties();
             BeanUtils.copyProperties(source, copy);
             copy.setId(null);
             copy.setBelongSn(newSn);
             // belongType / fromType 保持源值（产品继承到设备的 belong_type=1 不在此列）
             copyList.add(copy);
+        }
+        if (copyList.isEmpty()) {
+            return;
         }
         labdatahubPropertiesService.saveBatch(copyList);
     }
@@ -156,13 +174,60 @@ public class ProtocolPointCopyUtil {
             return;
         }
         List<T> copyList = new ArrayList<>();
+        // 由AI修改：源归属自身若有重复 code（旧版本设备删除不清点位、重复复制叠加而来），每个 code+归属类型只带一条，
+        // 否则重复会原样传播到新设备（gx-341 就是这样从源设备带出两份的）
+        Set<String> copiedKeys = new HashSet<>();
         for (T source : sourceList) {
+            String key = readStringField(source, "getCode") + "|" + readStringField(source, "getBelongType");
+            if (!copiedKeys.add(key)) {
+                continue;
+            }
             T copy = (T) BeanUtils.instantiateClass(source.getClass());
             BeanUtils.copyProperties(source, copy);
             setConfigBaseFields(copy, newSn);
             copyList.add(copy);
         }
         configService.saveBatch(copyList);
+    }
+
+    /**
+     * 由AI修改：清掉该归属 SN 下遗留的物模型与全部协议点位行。
+     * 设备删除不清这两类表，同 SN 重建时旧行还在，复制时再整份插入就会叠成重复行
+     * （gx-209 每个点位三条、gx-265 两条即由此而来）。只在「确认该 SN 没有设备行」的创建入口调用，
+     * 不能用于普通保存，否则会删掉在用的配置。
+     *
+     * @param belongSn 设备/产品SN
+     */
+    public void clearBelongPoints(String belongSn) {
+        labdatahubPropertiesService.remove(new LambdaQueryWrapper<LabdatahubProperties>()
+                .eq(LabdatahubProperties::getBelongSn, belongSn));
+        clearConfigTable(labdatahubModbusConfigService, belongSn);
+        clearConfigTable(labdatahubFanucConfigService, belongSn);
+        clearConfigTable(labdatahubMitsubishiCncConfigService, belongSn);
+        clearConfigTable(labdatahubMitsubishiConfigService, belongSn);
+        clearConfigTable(labdatahubBrotherConfigService, belongSn);
+        clearConfigTable(labdatahubOmronFinsConfigService, belongSn);
+        clearConfigTable(labdatahubS71200ConfigService, belongSn);
+        clearConfigTable(labdatahubDbConfigService, belongSn);
+    }
+
+    /**
+     * 清空一张协议点位表里属于该归属的行
+     */
+    private <T> void clearConfigTable(IService<T> configService, String belongSn) {
+        configService.remove(new QueryWrapper<T>().eq("belong_sn", belongSn));
+    }
+
+    /**
+     * 通过反射读取协议点位公共字段（各 Config 表结构同构，用 getter 取 code/belongType）
+     */
+    private String readStringField(Object config, String getter) {
+        try {
+            Object value = config.getClass().getMethod(getter).invoke(config);
+            return value == null ? "" : value.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("读取协议点位公共字段失败：" + getter, e);
+        }
     }
 
     /**

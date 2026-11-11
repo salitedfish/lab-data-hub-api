@@ -66,9 +66,15 @@ public class LabdatahubDeviceController extends BaseController
         queryWrapper.orderByAsc("create_time");
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubDevice.getDeviceSn()),"device_sn",labdatahubDevice.getDeviceSn());
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubDevice.getDeviceName()),"device_name",labdatahubDevice.getDeviceName());
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDevice.getProductSn()),"product_sn",labdatahubDevice.getProductSn());
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDevice.getStatus()),"status",labdatahubDevice.getStatus());
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubDevice.getGroupCode()),"group_code",labdatahubDevice.getGroupCode());
+        // 筛选项支持多选：逗号串拆成列表后 in 查询，单值与原来 eq 等价
+        List<String> productSnList = StringUtils.str2List(labdatahubDevice.getProductSn(), ",");
+        queryWrapper.in(!productSnList.isEmpty(),"product_sn",productSnList);
+        List<String> statusList = StringUtils.str2List(labdatahubDevice.getStatus(), ",");
+        queryWrapper.in(!statusList.isEmpty(),"status",statusList);
+        List<String> groupCodeList = StringUtils.str2List(labdatahubDevice.getGroupCode(), ",");
+        queryWrapper.in(!groupCodeList.isEmpty(),"group_code",groupCodeList);
+        List<String> protocolNameList = StringUtils.str2List(labdatahubDevice.getProtocolName(), ",");
+        queryWrapper.in(!protocolNameList.isEmpty(),"protocol_name",protocolNameList);
         applyComponentFilter(queryWrapper, labdatahubDevice);
         Page<LabdatahubDevice> page = new Page<LabdatahubDevice>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubDevice> pageList = labdatahubDeviceService.page(page,queryWrapper);

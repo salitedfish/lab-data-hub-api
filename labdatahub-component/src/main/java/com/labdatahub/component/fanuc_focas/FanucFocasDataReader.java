@@ -333,7 +333,9 @@ public class FanucFocasDataReader {
                 return String.valueOf(data.mcr_val.longValue() / Math.pow(10, data.dec_val));
             }
             case "timer": {
-                // 时间：param1=1 运行 2 切削 3 循环 4 上电（cnc_rdtimer type 1/2/3/0），单位分钟
+                // 时间：param1=1 运行 2 切削 3 循环 4 上电（cnc_rdtimer type 1/2/3/0），返回总秒数
+                // FOCAS2 返回 IODBTIME{minute, msec}：minute 是整分钟、msec 是不足一分钟的毫秒余数。
+                // 只取 minute 会把秒丢掉（机床 6分42秒 读成 6），必须合并换算成秒再返回。
                 if (param1 == null || param1 < 1 || param1 > 4) {
                     return null;
                 }
@@ -360,7 +362,8 @@ public class FanucFocasDataReader {
                 if (ret != Fwlib.EW_OK) {
                     return null;
                 }
-                return String.valueOf(data.minute.longValue());
+                long totalSeconds = data.minute.longValue() * 60L + data.msec.longValue() / 1000L;
+                return String.valueOf(totalSeconds);
             }
             case "count": {
                 // 加工数/产量：param1=0 总加工数 1 当日产量(稼働程序加工数) 2 目标产量(特定加工数)

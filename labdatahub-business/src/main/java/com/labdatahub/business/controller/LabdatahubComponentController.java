@@ -73,9 +73,9 @@ public class LabdatahubComponentController extends BaseController
         // 组件名称搜索（此前忽略所有查询参数，列表页的搜索框一直无效）
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubComponent.getName()),
                 LabdatahubComponent::getName, labdatahubComponent.getName());
-        // 状态筛选：启用 / 停用
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubComponent.getStatus()),
-                LabdatahubComponent::getStatus, labdatahubComponent.getStatus());
+        // 状态筛选：启用 / 停用，支持多选（逗号串拆列表后 in，单值与原来 eq 等价）
+        List<String> statusList = StringUtils.str2List(labdatahubComponent.getStatus(), ",");
+        queryWrapper.in(!statusList.isEmpty(), LabdatahubComponent::getStatus, statusList);
         queryWrapper.orderByAsc(LabdatahubComponent::getCreateTime);
         Page<LabdatahubComponent> page = new Page<LabdatahubComponent>(PageUtils.getPageNum(),PageUtils.getPageSize());
         Page<LabdatahubComponent> pageList = labdatahubComponentService.page(page,queryWrapper);
@@ -249,7 +249,7 @@ public class LabdatahubComponentController extends BaseController
     }
 
     /**
-     * 校验「同一个端点」有没有被别的网络组件占用 —— 同一网络类型下，IP + 端口不允许重复。
+     * 校验「同一个端点」有没有被别的网络组件占用 —— IP + 端口不允许重复，<b>不限网络类型</b>。
      *
      * <p>为什么必须拦：组件是「一条到设备/服务的连接」。两个组件配同一个 IP:端口，就等于对同一台设备
      * 开了两份客户端，两个消费线程各自排队去抢同一个连接，数据会被切成两半、队列堆积丢消息
@@ -258,8 +258,8 @@ public class LabdatahubComponentController extends BaseController
      *
      * <p>判定口径（与 {@link #syncDisplayAddress} 取同一套键名）：
      * <ul>
-     *   <li>只比 <b>同 netType</b> 的组件 —— 同一端口号上跑不同协议是合法的，例如三菱 3E 的
-     *       {@code MITSUBISHI_MC3E_TCP} 与 {@code MITSUBISHI_MC3E_UDP} 可以用同一个端口号。</li>
+     *   <li><b>不限 netType</b> —— 同一个 IP:端口只可能是一个服务，换一种协议类型再建组件照样是两份客户端；
+     *       TCP/UDP 同端口也不放过。同 IP 不同端口不算重复（同一台主机/网关上的不同服务是两个端点）。</li>
      *   <li>数据库类组件额外比 {@code databaseName} —— 同一台数据库服务器、同一个端口下可以配多个库。</li>
      *   <li>MQTT 客户端 / 各类服务端组件不参与：它们没有 {@code ipAddr}（服务端绑 0.0.0.0，
      *       MQTT 客户端配的是 {@code brokerUrl}，同一 broker 上多个客户端订阅不同主题是正常用法）。</li>
@@ -282,9 +282,6 @@ public class LabdatahubComponentController extends BaseController
         for (LabdatahubComponent other : labdatahubComponentService.list()) {
             // 编辑自己时不能被自己挡住
             if (target.getId() != null && target.getId().equals(other.getId())) {
-                continue;
-            }
-            if (!netType.equals(StringUtils.trim(other.getNetType()))) {
                 continue;
             }
             String[] otherEndpoint = resolveEndpoint(other.getOtherConfig());

@@ -79,10 +79,10 @@ public class MitsubishiCncDataReader {
         put("ss1", 63, 3, 0, 1, 3);      // 主轴转速（回 u32）
         put("tn", 21, 1, 0, 0, 3);       // 刀具号（回 u32）
         put("stn", 45, 103, 1, 0, 3);    // 程序步序号（回 u32；不是主轴转速）
-        put("po", 40, 1, 1, 0, 3);       // 上电时间（回 u32，毫秒）
-        put("opt", 40, 2, 1, 0, 3);      // 运行时间（回 u32，毫秒）
-        put("cut", 40, 3, 1, 0, 3);      // 切削时间（回 u32，毫秒）
-        put("ct", 40, 8, 1, 0, 3);       // 实测每秒 +1 的计时量（语义未证实，不是计数）
+        put("po", 40, 1, 1, 0, 3);       // 上电时间（回 u32，毫秒 → 平台折算成秒）
+        put("opt", 40, 2, 1, 0, 3);      // 运行时间（回 u32，毫秒 → 平台折算成秒）
+        put("cut", 40, 3, 1, 0, 3);      // 切削时间（回 u32，毫秒 → 平台折算成秒）
+        put("ct", 40, 8, 1, 0, 3);       // 计时（回 u32，MMSS 打包值，如 808=8分08秒 → 平台折算成总秒数）
         put("sv", 43, 1, 0, 0, 3);       // S 代码（回 u32）
         put("fv", 42, 1, 1, 0, 3);       // F 代码（回 double）
         put("st", 63, 221, 1, 1, 3);     // 主轴温度（回 u16）
@@ -237,7 +237,44 @@ public class MitsubishiCncDataReader {
         }
         byte[] data = new byte[dataLength];
         System.arraycopy(body, 24, data, 0, dataLength);
-        return parseData(respDataType, data);
+        String raw = parseData(respDataType, data);
+        return convertTimeToSeconds(readType, raw);
+    }
+
+    /**
+     * 时间类点位统一折算成总秒数（数采口径：所有时长点位一律返回秒，供业务系统直接参与计算）
+     *
+     * <p>三菱 CNC 的时间点位原始单位不统一：
+     * <ul>
+     *   <li>po / opt / cut（上电 / 运行 / 切削时间）：机床回毫秒，÷1000</li>
+     *   <li>ct（计时）：机床回 MMSS 打包值，如 808 = 8分08秒，按 分×60 + 秒 折算；
+     *       跨分钟时数值会跳变（159 → 200），不是每秒 +1 的普通计数器</li>
+     * </ul>
+     *
+     * @param readType 采集项类型
+     * @param raw      机床原始值字符串
+     * @return 总秒数；非时间点位或无法解析时原样返回
+     */
+    private static String convertTimeToSeconds(String readType, String raw) {
+        if (readType == null || raw == null) {
+            return raw;
+        }
+        String type = readType.trim().toLowerCase();
+        long value;
+        try {
+            value = Long.parseLong(raw.trim());
+        } catch (NumberFormatException e) {
+            return raw;
+        }
+        if ("po".equals(type) || "opt".equals(type) || "cut".equals(type)) {
+            // 毫秒 → 秒
+            return String.valueOf(value / 1000L);
+        }
+        if ("ct".equals(type)) {
+            // MMSS 打包值 → 总秒数
+            return String.valueOf(value / 100L * 60L + value % 100L);
+        }
+        return raw;
     }
 
     /**

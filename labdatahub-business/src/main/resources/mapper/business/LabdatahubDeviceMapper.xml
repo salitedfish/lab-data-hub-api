@@ -35,12 +35,13 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="deviceName != null  and deviceName != ''"> and device_name like concat('%', #{deviceName}, '%')</if>
             <if test="productId != null  and productId != ''"> and product_id = #{productId}</if>
             <if test="productName != null  and productName != ''"> and product_name like concat('%', #{productName}, '%')</if>
-            <if test="productSn != null  and productSn != ''"> and product_sn = #{productSn}</if>
+            <if test="productSn != null  and productSn != ''"> and product_sn in <foreach collection='productSn.split(",")' item="v" open="(" separator="," close=")">#{v}</foreach></if>
             <if test="linkMethodId != null  and linkMethodId != ''"> and link_method_id = #{linkMethodId}</if>
             <if test="linkMethodName != null  and linkMethodName != ''"> and link_method_name like concat('%', #{linkMethodName}, '%')</if>
             <if test="protocolId != null  and protocolId != ''"> and protocol_id = #{protocolId}</if>
-            <if test="protocolName != null  and protocolName != ''"> and protocol_name like concat('%', #{protocolName}, '%')</if>
-            <if test="status != null  and status != ''"> and status = #{status}</if>
+            <if test="protocolName != null  and protocolName != ''"> and protocol_name in <foreach collection='protocolName.split(",")' item="v" open="(" separator="," close=")">#{v}</foreach></if>
+            <if test="status != null  and status != ''"> and status in <foreach collection='status.split(",")' item="v" open="(" separator="," close=")">#{v}</foreach></if>
+            <if test="groupCode != null  and groupCode != ''"> and group_code in <foreach collection='groupCode.split(",")' item="v" open="(" separator="," close=")">#{v}</foreach></if>
         </where>
     </select>
     

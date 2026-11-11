@@ -68,7 +68,9 @@ public class LabdatahubProductController extends BaseController {
     public TableDataInfo list(LabdatahubProduct labdatahubProduct) {
         QueryWrapper<LabdatahubProduct> queryWrapper = new QueryWrapper<>();
         queryWrapper.orderByAsc("create_time");
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubProduct.getGroupCode()),"group_code",labdatahubProduct.getGroupCode());
+        // 产品分组支持多选：逗号串拆成列表后 in 查询，单值与原来 eq 等价
+        List<String> groupCodeList = StringUtils.str2List(labdatahubProduct.getGroupCode(), ",");
+        queryWrapper.in(!groupCodeList.isEmpty(),"group_code",groupCodeList);
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubProduct.getProductName()),"product_name",labdatahubProduct.getProductName());
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubProduct.getProductSn()),"product_sn",labdatahubProduct.getProductSn());
         // 按产品编码集合过滤（规则引擎打开节点时校验「产品范围」里已选产品是否仍存在，已删除的自动剔除）

@@ -38,6 +38,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="deviceCount != null "> and device_count = #{deviceCount}</if>
             <if test="deviceType != null  and deviceType != ''"> and device_type = #{deviceType}</if>
             <if test="status != null  and status != ''"> and status = #{status}</if>
+            <if test="groupCode != null  and groupCode != ''"> and group_code in <foreach collection='groupCode.split(",")' item="v" open="(" separator="," close=")">#{v}</foreach></if>
         </where>
     </select>
     

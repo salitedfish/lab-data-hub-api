@@ -180,6 +180,13 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
         if(count>0){
             return AjaxResult.warn("设备sn已经被产品使用，请更换设备sn");
         }
+        // 由AI修改：设备 SN 必须唯一。复制设备时把 SN 改成已有设备的，会建出同 SN 的多条设备行，
+        // 物模型/协议点位随后按 SN 叠加（设备删除又不清理这两类表），gx-209 的三套点位就是这么来的
+        long sameDeviceCount = baseMapper.selectCount(new LambdaQueryWrapper<LabdatahubDevice>()
+                .eq(LabdatahubDevice::getDeviceSn, labdatahubDevice.getDeviceSn()));
+        if (sameDeviceCount > 0) {
+            return AjaxResult.warn("设备sn已存在，请更换设备sn");
+        }
         LabdatahubProduct labdatahubProduct = labdatahubProductService.getById(labdatahubDevice.getProductId());
         labdatahubDevice.setProductName(labdatahubProduct.getProductName());
         labdatahubDevice.setProductSn(labdatahubProduct.getProductSn());
@@ -191,6 +198,9 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
         labdatahubDevice.setComponentName(labdatahubProduct.getComponentName());
         labdatahubDevice.setProtocolId(labdatahubProduct.getProtocolId());
         labdatahubDevice.setProtocolName(labdatahubProduct.getProtocolName());
+        // 由AI修改：同 SN 的那台设备若是被删掉的，物模型/协议点位行还留在库里（删除不清理），
+        // 不清会在继承产品属性、复制源设备时叠成重复行；此处 SN 已确认无在用设备，清掉的是遗留行
+        protocolPointCopyUtil.clearBelongPoints(labdatahubDevice.getDeviceSn());
         baseMapper.insert(labdatahubDevice);
         syncPropertyToDevice(labdatahubDevice.getDeviceSn());
         labdatahubWarnConfigService.syncWarnConfigToDevice(labdatahubProduct.getProductSn(),labdatahubDevice.getDeviceSn());
@@ -222,6 +232,12 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
         if(count>0){
             return AjaxResult.warn("设备sn已经被产品使用，请更换设备sn");
         }
+        // 由AI修改：自注册同样不允许同 SN 重复建行（缓存里查不到但库里有行时，旧逻辑会再插一条设备）
+        long sameDeviceCount = baseMapper.selectCount(new LambdaQueryWrapper<LabdatahubDevice>()
+                .eq(LabdatahubDevice::getDeviceSn, labdatahubDevice.getDeviceSn()));
+        if (sameDeviceCount > 0) {
+            return AjaxResult.warn("设备sn已存在，无需重复注册");
+        }
         LabdatahubProduct labdatahubProduct = labdatahubProductService.getOne(new LambdaQueryWrapper<LabdatahubProduct>()
                 .eq(LabdatahubProduct::getProductSn,labdatahubDevice.getProductSn()),false);
         labdatahubDevice.setProductName(labdatahubProduct.getProductName());
@@ -234,6 +250,8 @@ public class LabdatahubDeviceServiceImpl extends ServiceImpl<LabdatahubDeviceMap
         labdatahubDevice.setComponentName(labdatahubProduct.getComponentName());
         labdatahubDevice.setProtocolId(labdatahubProduct.getProtocolId());
         labdatahubDevice.setProtocolName(labdatahubProduct.getProtocolName());
+        // 由AI修改：同 SN 遗留的物模型/点位行先清掉（删除设备不清理这两类表），否则重建时叠加成重复
+        protocolPointCopyUtil.clearBelongPoints(labdatahubDevice.getDeviceSn());
         baseMapper.insert(labdatahubDevice);
         syncPropertyToDevice(labdatahubDevice.getDeviceSn());
         labdatahubWarnConfigService.syncWarnConfigToDevice(labdatahubProduct.getProductSn(),labdatahubDevice.getDeviceSn());

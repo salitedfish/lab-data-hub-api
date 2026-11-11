@@ -170,8 +170,15 @@ public class LabdatahubPropertiesController extends BaseController
                     .eq(LabdatahubProperties::getBelongSn,propertyListDTO.getBelongSn()));
             list.forEach(property->{
                 property.setBelongSn(propertyListDTO.getBelongSn());
-                property.setBelongType(propertyListDTO.getBelongType());
-                property.setFromType(propertyListDTO.getFromType());
+                // 由AI修改：已落库的行保留原归属类型——设备物模型里从产品继承来的属性（belong_type=1）整份保存时
+                // 一律改写成 0，就会变成一份"设备自定义"副本；复制该设备时会与产品继承的那份撞成重复行。
+                // 只有新加的行（无 id 或无归属类型）才用 DTO 的默认值。
+                if (StringUtils.isBlank(property.getId()) || StringUtils.isBlank(property.getBelongType())) {
+                    property.setBelongType(propertyListDTO.getBelongType());
+                }
+                if (StringUtils.isBlank(property.getId()) || StringUtils.isBlank(property.getFromType())) {
+                    property.setFromType(propertyListDTO.getFromType());
+                }
                 property.setParentId("0");
                 property.setSortNum(0L);
             });

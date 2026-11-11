@@ -30,7 +30,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="warnData != null  and warnData != ''"> and warn_data = #{warnData}</if>
             <if test="triggerSnList != null  and triggerSnList != ''"> and trigger_sn_list = #{triggerSnList}</if>
             <if test="triggerNameList != null  and triggerNameList != ''"> and trigger_name_list = #{triggerNameList}</if>
-            <if test="warnLevel != null  and warnLevel != ''"> and warn_level = #{warnLevel}</if>
+            <if test="warnLevel != null  and warnLevel != ''"> and warn_level in <foreach collection='warnLevel.split(",")' item="v" open="(" separator="," close=")">#{v}</foreach></if>
             <if test="status != null  and status != ''"> and status = #{status}</if>
         </where>
     </select>

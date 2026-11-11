@@ -50,7 +50,9 @@ public class LabdatahubLinkageWarnRecordController extends BaseController
         QueryWrapper<LabdatahubLinkageWarnRecord> queryWrapper = new QueryWrapper<>();
         queryWrapper.orderByAsc("status");
         queryWrapper.orderByDesc("create_time");
-        queryWrapper.eq(StringUtils.isNotEmpty(labdatahubLinkageWarnRecord.getWarnLevel()),"warn_level",labdatahubLinkageWarnRecord.getWarnLevel());
+        // 告警等级支持多选：逗号串拆成列表后 in 查询，单值与原来 eq 等价
+        List<String> warnLevelList = StringUtils.str2List(labdatahubLinkageWarnRecord.getWarnLevel(), ",");
+        queryWrapper.in(!warnLevelList.isEmpty(),"warn_level",warnLevelList);
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubLinkageWarnRecord.getConfigName()),"config_name",labdatahubLinkageWarnRecord.getConfigName());
         queryWrapper.like(StringUtils.isNotEmpty(labdatahubLinkageWarnRecord.getTriggerSnList()),"trigger_sn_list",labdatahubLinkageWarnRecord.getTriggerSnList());
         queryWrapper.eq(StringUtils.isNotEmpty(labdatahubLinkageWarnRecord.getConfigId()),"config_id",labdatahubLinkageWarnRecord.getConfigId());

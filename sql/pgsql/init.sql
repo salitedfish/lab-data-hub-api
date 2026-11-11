@@ -5,7 +5,11 @@
 --           结构与运行库完全一致。生成日期 2026-09-19，2026-10-20 重新导出。
 --           2026-10-22 手工整合 labdatahub_mitsubishi_mc3e_config.bit_index 列与 CHECK
 --           约束（与 others/mitsubishi_mc3e_config_add_bit_index.sql 等价）；下次重新导出
---           时会自然带上。**任何数据库结构修改都必须同步进本文件**，不能只留在 others/。
+--           时会自然带上。
+--           2026-10-24 手工整合 labdatahub_rule_engine_control_log 表
+--           （与 others/rule_engine_control_log.sql 等价），并删除 device_logs 两条冗余索引
+--           （与 others/device_logs_drop_redundant_index.sql 等价）。
+--           **任何数据库结构修改都必须同步进本文件**，不能只留在 others/。
 --
 -- 【执行顺序】全新部署只跑前两个：
 --   1. init.sql   —— 本文件：全量结构 + 框架初始数据
@@ -19,7 +23,7 @@
 --      （原 protocol_config_all.sql 整合脚本已于 2026-09-19 删除 —— 它的内容
 --        100% 被本文件覆盖，且同样带 DROP TABLE，留着容易被误当成部署步骤。）
 --
--- 【数据结构】全量，57 张表，与运行库一致。含 TimescaleDB 超表
+-- 【数据结构】全量，58 张表，与运行库一致。含 TimescaleDB 超表
 --   labdatahub_device_logs 的建表语句（此处是普通表，由 db.sql 转超表）。
 --
 -- 【数据范围】
@@ -7503,7 +7507,7 @@ CREATE INDEX idx_device_logs_log_type ON public.labdatahub_device_logs USING btr
 -- 2026-10-24 删除两条冗余索引（生产实测 idx_device_logs_report_time 527MB、idx_device_sn 86MB）：
 --   · idx_device_logs_report_time (report_time DESC) —— 查询已统一改按 create_time 排序，无语句再用它
 --   · idx_device_sn (device_sn) —— 被 idx_device_logs_device_sn (device_sn, create_time DESC) 完全覆盖
--- 老库升级脚本：sql/pgsql/others/drop_device_logs_redundant_index.sql
+-- 老库升级脚本：sql/pgsql/others/device_logs_drop_redundant_index.sql
 --
 
 --

@@ -34,7 +34,7 @@ PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
             <if test="ipAddr != null  and ipAddr != ''"> and ip_addr = #{ipAddr}</if>
             <if test="port != null "> and port = #{port}</if>
             <if test="openTls != null  and openTls != ''"> and open_tls = #{openTls}</if>
-            <if test="status != null  and status != ''"> and status = #{status}</if>
+            <if test="status != null  and status != ''"> and status in <foreach collection='status.split(",")' item="v" open="(" separator="," close=")">#{v}</foreach></if>
             <if test="otherConfig != null  and otherConfig != ''"> and other_config = #{otherConfig}</if>
             <if test="protocolId != null  and protocolId != ''"> and protocol_id = #{protocolId}</if>
             <if test="protocolName != null  and protocolName != ''"> and protocol_name like concat('%', #{protocolName}, '%')</if>
